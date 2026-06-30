@@ -5,6 +5,7 @@ plugins {
     id("com.jaredsburrows.license")
     kotlin("android")
     kotlin("kapt")
+    kotlin("plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
 }
 
@@ -23,8 +24,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.leonlatsch.photok"
-        minSdk = VersionCodes.P
-        targetSdk = VersionCodes.BAKLAVA
+        minSdk = 35
+        targetSdk = 36
 
         versionCode = appVersionCode.toInt()
         versionName = appVersionName
@@ -167,6 +168,16 @@ dependencies {
     implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
 
     kapt("androidx.hilt:hilt-compiler:1.3.0")
+
+    // Hilt-Work — allows @HiltWorker injection into WorkManager Workers.
+    // Required by dev.leonlatsch.photok.sync.work.PhotoSyncWorker.
+    implementation("androidx.hilt:hilt-work:1.3.0")
+
+    // WorkManager — required by dev.leonlatsch.photok.sync.work.PhotoSyncWorker for cloud sync.
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+
+    // kotlinx-serialization — used by RcloneController for JSON (de)serialization of rclone rc API.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Activity KTX for viewModels()
     implementation("androidx.activity:activity-ktx:1.12.4")

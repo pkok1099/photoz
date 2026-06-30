@@ -33,7 +33,7 @@ import dev.leonlatsch.photok.model.database.ref.AlbumPhotoCrossRefTable
 import dev.leonlatsch.photok.sort.data.db.SortDao
 import dev.leonlatsch.photok.sort.data.db.model.SortTable
 
-private const val DATABASE_VERSION = 6
+private const val DATABASE_VERSION = 7
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -72,6 +72,12 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 5,
             to = 6,
+        ),
+        // v6 → v7: add `syncState TEXT NOT NULL DEFAULT 'LOCAL_ONLY'` to `photo`.
+        // @since PR1 sync feature
+        AutoMigration(
+            from = 6,
+            to = 7,
         ),
     ]
 )

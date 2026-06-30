@@ -391,4 +391,29 @@
     <string name="recovery_phrase_restore_camera_permission_button">Request camera permission</string>
     <string name="recovery_phrase_restore_camera_permission_rationale">Camera permission is required to scan QR codes.</string>
     <string name="permission_gate_change_in_settings">Change in Settings</string>
+
+    <!-- Cloud sync (rclone) — @since PR1 sync feature -->
+    <string name="sync_notification_channel_name">Cloud Sync</string>
+    <string name="sync_notification_channel_desc">Background upload of encrypted photos to your configured rclone remote.</string>
+    <string name="sync_notification_title">Photok Sync</string>
+    <string name="sync_notification_text">Uploading encrypted photo…</string>
+
+    <!-- Cloud sync Settings UI — @since PR1 sync addendum -->
+    <string name="settings_category_cloud_sync">Cloud Sync</string>
+    <string name="settings_category_cloud_sync_summary">Optional. Backs up your encrypted photos to a cloud remote you own (via rclone). Your existing Photok encryption is not modified — the same encrypted bytes are copied to your remote.</string>
+    <string name="settings_cloud_sync_config_title">Backup configuration</string>
+    <string name="settings_cloud_sync_not_configured">Not configured — tap to import your rclone.conf file</string>
+    <string name="settings_cloud_sync_validating">Validating…</string>
+    <string name="settings_cloud_sync_configured">Configured — remote: %1$s</string>
+    <string name="settings_cloud_sync_awaiting_choice">Config imported — tap to pick which remote to use</string>
+    <string name="settings_cloud_sync_invalid_no_sections">This doesn\'t look like a valid rclone config file</string>
+    <string name="settings_cloud_sync_invalid_unreadable">Couldn\'t read the file, try again</string>
+    <string name="sync_settings_import_io_error">Couldn\'t save the config file, try again</string>
+    <string name="sync_settings_import_success">rclone config imported</string>
+
+    <!-- Remote picker dialog — @since PR1 sync addendum -->
+    <string name="sync_remote_picker_title">Pick a remote to use for backup</string>
+    <string name="sync_remote_picker_subtitle">Found %1$d remote(s) in your config. Pick which one Photok should back up to.</string>
+    <string name="sync_remote_picker_no_type">(no type)</string>
+    <string name="sync_settings_choose_remote_failed">Couldn\'t set the chosen remote, try again</string>
 </resources>

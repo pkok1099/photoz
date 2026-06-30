@@ -30,8 +30,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +59,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -95,9 +99,11 @@ import dev.leonlatsch.photok.settings.ui.SettingsFragment
 import dev.leonlatsch.photok.settings.ui.changepassword.ChangePasswordSheet
 import dev.leonlatsch.photok.settings.ui.hideapp.SecretLaunchCodeDialog
 import dev.leonlatsch.photok.settings.ui.hideapp.ToggleAppVisibilityDialog
+import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.telemetry.ui.TelemetryExplanationSheet
 import dev.leonlatsch.photok.ui.LocalFragment
 import dev.leonlatsch.photok.ui.theme.AppTheme
+import kotlinx.coroutines.launch
 
 val LocalPreferencesValues: ProvidableCompositionLocal<Map<String, *>> =
     compositionLocalOf { emptyMap<String, String>() }
@@ -121,6 +127,32 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
                 BackupStrategy.Name.Default
             ).show(fragment.parentFragmentManager)
         }
+
+    // SAF picker for rclone.conf import. @since PR1 sync addendum (Settings UI)
+    val rcloneConfigLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            viewModel.importRcloneConfig(uri)
+        }
+
+    // Observe sync config status to trigger the remote picker dialog when state becomes
+    // AwaitingRemoteChoice. @since PR1 sync addendum (remote picker)
+    val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
+    var showRemotePicker by rememberSaveable { mutableStateOf(false) }
+    var pickerRemotes by remember { mutableStateOf<List<RcloneConfigManager.RemoteInfo>>(emptyList()) }
+    val settingsScope = rememberCoroutineScope()
+
+    LaunchedEffect(syncConfigStatus) {
+        when (val s = syncConfigStatus) {
+            is SyncConfigStatus.AwaitingRemoteChoice -> {
+                pickerRemotes = s.remotes
+                showRemotePicker = true
+            }
+            else -> {
+                showRemotePicker = false
+            }
+        }
+    }
 
     var showSecretLaunchCodeDialog by remember { mutableStateOf(false) }
     var showUsageDataSheet by rememberSaveable { mutableStateOf(false) }
@@ -169,6 +201,27 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 
         viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_BACKUP) {
             showConfirmPasswordDialogForBackup = true
+            false
+        }
+
+        // Cloud Sync row → context-dependent action. @since PR1 sync addendum (Settings UI)
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
+            when (syncConfigStatus) {
+                is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
+                    settingsScope.launch {
+                        val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
+                        if (remotes.isNotEmpty()) {
+                            pickerRemotes = remotes
+                            showRemotePicker = true
+                        } else {
+                            rcloneConfigLauncher.launch(arrayOf("*/*"))
+                        }
+                    }
+                }
+                else -> {
+                    rcloneConfigLauncher.launch(arrayOf("*/*"))
+                }
+            }
             false
         }
 
@@ -267,12 +320,107 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
             onDismissRequest = { showChangePasswordSheet = false },
         )
     }
+
+    // Remote picker dialog — shown when syncConfigStatus becomes AwaitingRemoteChoice.
+    // @since PR1 sync addendum (remote picker)
+    if (showRemotePicker && pickerRemotes.isNotEmpty()) {
+        RemotePickerDialog(
+            remotes = pickerRemotes,
+            onPick = { name ->
+                showRemotePicker = false
+                viewModel.chooseRemote(name)
+            },
+            onDismiss = {
+                showRemotePicker = false
+            },
+        )
+    }
+}
+
+/**
+ * Dialog that lists all remotes parsed from the imported rclone.conf and lets the user pick
+ * one. Uses LazyColumn with heightIn(max = 400.dp) so the list scrolls when there are many
+ * remotes (Bug 1 fix).
+ *
+ * @since PR1 sync addendum (remote picker)
+ */
+@Composable
+private fun RemotePickerDialog(
+    remotes: List<RcloneConfigManager.RemoteInfo>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.sync_remote_picker_title))
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.sync_remote_picker_subtitle, remotes.size),
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp),
+                ) {
+                    items(remotes) { remote ->
+                        val typeSuffix = remote.type?.let { " ($it)" }
+                            ?: stringResource(R.string.sync_remote_picker_no_type)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    selected = remote.name
+                                }
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RadioButton(
+                                selected = selected == remote.name,
+                                onClick = { selected = remote.name },
+                            )
+                            Text(
+                                text = remote.name + typeSuffix,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selected != null,
+                onClick = {
+                    selected?.let(onPick)
+                },
+            ) {
+                Text(stringResource(R.string.common_ok))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+            ) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
 }
 
 @Composable
 fun SettingsScreen() {
     val viewModel = hiltViewModel<SettingsViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
 
     CompositionLocalProvider(
         LocalPreferencesValues provides uiState.preferencesValues
@@ -280,6 +428,7 @@ fun SettingsScreen() {
         SettingsContent(
             screenConfig = uiState.screenConfig,
             handleUiEvent = viewModel::handleUiEvent,
+            syncConfigStatus = syncConfigStatus,
         )
     }
 
@@ -293,6 +442,7 @@ fun SettingsScreen() {
 fun SettingsContent(
     screenConfig: PreferenceScreenConfig,
     handleUiEvent: (SettingsUiEvent) -> Unit,
+    syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured,
 ) {
     val fragment = LocalFragment.current
 
@@ -379,6 +529,22 @@ fun SettingsContent(
                                                 SettingsUiEvent.OnPreferenceClick(
                                                     preference,
                                                     value
+                                                )
+                                            )
+                                        },
+                                    )
+                                }
+
+                                is Preference.DynamicSummary -> {
+                                    PreferenceDynamicSummaryView(
+                                        preference = preference,
+                                        status = syncConfigStatus,
+                                        onClick = {
+                                            fragment ?: return@PreferenceDynamicSummaryView
+                                            handleUiEvent(
+                                                SettingsUiEvent.OnPreferenceClick(
+                                                    preference,
+                                                    null
                                                 )
                                             )
                                         },
@@ -595,6 +761,52 @@ fun PreferenceView(
     }
 
 }
+
+/**
+ * Variant of [PreferenceView] whose subtitle is computed from [SyncConfigStatus].
+ * @since PR1 sync addendum (Settings UI)
+ */
+@Composable
+fun PreferenceDynamicSummaryView(
+    preference: Preference.DynamicSummary,
+    status: SyncConfigStatus,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val summary: String = when (status) {
+        is SyncConfigStatus.NotConfigured ->
+            context.getString(R.string.settings_cloud_sync_not_configured)
+        SyncConfigStatus.Validating ->
+            context.getString(R.string.settings_cloud_sync_validating)
+        is SyncConfigStatus.Configured ->
+            context.getString(R.string.settings_cloud_sync_configured, status.remoteName)
+        is SyncConfigStatus.AwaitingRemoteChoice ->
+            context.getString(R.string.settings_cloud_sync_awaiting_choice)
+        is SyncConfigStatus.Invalid -> status.reason.toSummary(context)
+        is SyncConfigStatus.ImportFailed -> status.reason.toSummary(context)
+    }
+
+    PreferenceView(
+        icon = painterResource(preference.icon),
+        title = stringResource(preference.title),
+        summary = summary,
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Render an [RcloneConfigManager.Status.InvalidReason] as a user-facing summary string.
+ * @since PR1 sync addendum (Settings UI)
+ */
+private fun RcloneConfigManager.Status.InvalidReason.toSummary(context: android.content.Context): String =
+    when (this) {
+        RcloneConfigManager.Status.InvalidReason.NO_SECTIONS ->
+            context.getString(R.string.settings_cloud_sync_invalid_no_sections)
+        RcloneConfigManager.Status.InvalidReason.UNREADABLE ->
+            context.getString(R.string.settings_cloud_sync_invalid_unreadable)
+    }
 
 @Preview(heightDp = 1000)
 @Composable

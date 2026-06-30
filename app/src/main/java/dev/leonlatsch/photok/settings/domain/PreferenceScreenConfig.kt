@@ -71,6 +71,19 @@ sealed interface Preference {
         val default: T,
         val possibleValues: List<T>,
     ) : Preference
+
+    /**
+     * A preference row whose subtitle is dynamic (computed at runtime from a StateFlow, not
+     * from a static string resource). Used by the Cloud Sync row.
+     *
+     * @since PR1 sync addendum (Settings UI)
+     */
+    data class DynamicSummary(
+        override val key: String,
+        override val icon: Int,
+        override val title: Int,
+        val summaryPlaceholder: Int,
+    ) : Preference
 }
 
 val PreferenceScreenConfigContent = buildList {
@@ -94,6 +107,21 @@ val PreferenceScreenConfigContent = buildList {
                     possibleValues = StartPage.entries,
                 )
             )
+        )
+    )
+    // ─── Cloud Sync section (PR1 addendum) ────────────────────────────────────
+    add(
+        PreferenceSection(
+            title = R.string.settings_category_cloud_sync,
+            summary = R.string.settings_category_cloud_sync_summary,
+            preferences = listOf(
+                Preference.DynamicSummary(
+                    key = SettingsFragment.KEY_ACTION_CLOUD_SYNC,
+                    icon = R.drawable.ic_cloud_upload,
+                    title = R.string.settings_cloud_sync_config_title,
+                    summaryPlaceholder = R.string.settings_cloud_sync_not_configured,
+                ),
+            ),
         )
     )
     add(

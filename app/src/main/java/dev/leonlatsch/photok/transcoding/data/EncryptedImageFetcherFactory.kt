@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 Leon Latsch
+ *   Copyright 2020–2026 Leon Latsch
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -22,11 +22,13 @@ import coil.fetch.Fetcher
 import coil.request.Options
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.leonlatsch.photok.io.VaultFileStorage
+import dev.leonlatsch.photok.sync.work.SyncRestorer
 import dev.leonlatsch.photok.transcoding.compose.model.EncryptedImageRequestData
 import javax.inject.Inject
 
 class EncryptedImageFetcherFactory @Inject constructor(
     private val vaultFileStorage: VaultFileStorage,
+    private val syncRestorer: SyncRestorer,
     @ApplicationContext private val context: Context,
 ) : Fetcher.Factory<EncryptedImageRequestData> {
     override fun create(data: EncryptedImageRequestData, options: Options, imageLoader: ImageLoader): Fetcher =
@@ -34,6 +36,6 @@ class EncryptedImageFetcherFactory @Inject constructor(
             vaultFileStorage = vaultFileStorage,
             requestData = data,
             context = context,
+            syncRestorer = syncRestorer,
         )
-
 }

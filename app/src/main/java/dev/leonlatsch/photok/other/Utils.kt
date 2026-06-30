@@ -208,19 +208,7 @@ fun View.systemBarsPadding() {
  * https://github.com/mozilla-mobile/android-components/pull/9680/files#diff-9d900219329132b059f18f83b6e2952c5509bcfbf063a571ee5d647f76fa6554
  */
 fun WindowInsets.top(): Int =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        this.getInsets(WindowInsets.Type.systemBars()).top
-
-    } else {
-        @Suppress("DEPRECATION")
-        this.systemWindowInsetTop
-    }
+    this.getInsets(WindowInsets.Type.systemBars()).top
 
 fun WindowInsets.bottom(): Int =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        this.getInsets(WindowInsets.Type.systemBars()).bottom
-
-    } else {
-        @Suppress("DEPRECATION")
-        this.systemWindowInsetBottom
-    }
+    this.getInsets(WindowInsets.Type.systemBars()).bottom

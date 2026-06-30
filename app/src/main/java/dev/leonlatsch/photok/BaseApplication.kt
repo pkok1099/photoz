@@ -21,12 +21,14 @@ import android.content.Intent
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import dev.leonlatsch.photok.encryption.domain.SessionRepository
 import dev.leonlatsch.photok.main.ui.MainActivity
 import dev.leonlatsch.photok.model.repositories.CleanupDeadFilesUseCase
 import dev.leonlatsch.photok.other.setAppDesign
 import dev.leonlatsch.photok.settings.data.Config
+import dev.leonlatsch.photok.sync.debug.CrashLogger
 import dev.leonlatsch.photok.telemetry.domain.TelemetryService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
@@ -40,7 +42,7 @@ import javax.inject.Inject
  * @author Leon Latsch
  */
 @HiltAndroidApp
-class BaseApplication : Application(), DefaultLifecycleObserver {
+class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.Provider {
 
     @Inject
     lateinit var appScope: CoroutineScope
@@ -57,12 +59,40 @@ class BaseApplication : Application(), DefaultLifecycleObserver {
     @Inject
     lateinit var telemetryService: TelemetryService
 
+    /**
+     * Hilt-injected WorkManager configuration. WorkManager reads this via
+     * [Configuration.Provider.getWorkManagerConfiguration] before its first initialization.
+     *
+     * @since PR1 sync feature
+     */
+    @Inject
+    lateinit var injectedWorkManagerConfiguration: Configuration
+
+    override val workManagerConfiguration: Configuration
+        get() = injectedWorkManagerConfiguration
+
 
     private var wentToBackgroundAt = 0L
     private var ignoreNextTimeout = false
 
     override fun onCreate() {
         super<Application>.onCreate()
+
+        // ─── CRASH LOGGER — install FIRST, before anything else can crash ───────
+        // Captures full stack traces (including `Caused by` chain) to
+        // <filesDir>/crash_log.txt so they survive process death. Readable via:
+        //   adb shell run-as dev.leonlatsch.photok cat files/crash_log.txt
+        // The logger itself never throws (see CrashLogger.kt).
+        // @since PR1 sync debug — crash-loop diagnosis
+        CrashLogger.init(this)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            CrashLogger.logCrash(thread, throwable, context = "UncaughtExceptionHandler")
+            // Delegate to the default handler afterward so normal crash behavior (process
+            // death) still happens — we're only adding logging, NOT suppressing the crash.
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         telemetryService.setup()
 

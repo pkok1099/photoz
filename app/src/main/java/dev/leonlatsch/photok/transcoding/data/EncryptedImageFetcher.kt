@@ -18,9 +18,6 @@ package dev.leonlatsch.photok.transcoding.data
 
 import android.content.Context
 import android.graphics.ImageDecoder
-import android.graphics.Movie
-import android.os.Build
-import android.os.Build.VERSION_CODES
 import coil.decode.DataSource
 import coil.decode.ImageSource
 import coil.drawable.MovieDrawable
@@ -30,12 +27,14 @@ import coil.fetch.Fetcher
 import coil.fetch.SourceResult
 import dev.leonlatsch.photok.io.VaultFileStorage
 import dev.leonlatsch.photok.model.database.entity.PhotoType
+import dev.leonlatsch.photok.sync.work.SyncRestorer
 import dev.leonlatsch.photok.transcoding.compose.model.EncryptedImageRequestData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okio.BufferedSource
 import okio.buffer
 import okio.source
+import timber.log.Timber
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import kotlin.coroutines.resume
@@ -51,9 +50,18 @@ class EncryptedImageFetcher(
     private val vaultFileStorage: VaultFileStorage,
     private val requestData: EncryptedImageRequestData,
     private val context: Context,
+    private val syncRestorer: SyncRestorer? = null,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
+        // ─── On-demand cloud-sync restore (PR1) ─────────────────────────────────
+        if (syncRestorer != null && requestData.photoUuid != null) {
+            runCatching { syncRestorer.ensureLocalOriginal(requestData.photoUuid) }
+                .onFailure { e ->
+                    Timber.w(e, "EncryptedImageFetcher: restore failed for %s", requestData.photoUuid)
+                }
+        }
+
         val inputStream =
             vaultFileStorage.openEncryptedInput(requestData.internalFileName)
         inputStream ?: return@withContext null
@@ -90,16 +98,11 @@ class EncryptedImageFetcher(
         return byteStream.source().buffer()
     }
 
-    private suspend fun decodeAnimatedImage(inputStream: InputStream) =
-        if (Build.VERSION.SDK_INT >= VERSION_CODES.S) {
-            val bytes = inputStream.use { it.readBytesSuspending() }
-            val source = ImageDecoder.createSource(bytes)
-            ImageDecoder.decodeDrawable(source)
-        } else {
-            @Suppress("DEPRECATION")
-            val movie = Movie.decodeStream(inputStream)
-            MovieDrawable(movie)
-        }
+    private suspend fun decodeAnimatedImage(inputStream: InputStream): android.graphics.drawable.Drawable {
+        val bytes = inputStream.use { it.readBytesSuspending() }
+        val source = ImageDecoder.createSource(bytes)
+        return ImageDecoder.decodeDrawable(source)
+    }
 }
 
 suspend fun InputStream.readBytesSuspending(): ByteArray = suspendCoroutine { continuation ->

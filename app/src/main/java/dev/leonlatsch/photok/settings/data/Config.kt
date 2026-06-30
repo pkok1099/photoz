@@ -156,6 +156,16 @@ class Config(context: Context) {
         get() = getBoolean(IN_APP_REVIEW_REQUESTED, false)
         set(value) = putBoolean(IN_APP_REVIEW_REQUESTED, value)
 
+    /**
+     * The user-chosen rclone remote name. `null` means no remote has been chosen yet — sync
+     * is dormant until the user picks one via Settings → Cloud Sync.
+     *
+     * @since PR1 sync addendum (remote picker)
+     */
+    var syncChosenRemote: String?
+        get() = getString(SYNC_CHOSEN_REMOTE, null)
+        set(value) = putString(SYNC_CHOSEN_REMOTE, value)
+
     // In memory flags
     var justFinishedSetup: Boolean = false
     var lastUsedUnlockMethod: VaultProtectionType? = null
@@ -291,5 +301,11 @@ class Config(context: Context) {
         const val TELEMETRY_ASKED_FOR_OPT_IN_DEFAULT = false
 
         const val IN_APP_REVIEW_REQUESTED = "internal^inAppReviewRequested"
+
+        /**
+         * SharedPreferences key for the user-chosen rclone remote name.
+         * @since PR1 sync addendum (remote picker)
+         */
+        const val SYNC_CHOSEN_REMOTE = "sync^chosenRemote"
     }
 }

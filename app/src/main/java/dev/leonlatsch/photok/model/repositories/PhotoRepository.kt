@@ -30,6 +30,8 @@ import dev.leonlatsch.photok.other.extensions.lazyClose
 import dev.leonlatsch.photok.other.getMetadataFor
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sort.domain.Sort
+import dev.leonlatsch.photok.sync.domain.SyncConfig
+import dev.leonlatsch.photok.sync.work.PhotoSyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -163,9 +165,21 @@ class PhotoRepository @Inject constructor(
 
         if (!success) {
             deleteInternalPhotoData(photo)
+            return false
         }
 
-        return success
+        // ─── Sync hook (PR1) ────────────────────────────────────────────────────
+        // After the DB row is committed, enqueue a WorkManager job to push the encrypted
+        // original + thumbnail to the rclone remote. Idempotent via ExistingWorkPolicy.KEEP.
+        if (SyncConfig.autoUploadEnabled) {
+            runCatching {
+                PhotoSyncWorker.enqueue(app, photo)
+            }.onFailure { e ->
+                Timber.w(e, "Failed to enqueue sync job for %s", photo.uuid)
+            }
+        }
+
+        return true
     }
 
     /**

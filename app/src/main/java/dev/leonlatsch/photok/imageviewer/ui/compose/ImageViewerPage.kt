@@ -105,6 +105,7 @@ fun BoxScope.ImageViewerImagePage(
             internalFileName = fileName,
             mimeType = photo.type.mimeType,
             playAnimation = true,
+            photoUuid = if (photo.type.isVideo) null else photo.uuid,
         )
     }
 

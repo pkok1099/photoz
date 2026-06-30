@@ -12,3 +12,10 @@
 .kotlin/
 
 kls_database.db
+
+# rclone native binaries — downloaded by scripts/build-rclone.sh, not committed.
+/app/src/main/jniLibs/
+
+# rclone.conf — never commit user secrets.
+**/rclone.conf
+**/rclone.conf.tmp

@@ -20,6 +20,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.google.gson.annotations.Expose
+import dev.leonlatsch.photok.sync.domain.SyncState
 import java.util.UUID
 
 /**
@@ -51,6 +52,15 @@ data class Photo(
     @PrimaryKey
     @ColumnInfo(name = "photo_uuid")
     val uuid: String = UUID.randomUUID().toString(),
+
+    /**
+     * Cloud sync state. Stored as the enum's [SyncState.storageKey] (TEXT).
+     * Default `'LOCAL_ONLY'` set via column default + v6→v7 AutoMigration spec.
+     *
+     * @since PR1 sync feature
+     */
+    @ColumnInfo(name = COL_SYNC_STATE, defaultValue = "'LOCAL_ONLY'")
+    var syncState: SyncState = SyncState.LOCAL_ONLY,
 ) {
 
     val internalFileName: String
@@ -70,6 +80,7 @@ data class Photo(
         const val COL_SIZE = "size"
         const val TABLE_NAME = "photo"
 
-
+        /** Cloud sync state column. @since PR1 sync feature */
+        const val COL_SYNC_STATE = "syncState"
     }
 }

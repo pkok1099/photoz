@@ -18,9 +18,10 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="auto">
 
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
@@ -119,6 +120,18 @@
 
         <service android:name=".encryption.migration.MigrationService"
             android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!--
+            WorkManager foreground service for cloud sync (rclone) — @since PR1 sync feature.
+            Declares BOTH "dataSync|shortService" types so the service accepts either:
+            - shortService for WorkManager's internal expedited work (3-min timeout)
+            - dataSync for manual setForeground() promotion (6-hour timeout)
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync|shortService"
+            tools:node="merge"
             android:exported="false" />
     </application>
 

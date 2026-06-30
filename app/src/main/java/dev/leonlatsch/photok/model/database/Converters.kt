@@ -21,6 +21,7 @@ import com.google.gson.Gson
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionParams
 import dev.leonlatsch.photok.model.database.entity.PhotoType
 import dev.leonlatsch.photok.sort.domain.Sort
+import dev.leonlatsch.photok.sync.domain.SyncState
 
 /**
  * TypeConverters for Room
@@ -66,4 +67,16 @@ class Converters {
         val gson = Gson()
         return gson.fromJson(string, VaultProtectionParams::class.java)
     }
+
+    /**
+     * Persist [SyncState] as its [SyncState.storageKey] string. Storing as TEXT (rather than
+     * Int ordinal) keeps the column readable in DB browsers and is robust against enum reordering.
+     *
+     * @since PR1 sync feature
+     */
+    @TypeConverter
+    fun fromSyncState(state: SyncState): String = state.storageKey
+
+    @TypeConverter
+    fun toSyncState(value: String): SyncState = SyncState.fromStorageKey(value)
 }

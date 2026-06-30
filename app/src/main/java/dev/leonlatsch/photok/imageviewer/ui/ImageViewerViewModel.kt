@@ -36,6 +36,7 @@ import dev.leonlatsch.photok.model.repositories.PhotoRepository
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sort.domain.SortConfig
 import dev.leonlatsch.photok.sort.domain.SortRepository
+import dev.leonlatsch.photok.sync.work.SyncRestorer
 import dev.leonlatsch.photok.transcoding.data.AesCbcRandomAccessDataSource
 import dev.leonlatsch.photok.uicomponnets.bindings.ObservableViewModel
 import kotlinx.coroutines.flow.Flow
@@ -102,6 +103,7 @@ class ImageViewerViewModel @AssistedInject constructor(
     private val sortRepository: SortRepository,
     private val config: Config,
     private val sessionRepository: SessionRepository,
+    private val syncRestorer: SyncRestorer,
 ) : ObservableViewModel(app) {
 
     private val inputs = MutableStateFlow(ImageViewerUiState.Inputs())
@@ -115,6 +117,14 @@ class ImageViewerViewModel @AssistedInject constructor(
         ImageViewerUiState(
             items = photos.map { photo ->
                 if (photo.type.isVideo) {
+                    // For video originals, trigger an async restore BEFORE ExoPlayer tries to
+                    // open the local file. ExoPlayer will see the file once download completes;
+                    // until then, the player shows a loading state. (PR1 on-demand restore.)
+                    if (photo.syncState == dev.leonlatsch.photok.sync.domain.SyncState.UPLOADED) {
+                        viewModelScope.launch {
+                            runCatching { syncRestorer.ensureLocalOriginal(photo.uuid) }
+                        }
+                    }
                     ImageViewerItem.Video(
                         photo = photo,
                         mediaItem = createMediaItem(photo)

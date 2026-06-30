@@ -21,6 +21,7 @@ import androidx.sqlite.db.SimpleSQLiteQuery
 import androidx.sqlite.db.SupportSQLiteQuery
 import dev.leonlatsch.photok.sort.domain.Sort
 import dev.leonlatsch.photok.model.database.entity.Photo
+import dev.leonlatsch.photok.sync.domain.SyncState
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -91,4 +92,23 @@ interface PhotoDao {
 
     @RawQuery(observedEntities = [Photo::class])
     fun observeAll(query: SupportSQLiteQuery): Flow<List<Photo>>
+
+    // region SYNC STATE — @since PR1 sync feature
+
+    @Query("UPDATE photo SET syncState = :state WHERE photo_uuid = :uuid")
+    suspend fun updateSyncState(uuid: String, state: SyncState)
+
+    @Query("UPDATE photo SET syncState = :state WHERE photo_uuid = :uuid")
+    suspend fun updateSyncStateReturningRows(uuid: String, state: SyncState): Int
+
+    @Query(
+        "SELECT * FROM photo WHERE syncState IN " +
+            "(:pending, :failed) ORDER BY importedAt ASC"
+    )
+    suspend fun findPhotosInSyncState(
+        pending: SyncState = SyncState.UPLOAD_PENDING,
+        failed: SyncState = SyncState.UPLOAD_FAILED,
+    ): List<Photo>
+
+    // endregion
 }

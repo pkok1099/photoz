@@ -17,6 +17,7 @@
 package dev.leonlatsch.photok.settings.ui.compose
 
 import android.app.Application
+import android.net.Uri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,8 +37,12 @@ import dev.leonlatsch.photok.settings.domain.Preference
 import dev.leonlatsch.photok.settings.domain.PreferenceScreenConfig
 import dev.leonlatsch.photok.settings.domain.PreferenceScreenConfigContent
 import dev.leonlatsch.photok.settings.domain.models.SettingsEnum
+import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.uicomponnets.Dialogs
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,6 +57,19 @@ sealed interface SettingsUiEvent {
     data class OnPreferenceClick(val preference: Preference, val value: Any?) : SettingsUiEvent
 }
 
+/**
+ * State of the rclone cloud-sync config, surfaced to the Settings UI.
+ * @since PR1 sync addendum (Settings UI)
+ */
+sealed interface SyncConfigStatus {
+    data object NotConfigured : SyncConfigStatus
+    data object Validating : SyncConfigStatus
+    data class Configured(val remoteName: String) : SyncConfigStatus
+    data class Invalid(val reason: RcloneConfigManager.Status.InvalidReason) : SyncConfigStatus
+    data class ImportFailed(val reason: RcloneConfigManager.Status.InvalidReason) : SyncConfigStatus
+    data class AwaitingRemoteChoice(val remotes: List<RcloneConfigManager.RemoteInfo>) : SyncConfigStatus
+}
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val config: Config,
@@ -60,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     private val albumRepository: AlbumRepository,
     private val vaultService: VaultService,
     private val sessionRepository: SessionRepository,
+    private val rcloneConfigManager: RcloneConfigManager,
 ) : ViewModel() {
 
 
@@ -69,6 +88,72 @@ class SettingsViewModel @Inject constructor(
             preferencesValues = values,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), SettingsUiState(preferencesValues = config.values))
+
+    /**
+     * Current rclone config status, drives the subtitle of the "Cloud Sync" settings row.
+     * @since PR1 sync addendum (Settings UI)
+     */
+    private val _syncConfigStatus = MutableStateFlow<SyncConfigStatus>(SyncConfigStatus.NotConfigured)
+    val syncConfigStatus: StateFlow<SyncConfigStatus> = _syncConfigStatus.asStateFlow()
+
+    init {
+        refreshSyncConfigStatus()
+    }
+
+    private fun refreshSyncConfigStatus() {
+        viewModelScope.launch {
+            _syncConfigStatus.value = when (val s = rcloneConfigManager.currentStatus()) {
+                is RcloneConfigManager.Status.NotConfigured -> SyncConfigStatus.NotConfigured
+                is RcloneConfigManager.Status.Configured -> SyncConfigStatus.Configured(s.remoteName)
+                is RcloneConfigManager.Status.AwaitingRemoteChoice ->
+                    SyncConfigStatus.AwaitingRemoteChoice(s.availableRemotes)
+                is RcloneConfigManager.Status.Invalid -> SyncConfigStatus.Invalid(s.reason)
+            }
+        }
+    }
+
+    fun importRcloneConfig(uri: Uri) {
+        viewModelScope.launch {
+            _syncConfigStatus.value = SyncConfigStatus.Validating
+            val result = rcloneConfigManager.import(uri)
+
+            result.fold(
+                onSuccess = {
+                    refreshSyncConfigStatus()
+                    if (_syncConfigStatus.value is SyncConfigStatus.Configured) {
+                        Dialogs.showLongToast(app, app.getString(R.string.sync_settings_import_success))
+                    }
+                },
+                onFailure = { e ->
+                    val reason = rcloneConfigManager.toInvalidReason(e)
+                    _syncConfigStatus.value = SyncConfigStatus.ImportFailed(reason)
+                    val toastResId = when (reason) {
+                        RcloneConfigManager.Status.InvalidReason.NO_SECTIONS ->
+                            R.string.settings_cloud_sync_invalid_no_sections
+                        RcloneConfigManager.Status.InvalidReason.UNREADABLE ->
+                            R.string.sync_settings_import_io_error
+                    }
+                    Dialogs.showLongToast(app, app.getString(toastResId))
+                }
+            )
+        }
+    }
+
+    fun chooseRemote(name: String) {
+        viewModelScope.launch {
+            val ok = rcloneConfigManager.chooseRemote(name)
+            if (ok) {
+                refreshSyncConfigStatus()
+                Dialogs.showLongToast(app, app.getString(R.string.sync_settings_import_success))
+            } else {
+                refreshSyncConfigStatus()
+                Dialogs.showLongToast(app, app.getString(R.string.sync_settings_choose_remote_failed))
+            }
+        }
+    }
+
+    suspend fun rcloneConfigManagerAvailableRemotes(): List<RcloneConfigManager.RemoteInfo> =
+        rcloneConfigManager.availableRemotes()
 
     fun handleUiEvent(event: SettingsUiEvent) {
         when (event) {
@@ -84,6 +169,7 @@ class SettingsViewModel @Inject constructor(
                     is Preference.Enum<*> -> config.putString(event.preference.key, (event.value as SettingsEnum).value)
                     is Preference.Switch -> config.putBoolean(event.preference.key, event.value as Boolean)
                     is Preference.Simple -> Unit
+                    is Preference.DynamicSummary -> Unit
                 }
             }
         }

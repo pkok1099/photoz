@@ -282,13 +282,11 @@ fun EncryptionMigrationScreenInitial(
 
                                 if (activity.requestInSettings(Manifest.permission.POST_NOTIFICATIONS)) {
                                     activity.openNotificationSettings()
-                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                } else {
                                     permissionLauncher.launchAndIgnoreTimer(
                                         Manifest.permission.POST_NOTIFICATIONS,
                                         activity
                                     )
-                                } else {
-                                    handleUiEvent(SwitchStage(InitialSubStage.READY))
                                 }
                             }
                         ) {
