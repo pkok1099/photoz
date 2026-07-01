@@ -29,6 +29,7 @@ import dev.leonlatsch.photok.model.repositories.CleanupDeadFilesUseCase
 import dev.leonlatsch.photok.other.setAppDesign
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.debug.CrashLogger
+import dev.leonlatsch.photok.sync.debug.SyncLogger
 import dev.leonlatsch.photok.telemetry.domain.TelemetryService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
@@ -85,6 +86,7 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
         // The logger itself never throws (see CrashLogger.kt).
         // @since PR1 sync debug — crash-loop diagnosis
         CrashLogger.init(this)
+        SyncLogger.init(this)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             CrashLogger.logCrash(thread, throwable, context = "UncaughtExceptionHandler")

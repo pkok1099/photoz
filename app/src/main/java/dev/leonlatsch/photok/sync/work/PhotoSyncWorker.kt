@@ -42,6 +42,7 @@ import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.model.database.entity.Photo
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.debug.CrashLogger
+import dev.leonlatsch.photok.sync.debug.SyncLogger
 import dev.leonlatsch.photok.sync.domain.SyncConfig
 import dev.leonlatsch.photok.sync.domain.SyncState
 import dev.leonlatsch.photok.sync.rclone.RcloneController
@@ -125,6 +126,7 @@ class PhotoSyncWorker @AssistedInject constructor(
 
         try {
             photoDao.updateSyncState(uuid, SyncState.UPLOAD_PENDING)
+            SyncLogger.logStateTransition(uuid, "LOCAL_ONLY/prev", "UPLOAD_PENDING", "worker attempt ${runAttemptCount + 1}")
         } catch (e: Exception) {
             Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_PENDING for %s", uuid)
             return Result.failure()
@@ -140,6 +142,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                         Timber.i("PhotoSyncWorker: %s was deleted during upload; skipping commit", uuid)
                         return Result.success()
                     }
+                    SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "upload + verify succeeded")
                 } catch (e: Exception) {
                     Timber.e(e, "PhotoSyncWorker: failed to commit UPLOADED for %s", uuid)
                     return Result.failure()
@@ -154,6 +157,8 @@ class PhotoSyncWorker @AssistedInject constructor(
                 Timber.w(outcome.exceptionOrNull(), "PhotoSyncWorker: fatal failure for %s", uuid)
                 try {
                     photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+                    SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOAD_FAILED",
+                        "fatal: ${outcome.exceptionOrNull()?.message}")
                 } catch (e: Exception) {
                     Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
                 }
@@ -170,6 +175,8 @@ class PhotoSyncWorker @AssistedInject constructor(
                     )
                     try {
                         photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+                        SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOAD_FAILED",
+                            "max attempts (${runAttemptCount + 1}): ${outcome.exceptionOrNull()?.message}")
                     } catch (e: Exception) {
                         Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
                     }
@@ -219,13 +226,20 @@ class PhotoSyncWorker @AssistedInject constructor(
         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
         rcloneController.uploadFile(origPath.absolutePath, remoteOrig).getOrThrow()
 
+        // ─── INDEPENDENT VERIFICATION (Step 2 — restic-style "remote is source of truth") ───
+        // After uploadFile() reports success, do NOT trust it. Three independent checks:
+        // 1. verifyFileExists: separate operations/list call — confirm file is at the exact
+        //    destination path with the expected size. This would have caught the srcLeaf/srcRemote
+        //    param bug immediately (file was never uploaded, so listing would show it absent).
+        // 2. verifyRemote: hash check via operations/hashsum — confirm bytes match.
+        // 3. (size check is part of verifyFileExists)
+        //
+        // Only if ALL checks pass does syncState become UPLOADED. Any failure → UPLOAD_FAILED.
+        val localSize = origPath.length()
+        rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
+
         val localHash = sha256OfFile(origPath.absolutePath)
-        val verified = rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
-        if (!verified) {
-            throw HashMismatchException(
-                "Hash mismatch after upload for $uuid. Local=$localHash"
-            )
-        }
+        rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
     }
 
     private fun deleteLocalOriginalAfterUpload(photo: Photo) {

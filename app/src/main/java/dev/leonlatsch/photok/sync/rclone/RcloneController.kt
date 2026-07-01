@@ -18,6 +18,7 @@ package dev.leonlatsch.photok.sync.rclone
 
 import android.app.Application
 import android.util.Base64
+import dev.leonlatsch.photok.sync.debug.SyncLogger
 import dev.leonlatsch.photok.sync.domain.SyncConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,7 +82,14 @@ class RcloneController @Inject constructor(
                         op = "operations/copyfile",
                         params = buildJsonObject {
                             put("srcFs", localFile.parentFile?.absolutePath ?: "")
-                            put("srcLeaf", localFile.name)
+                            // FIX: rclone's operations/copyfile requires "srcRemote", NOT "srcLeaf".
+                            // Using "srcLeaf" silently fails — rclone returns HTTP 400
+                            // "Didn't find key srcRemote in input" but the old code's error
+                            // field check wasn't catching it (Bug B). Even with the error-field
+                            // check, the param name was wrong, so every upload was rejected.
+                            // Root cause of false "UPLOADED" — empirically verified via
+                            // local rcd test: srcLeaf → 400 error, srcRemote → file appears.
+                            put("srcRemote", localFile.name)
                             val idx = remotePath.indexOf(':')
                             put("dstFs", if (idx < 0) "" else remotePath.substring(0, idx + 1))
                             put("dstRemote", remotePath.substringAfter(':'))
@@ -106,13 +114,70 @@ class RcloneController @Inject constructor(
                             val remoteName = remotePath.substringBefore(':')
                             val remoteRelPath = remotePath.substringAfter(':')
                             put("srcFs", "$remoteName:")
-                            put("srcLeaf", remoteRelPath.removePrefix("/"))
+                            // FIX: same as uploadFile — "srcRemote" not "srcLeaf"
+                            put("srcRemote", remoteRelPath.removePrefix("/"))
                             put("dstFs", localFile.parentFile?.absolutePath ?: "")
                             put("dstRemote", localFile.name)
                         },
                     ).getOrThrow()
                 }
                 Unit
+            }
+        }
+
+    /**
+     * Independent verification that a file exists on the remote at [remotePath], with the
+     * expected [expectedSize] in bytes. Uses a SEPARATE `operations/list` rc call — not the
+     * same channel as the upload — so a bug in upload params can't be masked by a bug in
+     * verification.
+     *
+     * This is the restic-style "remote is source of truth" check: after uploadFile() reports
+     * success, this method independently confirms the file is actually there by listing the
+     * remote directory and checking for the file by name + size.
+     *
+     * @return `Result.success(true)` only if the file exists at the exact path AND its size
+     *   matches. `Result.success(false)` if the file is absent. `Result.failure` on I/O error.
+     *
+     * @since PR1 sync — independent verification (Step 2 of false-success fix)
+     */
+    suspend fun verifyFileExists(remotePath: String, expectedSize: Long): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                awaitRcdReady().getOrThrow()
+                callMutex.withLock {
+                    val remoteName = remotePath.substringBefore(':')
+                    val remoteRelPath = remotePath.substringAfter(':').removePrefix("/")
+                    // The file's parent dir on the remote (e.g. "originals" for "originals/abc.crypt")
+                    val parentDir = remoteRelPath.substringBeforeLast('/', "")
+                    val fileName = remoteRelPath.substringAfterLast('/')
+
+                    val resp = invokeRc(
+                        op = "operations/list",
+                        params = buildJsonObject {
+                            put("fs", "$remoteName:")
+                            put("remote", parentDir)
+                        },
+                    ).getOrThrow()
+
+                    val list = resp["list"] as? JsonArray
+                        ?: throw IOException("Malformed list response (no 'list' array): $resp")
+
+                    val found = list.any { entry ->
+                        val obj = entry as? JsonObject ?: return@any false
+                        val name = (obj["Name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                        val size = (obj["Size"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+                        name == fileName && size == expectedSize
+                    }
+
+                    if (!found) {
+                        throw IOException(
+                            "File not found on remote after upload: " +
+                                "$remoteName:$remoteRelPath (expected size=$expectedSize). " +
+                                "Remote listing: $resp"
+                        )
+                    }
+                    true
+                }
             }
         }
 
@@ -133,13 +198,42 @@ class RcloneController @Inject constructor(
                         },
                     ).getOrThrow()
 
+                    // rclone's operations/hashsum returns:
+                    //   {"hashsum": [{"<hash_value>": "<remote_path>"}]}
+                    // where the hash IS the key and the path is the value.
+                    // Some rclone versions may return {"hashsum": [{"hash": "<algo>", "hash_value": "<hex>"}]}.
+                    // Handle both shapes. If neither matches, throw (never return true on parse failure).
                     val arr = resp["hashsum"] as? JsonArray
-                        ?: throw IOException("Malformed hashsum response: $resp")
+                        ?: throw IOException("Malformed hashsum response (no 'hashsum' array): $resp")
                     val firstEntry = arr.firstOrNull() as? JsonObject
-                        ?: throw IOException("Empty hashsum response")
-                    val actualHash = firstEntry.keys.firstOrNull()
-                        ?: throw IOException("Hashsum response missing hash key: $firstEntry")
-                    actualHash.equals(expectedSha256, ignoreCase = true)
+                        ?: throw IOException("Empty hashsum response: $resp")
+
+                    val actualHash: String = when {
+                        // Shape 1: {"<64-char-hex>": "<path>"} — hash is the key
+                        firstEntry.keys.any { it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" } } ->
+                            firstEntry.keys.first { it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" } }
+
+                        // Shape 2: {"hash": "<algo>", "hash_value": "<hex>"} — hash is a value
+                        (firstEntry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content != null ->
+                            (firstEntry["hash_value"] as kotlinx.serialization.json.JsonPrimitive).content
+
+                        // Shape 3: single key that looks like a hex hash of any length
+                        firstEntry.keys.size == 1 && firstEntry.keys.first().all { c -> c in "0123456789abcdefABCDEF" } ->
+                            firstEntry.keys.first()
+
+                        else -> throw IOException(
+                            "Could not extract hash from hashsum response: $firstEntry (full: $resp)"
+                        )
+                    }
+
+                    val match = actualHash.equals(expectedSha256, ignoreCase = true)
+                    if (!match) {
+                        throw IOException(
+                            "Hash mismatch: local=$expectedSha256 remote=$actualHash " +
+                                "(response: $resp)"
+                        )
+                    }
+                    match
                 }
             }
         }
@@ -316,24 +410,49 @@ class RcloneController @Inject constructor(
                     setRequestProperty("Authorization", basicAuthHeader())
                     setRequestProperty("Content-Type", "application/json")
                 }
+                val respText: String
+                val code: Int
                 try {
                     val body = json.encodeToString(JsonObject.serializer(), params).toByteArray()
                     conn.outputStream.use { it.write(body) }
-                    val code = conn.responseCode
+                    code = conn.responseCode
                     val respStream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val respText = respStream?.bufferedReader()?.use { it.readText() }
+                    respText = respStream?.bufferedReader()?.use { it.readText() }
                         ?: ""
-                    if (code !in 200..299) {
-                        throw IOException("rclone $op failed: HTTP $code — $respText")
-                    }
-                    if (respText.isBlank()) {
-                        JsonObject(emptyMap())
-                    } else {
-                        json.parseToJsonElement(respText) as? JsonObject
-                            ?: throw IOException("rclone $op returned non-object: $respText")
-                    }
                 } finally {
                     conn.disconnect()
+                }
+
+                // ─── DIAGNOSTIC LOGGING ───────────────────────────────────────────
+                // Log every rc call to sync_log.txt so we can diagnose false-success
+                // without logcat. Never logs config contents — only op name, params
+                // (which are paths, not credentials), HTTP status, and response body.
+                SyncLogger.logRcCall(op, params, code, respText)
+
+                // ─── ERROR CHECKING (Bug B fix) ───────────────────────────────────
+                // rclone rcd may return HTTP 200 with an {"error": "..."} field for
+                // certain failure modes (async-style errors, backend auth failures,
+                // unreachable remotes). We must check the error field REGARDLESS of
+                // HTTP status — not just on non-2xx.
+                if (code !in 200..299) {
+                    throw IOException("rclone $op failed: HTTP $code — $respText")
+                }
+
+                if (respText.isBlank()) {
+                    JsonObject(emptyMap())
+                } else {
+                    val parsed = json.parseToJsonElement(respText)
+                    val jsonObj = parsed as? JsonObject
+                        ?: throw IOException("rclone $op returned non-object: $respText")
+
+                    // Check for rclone's error field (present on failure even with HTTP 200)
+                    val errorElement = jsonObj["error"]
+                    if (errorElement != null && errorElement !is kotlinx.serialization.json.JsonNull) {
+                        val errorMsg = errorElement.toString()
+                        throw IOException("rclone $op returned error: $errorMsg (full response: $respText)")
+                    }
+
+                    jsonObj
                 }
             }
         }
