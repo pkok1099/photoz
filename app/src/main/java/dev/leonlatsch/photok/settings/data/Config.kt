@@ -166,6 +166,29 @@ class Config(context: Context) {
         get() = getString(SYNC_CHOSEN_REMOTE, null)
         set(value) = putString(SYNC_CHOSEN_REMOTE, value)
 
+    /**
+     * The repo ID this device is bound to. Set by [dev.leonlatsch.photok.sync.rclone.RepoManager]
+     * after a successful register or login. `null` means no repo has been set up yet.
+     *
+     * @since PR1 sync — mandatory repo setup
+     */
+    var repoId: String?
+        get() = getString(REPO_ID, null)
+        set(value) = putString(REPO_ID, value)
+
+    /**
+     * Whether the repo session has been confirmed (marker file verified on remote).
+     * This is the gate for gallery access — the gallery is unreachable until this is true.
+     *
+     * Note: this is a local flag. On cold start, [dev.leonlatsch.photok.sync.rclone.RepoManager.revalidateRepo]
+     * should be called to confirm the remote is still reachable.
+     *
+     * @since PR1 sync — mandatory repo setup
+     */
+    var repoConfirmed: Boolean
+        get() = getBoolean(REPO_CONFIRMED, false)
+        set(value) = putBoolean(REPO_CONFIRMED, value)
+
     // In memory flags
     var justFinishedSetup: Boolean = false
     var lastUsedUnlockMethod: VaultProtectionType? = null
@@ -307,5 +330,11 @@ class Config(context: Context) {
          * @since PR1 sync addendum (remote picker)
          */
         const val SYNC_CHOSEN_REMOTE = "sync^chosenRemote"
+
+        /** @since PR1 sync — mandatory repo setup */
+        const val REPO_ID = "sync^repoId"
+
+        /** @since PR1 sync — mandatory repo setup */
+        const val REPO_CONFIRMED = "sync^repoConfirmed"
     }
 }

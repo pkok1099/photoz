@@ -110,6 +110,24 @@ class PhotoSyncWorker @AssistedInject constructor(
             return Result.failure()
         }
 
+        // ─── HARD GUARD: no upload without a confirmed repo session ──────────
+        // This should NEVER trigger in normal operation — the gallery is gated behind
+        // repo setup, so the user can't import photos (and thus can't enqueue sync
+        // jobs) without a confirmed repo. If this fires, it's a real bug to surface
+        // loudly, not swallow.
+        if (!config.repoConfirmed || config.syncChosenRemote.isNullOrBlank()) {
+            val msg = "PhotoSyncWorker: FATAL — upload attempted without confirmed repo session " +
+                "(repoConfirmed=${config.repoConfirmed}, remote=${config.syncChosenRemote}). " +
+                "This should never happen — gallery is gated behind repo setup."
+            Timber.e(msg)
+            CrashLogger.logCrash(Thread.currentThread(), FatalSyncException(msg),
+                context = "PhotoSyncWorker hard guard (no repo session) uuid=$uuid")
+            try {
+                photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+            } catch (_: Exception) {}
+            return Result.failure()
+        }
+
         runCatching { setForeground(getForegroundInfo()) }
 
         val photo = try {

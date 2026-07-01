@@ -23,6 +23,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dev.leonlatsch.photok.settings.data.Config
+import dev.leonlatsch.photok.sync.rclone.RepoManager
 import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.sync.rclone.RcloneController
 import javax.inject.Singleton
@@ -44,6 +45,15 @@ object SyncModule {
         app: Application,
         configManager: RcloneConfigManager,
     ) = RcloneController(app, configManager)
+
+    @Provides
+    @Singleton
+    fun provideRepoManager(
+        app: Application,
+        config: Config,
+        rcloneController: RcloneController,
+        configManager: RcloneConfigManager,
+    ) = RepoManager(app, config, rcloneController, configManager)
 
     @Provides
     @Singleton

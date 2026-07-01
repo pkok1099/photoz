@@ -127,19 +127,42 @@ class RcloneController @Inject constructor(
 
     /**
      * Independent verification that a file exists on the remote at [remotePath], with the
-     * expected [expectedSize] in bytes. Uses a SEPARATE `operations/list` rc call — not the
-     * same channel as the upload — so a bug in upload params can't be masked by a bug in
-     * verification.
-     *
-     * This is the restic-style "remote is source of truth" check: after uploadFile() reports
-     * success, this method independently confirms the file is actually there by listing the
-     * remote directory and checking for the file by name + size.
-     *
-     * @return `Result.success(true)` only if the file exists at the exact path AND its size
-     *   matches. `Result.success(false)` if the file is absent. `Result.failure` on I/O error.
-     *
-     * @since PR1 sync — independent verification (Step 2 of false-success fix)
+     * expected [expectedSize] in bytes.
      */
+    /**
+     * List files in a directory on the remote. Returns a list of [RemoteFileInfo] (name + size).
+     * Used by [RepoManager.detectRepo] to check for the repo marker file.
+     *
+     * @since PR1 sync — mandatory repo setup
+     */
+    suspend fun listRemote(remoteFs: String, remoteDir: String): Result<List<RemoteFileInfo>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                awaitRcdReady().getOrThrow()
+                callMutex.withLock {
+                    val resp = invokeRc(
+                        op = "operations/list",
+                        params = buildJsonObject {
+                            put("fs", remoteFs)
+                            put("remote", remoteDir)
+                        },
+                    ).getOrThrow()
+
+                    val list = resp["list"] as? JsonArray
+                        ?: throw IOException("Malformed list response (no 'list' array): $resp")
+
+                    list.mapNotNull { entry ->
+                        val obj = entry as? JsonObject ?: return@mapNotNull null
+                        val name = (obj["Name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                            ?: return@mapNotNull null
+                        val size = (obj["Size"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+                            ?: -1L
+                        RemoteFileInfo(name = name, size = size)
+                    }
+                }
+            }
+        }
+
     suspend fun verifyFileExists(remotePath: String, expectedSize: Long): Result<Boolean> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -514,6 +537,12 @@ class RcloneController @Inject constructor(
     }
 
     enum class RcdState { STOPPED, STARTING, READY, DEAD }
+
+    /**
+     * File info returned by [listRemote]. Simple name + size pair.
+     * @since PR1 sync — mandatory repo setup
+     */
+    data class RemoteFileInfo(val name: String, val size: Long)
 
     /**
      * Thrown when the rclone backend doesn't support the requested hash type (e.g. Koofr

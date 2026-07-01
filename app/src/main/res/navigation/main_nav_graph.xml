@@ -149,6 +149,10 @@
         android:name="dev.leonlatsch.photok.gallery.ui.GalleryFragment"
         android:label="GalleryFragment" />
     <fragment
+        android:id="@+id/repoSetupFragment"
+        android:name="dev.leonlatsch.photok.reposetup.ui.RepoSetupFragment"
+        android:label="RepoSetupFragment" />
+    <fragment
         android:id="@+id/albumsFragment"
         android:name="dev.leonlatsch.photok.gallery.albums.ui.AlbumsFragment"
         android:label="GalleryFragment">
