@@ -198,42 +198,82 @@ class RcloneController @Inject constructor(
                         },
                     ).getOrThrow()
 
-                    // rclone's operations/hashsum returns:
-                    //   {"hashsum": [{"<hash_value>": "<remote_path>"}]}
-                    // where the hash IS the key and the path is the value.
-                    // Some rclone versions may return {"hashsum": [{"hash": "<algo>", "hash_value": "<hex>"}]}.
-                    // Handle both shapes. If neither matches, throw (never return true on parse failure).
+                    // rclone's operations/hashsum response format (empirically verified
+                    // via local rcd test against Koofr — see test harness):
+                    //   {"hashType":"sha256","hashsum":["<64-char-hash-or-spaces> <path>"]}
+                    // The hashsum array contains STRINGS (not objects as the rclone docs
+                    // imply). Each string is "<left-padded-hash> <path>".
+                    //
+                    // If the backend doesn't support the hash type, the hash field is
+                    // all spaces (blank). Koofr, for example, does NOT support sha256
+                    // natively — the hash comes back blank.
                     val arr = resp["hashsum"] as? JsonArray
                         ?: throw IOException("Malformed hashsum response (no 'hashsum' array): $resp")
-                    val firstEntry = arr.firstOrNull() as? JsonObject
-                        ?: throw IOException("Empty hashsum response: $resp")
 
-                    val actualHash: String = when {
-                        // Shape 1: {"<64-char-hex>": "<path>"} — hash is the key
-                        firstEntry.keys.any { it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" } } ->
-                            firstEntry.keys.first { it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" } }
+                    if (arr.isEmpty()) {
+                        throw IOException("Empty hashsum response (file may not exist): $resp")
+                    }
 
-                        // Shape 2: {"hash": "<algo>", "hash_value": "<hex>"} — hash is a value
-                        (firstEntry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content != null ->
-                            (firstEntry["hash_value"] as kotlinx.serialization.json.JsonPrimitive).content
+                    // Find the entry matching our file path (hashsum may list multiple files
+                    // if the remote path is a directory)
+                    val targetFileName = remoteRelPath.substringAfterLast('/')
+                    val matchingEntry = arr.firstOrNull { entry ->
+                        when (entry) {
+                            is kotlinx.serialization.json.JsonPrimitive -> {
+                                val str = entry.content
+                                str.contains(targetFileName)
+                            }
+                            is JsonObject -> {
+                                // Alternate format: {"<hash>": "<path>"} or {"hash":"...","hash_value":"..."}
+                                val keys = entry.keys
+                                keys.any { it.contains(targetFileName) } ||
+                                    (entry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content != null
+                            }
+                            else -> false
+                        }
+                    } ?: throw IOException("File not found in hashsum response: $targetFileName (full: $resp)")
 
-                        // Shape 3: single key that looks like a hex hash of any length
-                        firstEntry.keys.size == 1 && firstEntry.keys.first().all { c -> c in "0123456789abcdefABCDEF" } ->
-                            firstEntry.keys.first()
+                    val actualHash: String = when (matchingEntry) {
+                        is kotlinx.serialization.json.JsonPrimitive -> {
+                            // Format: "<64-char-hash-or-spaces> <path>"
+                            // Extract the first 64 chars (the hash field), trim spaces
+                            val str = matchingEntry.content
+                            val hashField = str.take(64).trim()
+                            hashField
+                        }
+                        is JsonObject -> {
+                            // Try hash-is-key format
+                            val hexKey = matchingEntry.keys.firstOrNull {
+                                it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" }
+                            }
+                            if (hexKey != null) {
+                                hexKey
+                            } else {
+                                // Try hash_value field
+                                (matchingEntry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                                    ?: throw IOException("Could not extract hash from hashsum entry: $matchingEntry")
+                            }
+                        }
+                        else -> throw IOException("Unexpected hashsum entry type: $matchingEntry")
+                    }
 
-                        else -> throw IOException(
-                            "Could not extract hash from hashsum response: $firstEntry (full: $resp)"
+                    if (actualHash.isBlank()) {
+                        // Backend doesn't support this hash type (e.g. Koofr + sha256).
+                        // Throw a specific exception so the caller can decide to skip hash
+                        // verification and rely on size check (verifyFileExists) only.
+                        throw HashNotSupportedException(
+                            "Backend does not support sha256 hash (returned blank). " +
+                                "Rely on verifyFileExists() for verification. Response: $resp"
                         )
                     }
 
                     val match = actualHash.equals(expectedSha256, ignoreCase = true)
                     if (!match) {
                         throw IOException(
-                            "Hash mismatch: local=$expectedSha256 remote=$actualHash " +
-                                "(response: $resp)"
+                            "Hash mismatch: local=$expectedSha256 remote=$actualHash (response: $resp)"
                         )
                     }
-                    match
+                    true
                 }
             }
         }
@@ -474,6 +514,13 @@ class RcloneController @Inject constructor(
     }
 
     enum class RcdState { STOPPED, STARTING, READY, DEAD }
+
+    /**
+     * Thrown when the rclone backend doesn't support the requested hash type (e.g. Koofr
+     * + sha256). The caller should treat this as "hash verification skipped" and rely on
+     * [verifyFileExists] (size check) instead.
+     */
+    class HashNotSupportedException(message: String) : Exception(message)
 
     companion object {
         private const val BINARY_NAME = "rclone"

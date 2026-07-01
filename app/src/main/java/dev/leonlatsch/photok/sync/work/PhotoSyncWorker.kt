@@ -229,17 +229,32 @@ class PhotoSyncWorker @AssistedInject constructor(
         // ─── INDEPENDENT VERIFICATION (Step 2 — restic-style "remote is source of truth") ───
         // After uploadFile() reports success, do NOT trust it. Three independent checks:
         // 1. verifyFileExists: separate operations/list call — confirm file is at the exact
-        //    destination path with the expected size. This would have caught the srcLeaf/srcRemote
-        //    param bug immediately (file was never uploaded, so listing would show it absent).
+        //    destination path with the expected size. This is the PRIMARY verification —
+        //    it works on ALL backends (Koofr, S3, Dropbox, etc.) regardless of hash support.
         // 2. verifyRemote: hash check via operations/hashsum — confirm bytes match.
+        //    This is BEST-EFFORT: some backends (e.g. Koofr) don't support sha256 natively
+        //    and return a blank hash. In that case, we skip hash verification and rely on
+        //    the size check from verifyFileExists. This is safe because:
+        //    - The upload is encrypted (rclone copies exact bytes, no transcoding)
+        //    - verifyFileExists confirms the file exists with the correct size
+        //    - A size match on an exact-byte-copy is strong evidence of correct upload
         // 3. (size check is part of verifyFileExists)
         //
-        // Only if ALL checks pass does syncState become UPLOADED. Any failure → UPLOAD_FAILED.
+        // Only if verifyFileExists passes AND (verifyRemote passes OR hash is unsupported)
+        // does syncState become UPLOADED. Any other failure → UPLOAD_FAILED.
         val localSize = origPath.length()
         rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
 
         val localHash = sha256OfFile(origPath.absolutePath)
-        rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
+        try {
+            rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
+        } catch (e: RcloneController.HashNotSupportedException) {
+            // Backend doesn't support sha256 — log and skip hash verification.
+            // verifyFileExists (size check) already passed, which is sufficient.
+            Timber.w("PhotoSyncWorker: hash verification skipped for %s — backend doesn't support sha256. Relying on size check. %s", uuid, e.message)
+            SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED",
+                "hash skipped (unsupported), size verified OK")
+        }
     }
 
     private fun deleteLocalOriginalAfterUpload(photo: Photo) {
