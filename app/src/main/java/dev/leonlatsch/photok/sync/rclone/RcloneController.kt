@@ -436,6 +436,25 @@ class RcloneController @Inject constructor(
             val pb = ProcessBuilder(argv).redirectErrorStream(true)
             pb.directory(app.filesDir)
 
+            // ─── Force Go's cgo DNS resolver (Layer 4 fix) ────────────────────────
+            // The rclone binary is now built with CGO_ENABLED=1 (see
+            // scripts/build-rclone.sh), so Go SHOULD prefer the cgo resolver
+            // automatically (goosPrefersCgo() returns true for "android"). But
+            // as a belt-and-suspenders safety net, explicitly force it via
+            // GODEBUG=netdns=cgo+1. The "+1" enables debug logging so we can
+            // confirm via logcat which resolver is actually in use.
+            //
+            // Background: Go's pure-Go DNS resolver does NOT work on Android
+            // because there's no /etc/resolv.conf accessible to app processes.
+            // It falls back to hardcoded defaultNS = ["127.0.0.1:53", "[::1]:53"]
+            // — nothing listens there, so every DNS query fails with
+            // "connection refused". This is Go issue #10714. The cgo resolver
+            // goes through Bionic getaddrinfo() → Android netd → real DNS.
+            //
+            // See skills/android-native-binary-bundling/references/go-dns-on-android.md
+            // for the full writeup.
+            pb.environment()["GODEBUG"] = "netdns=cgo+1"
+
             diag("startRcdProcess: about to pb.start(), cmd=${argv.joinToString(" ")}")
             val p = try {
                 pb.start()
