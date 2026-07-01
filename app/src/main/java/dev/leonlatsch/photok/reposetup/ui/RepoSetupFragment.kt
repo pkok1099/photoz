@@ -123,7 +123,7 @@ private fun RepoSetupScreen(
                 is RepoSetupState.NeedsRemoteChoice -> NeedsRemoteChoiceContent(s.remotes, viewModel)
                 RepoSetupState.Checking -> CheckingContent()
                 RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
-                RepoSetupState.LoggingIn -> LoggingInContent()
+                RepoSetupState.Connecting -> ConnectingContent()
                 RepoSetupState.Completed -> {
                     // Will be navigated away by LaunchedEffect
                 }
@@ -227,10 +227,10 @@ private fun ReadyToRegisterContent(viewModel: RepoSetupViewModel) {
 }
 
 @Composable
-private fun LoggingInContent() {
+private fun ConnectingContent() {
     CircularProgressIndicator()
     Text(
-        text = stringResource(R.string.repo_setup_logging_in),
+        text = stringResource(R.string.repo_setup_connecting),
         modifier = Modifier.padding(top = 16.dp),
     )
 }

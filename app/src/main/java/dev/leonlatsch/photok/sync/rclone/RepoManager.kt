@@ -242,8 +242,19 @@ class RepoManager @Inject constructor(
     }
 
     /**
-     * Login to an existing repo. Read-only — does NOT touch the marker file.
-     * Persists the repo binding locally.
+     * "Login" to an existing repo — **connect to the remote**, NOT log into the app.
+     *
+     * This is a read-only confirmation that the repo marker file exists on the
+     * remote and matches the locally-stored repo binding. It does NOT involve any
+     * authentication of the user to the app — the app's vault unlock (PIN/password)
+     * is a separate, independent gate.
+     *
+     * The name "loginRepo" is retained for backwards compatibility but should be
+     * read as "connect to remote repo session". UI strings use "Connecting to your
+     * cloud storage…" (not "logging in") to avoid implying the user is logging
+     * into PhotoZ itself.
+     *
+     * Read-only — does NOT touch the marker file. Persists the repo binding locally.
      */
     suspend fun loginRepo(marker: RepoMarker): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {

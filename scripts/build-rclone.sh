@@ -148,7 +148,7 @@ for abi in "${!ABI_TO_GOARCH[@]}"; do
         export GOARCH="$goarch"
         [[ "$goarch" == "arm" ]] && export GOARM=7
         export CGO_ENABLED=1
-        export CGO_LDFLAGS="-fuse-ld=lld -s -w"
+        export CGO_LDFLAGS="-fuse-ld=lld -s -w -Wl,-z,max-page-size=16384"
         # Use a project-local GOCACHE/GOPATH so we don't pollute the user's
         # default and so the build is reproducible across machines.
         export GOCACHE="${GOCACHE:-$REPO_ROOT/.gocache}"
@@ -186,6 +186,22 @@ for abi in "${!ABI_TO_GOARCH[@]}"; do
         exit 1
     fi
     echo "  ✓ $(file "$target_file" | sed 's/,/ /g')"
+
+    # ─── Verify 16KB page alignment (Android 15+ requirement) ───────────────
+    # Android 16's compatibility checker flags .so files whose LOAD segments
+    # are aligned to 4KB (0x1000) instead of 16KB (0x4000). The
+    # -Wl,-z,max-page-size=16384 flag in CGO_LDFLAGS should handle this, but
+    # verify the artifact rather than trusting flags alone.
+    READELF="${ANDROID_NDK_HOME:-}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+    if [[ -x "$READELF" ]]; then
+        align=$("$READELF" -l "$target_file" 2>/dev/null | awk '/LOAD/ {print $NF; exit}')
+        echo "  LOAD segment alignment: $align (0x4000 = 16KB ✓, 0x1000 = 4KB ✗)"
+        if [[ "$align" == "0x1000" ]]; then
+            echo "ERROR: $target_file LOAD segments are 4KB-aligned, not 16KB."
+            echo "Android 16 compatibility checker will flag this. Aborting."
+            exit 1
+        fi
+    fi
 
     echo "  Wrote $target_file ($(stat -c%s "$target_file") bytes)"
 done

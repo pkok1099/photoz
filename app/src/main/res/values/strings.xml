@@ -418,14 +418,15 @@
     <string name="sync_settings_choose_remote_failed">Couldn\'t set the chosen remote, try again</string>
 
     <!-- Repo setup (mandatory) — @since PR1 sync — mandatory repo setup -->
-    <string name="repo_setup_title">Set up cloud backup</string>
-    <string name="repo_setup_needs_config">A cloud backup remote is required to use Photok. Import your rclone.conf file to continue.</string>
+    <string name="repo_setup_title">Connect to your cloud storage</string>
+    <string name="repo_setup_needs_config">A cloud backup remote is required to use PhotoZ. Import your rclone.conf file to continue.</string>
     <string name="repo_setup_pick_config">Import rclone.conf</string>
     <string name="repo_setup_pick_remote">Pick which remote to use for backup</string>
     <string name="repo_setup_checking">Checking remote…</string>
     <string name="repo_setup_ready_to_register">No backup repo exists on this remote yet. A new repo will be created.</string>
     <string name="repo_setup_register">Create repo</string>
-    <string name="repo_setup_logging_in">Opening existing repo…</string>
+    <string name="repo_setup_connecting">Connecting to your cloud storage…</string>
+    <string name="repo_setup_connected">Connected to %1$s</string>
     <string name="repo_setup_error">Error</string>
     <string name="repo_setup_retry">Retry</string>
 </resources>

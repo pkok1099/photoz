@@ -51,8 +51,8 @@ sealed interface RepoSetupState {
     /** Remote reachable, no repo exists — user needs to confirm register. */
     object ReadyToRegister : RepoSetupState
 
-    /** Remote reachable, repo exists — logging in (read-only). */
-    object LoggingIn : RepoSetupState
+    /** Remote reachable, repo exists — connecting (read-only confirmation). */
+    object Connecting : RepoSetupState
 
     /** Repo session confirmed — gallery can be unlocked. */
     object Completed : RepoSetupState
@@ -150,14 +150,17 @@ class RepoSetupViewModel @Inject constructor(
                 _state.value = RepoSetupState.ReadyToRegister
             }
             is RepoManager.RepoState.LOGGED_IN -> {
-                // Repo exists — login (read-only, no re-write)
-                _state.value = RepoSetupState.LoggingIn
+                // Repo exists — connect (read-only, no re-write).
+                // NOTE: this is "connect to remote", NOT "log into the app".
+                // The app's vault unlock (PIN/password) is a separate, independent
+                // gate. This state confirms the remote repo session only.
+                _state.value = RepoSetupState.Connecting
                 val loginResult = repoManager.loginRepo(repoState.marker)
                 if (loginResult.isSuccess) {
                     _state.value = RepoSetupState.Completed
                 } else {
                     _state.value = RepoSetupState.Error(
-                        "Login failed: ${loginResult.exceptionOrNull()?.message}"
+                        "Connection failed: ${loginResult.exceptionOrNull()?.message}"
                     )
                 }
             }

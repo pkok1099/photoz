@@ -23,7 +23,7 @@ android {
     compileSdk = VersionCodes.BAKLAVA
 
     defaultConfig {
-        applicationId = "dev.leonlatsch.photok"
+        applicationId = "onlasdan.gallery"
         minSdk = 35
         targetSdk = 36
 
@@ -226,11 +226,23 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
 
     // CameraX - camera access for QR scanning
-    val cameraXVersion = "1.4.2"
+    // Bumped 1.4.2 → 1.6.1 for Android 16 16KB-page-size compatibility.
+    // CameraX 1.5+ ships 16KB-aligned .so files (libsurface_util_jni.so,
+    // libimage_processing_util_jni.so). See:
+    // https://developer.android.com/guide/practices/page-sizes
+    val cameraXVersion = "1.6.1"
     implementation("androidx.camera:camera-core:$cameraXVersion")
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
+
+    // androidx.graphics:graphics-path — explicit declaration to force a
+    // 16KB-aligned version. This is a transitive dependency (pulled in by
+    // Compose/AndroidX UI libs) whose default version ships a 4KB-aligned
+    // libandroidx.graphics.path.so. Explicitly declaring 1.0.1+ ensures the
+    // 16KB-aligned build is used. See:
+    // https://developer.android.com/guide/practices/page-sizes
+    implementation("androidx.graphics:graphics-path:1.0.1")
 
     // jBCrypt for Password Hashing
     implementation("org.mindrot", "jbcrypt", "0.4")

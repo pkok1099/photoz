@@ -67,6 +67,23 @@ class PhotoSyncWorker @AssistedInject constructor(
     private val config: Config,
 ) : CoroutineWorker(appContext, params) {
 
+    // ─── DIAGNOSTIC LOGGING (same RcloneDiag pattern as RcloneController) ────
+    // Writes to BOTH Log.e (logcat) AND files/sync_log.txt so it's visible
+    // via `adb logcat -d | grep RcloneDiag` AND
+    // `adb shell run-as <pkg> cat files/sync_log.txt`.
+    // Critical for diagnosing upload failures — prior sessions' logging only
+    // covered repo detection/init, not the photo upload call chain itself.
+    private fun diag(msg: String, throwable: Throwable? = null) {
+        android.util.Log.e("RcloneDiag", "[UploadWorker] $msg", throwable)
+        try {
+            val logFile = java.io.File(appContext.filesDir, "sync_log.txt")
+            logFile.appendText("\n[RcloneDiag] [UploadWorker] $msg\n")
+            if (throwable != null) {
+                logFile.appendText(throwable.stackTraceToString() + "\n")
+            }
+        } catch (_: Exception) {}
+    }
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
         ensureChannel()
         return ForegroundInfo(
@@ -77,6 +94,7 @@ class PhotoSyncWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        diag("doWork: BEGIN uuid=${inputData.getString(KEY_PHOTO_UUID)} attempt=${runAttemptCount + 1}")
         // ─── TOP-LEVEL SAFETY NET ─────────────────────────────────────────────
         // Catch ALL throwables (including Error subclasses) to prevent the worker from crashing
         // the app process. CancellationException is re-thrown to respect coroutine cancellation.
@@ -85,7 +103,7 @@ class PhotoSyncWorker @AssistedInject constructor(
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
         } catch (t: Throwable) {
-            Timber.e(t, "PhotoSyncWorker: UNCAUGHT throwable in doWork — converting to failure")
+            diag("doWork: UNCAUGHT throwable — converting to failure", t)
             CrashLogger.logCrash(
                 Thread.currentThread(),
                 t,
@@ -219,60 +237,87 @@ class PhotoSyncWorker @AssistedInject constructor(
                     "and pick a remote from the imported config."
             )
         val uuid = photo.uuid
+        diag("performUpload: BEGIN uuid=$uuid remote=$remote photoType=${photo.type} syncState=${photo.syncState}")
 
+        // ─── Upload thumbnail ──────────────────────────────────────────────
         val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
         if (thumbPath.exists()) {
             val remoteThumb = "$remote:${SyncConfig.remoteThumbnailsDir}/${thumbPath.name}"
-            rcloneController.uploadFile(thumbPath.absolutePath, remoteThumb).getOrThrow()
+            diag("performUpload: uploading thumbnail ${thumbPath.absolutePath} (size=${thumbPath.length()}) → $remoteThumb")
+            try {
+                rcloneController.uploadFile(thumbPath.absolutePath, remoteThumb).getOrThrow()
+                diag("performUpload: thumbnail upload OK")
+            } catch (e: Exception) {
+                diag("performUpload: thumbnail upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+                throw e
+            }
+        } else {
+            diag("performUpload: thumbnail file does not exist, skipping: ${thumbPath.absolutePath}")
         }
 
+        // ─── Upload video preview (if video) ───────────────────────────────
         if (photo.type.isVideo) {
             val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
             if (vpPath.exists()) {
                 val remoteVp = "$remote:${SyncConfig.remoteVideosDir}/${vpPath.name}"
-                rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
+                diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
+                try {
+                    rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
+                    diag("performUpload: video preview upload OK")
+                } catch (e: Exception) {
+                    diag("performUpload: video preview upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+                    throw e
+                }
             }
         }
 
+        // ─── Upload original ───────────────────────────────────────────────
         val origPath = appContext.getFileStreamPath(photo.internalFileName)
         if (!origPath.exists()) {
+            diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
             throw FatalSyncException(
                 "Local original file missing for $uuid before upload. " +
                     "Photo may have been deleted out-of-band."
             )
         }
         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
-        rcloneController.uploadFile(origPath.absolutePath, remoteOrig).getOrThrow()
+        diag("performUpload: uploading original ${origPath.absolutePath} (size=${origPath.length()}) → $remoteOrig")
+        try {
+            rcloneController.uploadFile(origPath.absolutePath, remoteOrig).getOrThrow()
+            diag("performUpload: original upload OK")
+        } catch (e: Exception) {
+            diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+            throw e
+        }
 
-        // ─── INDEPENDENT VERIFICATION (Step 2 — restic-style "remote is source of truth") ───
-        // After uploadFile() reports success, do NOT trust it. Three independent checks:
-        // 1. verifyFileExists: separate operations/list call — confirm file is at the exact
-        //    destination path with the expected size. This is the PRIMARY verification —
-        //    it works on ALL backends (Koofr, S3, Dropbox, etc.) regardless of hash support.
-        // 2. verifyRemote: hash check via operations/hashsum — confirm bytes match.
-        //    This is BEST-EFFORT: some backends (e.g. Koofr) don't support sha256 natively
-        //    and return a blank hash. In that case, we skip hash verification and rely on
-        //    the size check from verifyFileExists. This is safe because:
-        //    - The upload is encrypted (rclone copies exact bytes, no transcoding)
-        //    - verifyFileExists confirms the file exists with the correct size
-        //    - A size match on an exact-byte-copy is strong evidence of correct upload
-        // 3. (size check is part of verifyFileExists)
-        //
-        // Only if verifyFileExists passes AND (verifyRemote passes OR hash is unsupported)
-        // does syncState become UPLOADED. Any other failure → UPLOAD_FAILED.
+        // ─── Independent verification: file exists with correct size ───────
         val localSize = origPath.length()
-        rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
+        diag("performUpload: verifying file exists on remote (expected size=$localSize)")
+        try {
+            rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
+            diag("performUpload: verifyFileExists OK")
+        } catch (e: Exception) {
+            diag("performUpload: verifyFileExists FAILED: ${e.javaClass.name}: ${e.message}", e)
+            throw e
+        }
 
+        // ─── Independent verification: hash match (best-effort) ────────────
         val localHash = sha256OfFile(origPath.absolutePath)
+        diag("performUpload: verifying hash (local sha256=$localHash)")
         try {
             rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
+            diag("performUpload: hash verification OK")
         } catch (e: RcloneController.HashNotSupportedException) {
-            // Backend doesn't support sha256 — log and skip hash verification.
-            // verifyFileExists (size check) already passed, which is sufficient.
+            diag("performUpload: hash verification skipped — backend doesn't support sha256. Relying on size check.")
             Timber.w("PhotoSyncWorker: hash verification skipped for %s — backend doesn't support sha256. Relying on size check. %s", uuid, e.message)
             SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED",
                 "hash skipped (unsupported), size verified OK")
+        } catch (e: Exception) {
+            diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+            throw e
         }
+
+        diag("performUpload: DONE — all uploads + verifications succeeded for $uuid")
     }
 
     private fun deleteLocalOriginalAfterUpload(photo: Photo) {
@@ -349,6 +394,17 @@ class PhotoSyncWorker @AssistedInject constructor(
         private const val NOTIFICATION_ID = 4242
 
         fun enqueue(context: Context, photo: Photo) {
+            // Log at enqueue time so we can confirm the worker is actually being
+            // scheduled after photo import (if this log doesn't appear, the bug
+            // is in the call chain BEFORE the worker, not in the worker itself).
+            android.util.Log.e("RcloneDiag",
+                "[UploadWorker] enqueue: BEGIN uuid=${photo.uuid} autoUploadEnabled=${SyncConfig.autoUploadEnabled}")
+            try {
+                java.io.File(context.filesDir, "sync_log.txt").appendText(
+                    "\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid}\n"
+                )
+            } catch (_: Exception) {}
+
             val request = OneTimeWorkRequestBuilder<PhotoSyncWorker>()
                 .setInputData(workDataOf(KEY_PHOTO_UUID to photo.uuid))
                 .setConstraints(
@@ -369,6 +425,14 @@ class PhotoSyncWorker @AssistedInject constructor(
                 ExistingWorkPolicy.KEEP,
                 request,
             )
+
+            android.util.Log.e("RcloneDiag",
+                "[UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork called for uuid=${photo.uuid}")
+            try {
+                java.io.File(context.filesDir, "sync_log.txt").appendText(
+                    "[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork called for uuid=${photo.uuid}\n"
+                )
+            } catch (_: Exception) {}
         }
     }
 }

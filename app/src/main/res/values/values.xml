@@ -15,6 +15,6 @@
   -->
 
 <resources>
-    <string name="app_name" translatable="false">Photok</string>
-    <string name="app_launcher_name" translatable="false">Photok</string>
+    <string name="app_name" translatable="false">PhotoZ</string>
+    <string name="app_launcher_name" translatable="false">PhotoZ</string>
 </resources>
