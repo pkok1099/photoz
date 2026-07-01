@@ -412,26 +412,70 @@ class RcloneController @Inject constructor(
         }
     }
 
+    /**
+     * Locate the rclone binary at runtime and prepare it for execution.
+     *
+     * ## Android execution restriction (the bug this fixes)
+     *
+     * The rclone binary is packaged as `librclone.so` under `jniLibs/<abi>/` (Android requires
+     * the `lib*.so` naming for files in that directory). At install time, Android extracts it
+     * to `nativeLibraryDir`. However, on Android 14+ (API 34+), `nativeLibraryDir` is mapped
+     * read-only + executable for **loading** (via `dlopen`/`System.loadLibrary`), NOT for
+     * `exec()` as a subprocess. Attempting `ProcessBuilder(nativeLibraryDir/librclone.so).start()`
+     * fails with `EACCES` or `ENOEXEC` — the file exists but cannot be executed.
+     *
+     * ## Fix: copy to codeCacheDir
+     *
+     * `app.codeCacheDir` is writable + executable on all Android versions — it's designed for
+     * JIT-compiled code but also works for app-bundled executables that need to be run as
+     * subprocesses. We copy `librclone.so` from `nativeLibraryDir` to `codeCacheDir/rclone`,
+     * set the executable bit, and execute from there.
+     *
+     * The copy is cached — we only re-copy if the source file's size differs from the cached
+     * copy (e.g. after an app update that ships a new rclone version).
+     *
+     * @since PR1 sync — fix for "binary not found" / EACCES on Android 14+
+     */
     private fun locateRcloneBinary(): File {
-        val candidates = buildList {
-            add(File(configManager.binDir, BINARY_NAME))
-            val nativeLibDir = app.applicationInfo.nativeLibraryDir
-            if (nativeLibDir.isNotBlank()) {
-                add(File(nativeLibDir, BINARY_LIB_NAME))
-                add(File(nativeLibDir, BINARY_NAME))
-            }
-        }
+        // Step 1: find the source binary in nativeLibraryDir (packaged as librclone.so)
+        val nativeLibDir = app.applicationInfo.nativeLibraryDir
+        val sourceFile = if (nativeLibDir.isNotBlank()) {
+            val asLib = File(nativeLibDir, BINARY_LIB_NAME)  // librclone.so
+            val asPlain = File(nativeLibDir, BINARY_NAME)    // rclone (fallback)
+            asLib.takeIf { it.exists() && it.isFile }
+                ?: asPlain.takeIf { it.exists() && it.isFile }
+        } else null
 
-        val found = candidates.firstOrNull { it.exists() && it.isFile }
+        // Also check the developer-convenience path (<filesDir>/rclone/bin/rclone)
+        val devPath = File(configManager.binDir, BINARY_NAME).takeIf { it.exists() && it.isFile }
+        val source = sourceFile ?: devPath
             ?: throw IllegalStateException(
-                "rclone binary not found. Tried: ${candidates.joinToString { it.absolutePath }}. " +
+                "rclone binary not found. " +
+                    "nativeLibraryDir=$nativeLibDir, " +
+                    "checked: ${BINARY_LIB_NAME}, ${BINARY_NAME} in nativeLibraryDir; " +
+                    "${BINARY_NAME} in ${configManager.binDir}. " +
                     "Run scripts/build-rclone.sh first; see README sync section."
             )
 
-        if (!found.canExecute()) {
-            found.setExecutable(true, true)
+        // Step 2: copy to codeCacheDir (writable + executable on all Android versions).
+        // This is the critical fix — nativeLibraryDir is NOT executable for subprocesses
+        // on Android 14+. codeCacheDir is.
+        val execDir = app.codeCacheDir
+        execDir.mkdirs()
+        val execFile = File(execDir, "rclone")
+
+        // Only re-copy if the cached copy doesn't exist or size differs (app update with
+        // new rclone version).
+        if (!execFile.exists() || execFile.length() != source.length()) {
+            source.copyTo(execFile, overwrite = true)
         }
-        return found
+
+        // Step 3: ensure executable bit is set.
+        if (!execFile.canExecute()) {
+            execFile.setExecutable(true, true)
+        }
+
+        return execFile
     }
 
     private suspend fun ping(): Result<Unit> = withContext(Dispatchers.IO) {
