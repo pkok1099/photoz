@@ -57,6 +57,27 @@ class RcloneController @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ─── DIAGNOSTIC LOGGING (Step B) ─────────────────────────────────────
+    // Unconditional (NOT debug-flag-gated). Writes to BOTH:
+    //   1. Log.e under tag "RcloneDiag" → visible via `adb logcat -d | grep RcloneDiag`
+    //   2. files/sync_log.txt → visible via
+    //      `adb shell run-as dev.leonlatsch.photok cat files/sync_log.txt`
+    // Called from every layer of the call chain so we can trace exactly how far
+    // execution gets before the "binary not found" / EACCES / ENOEXEC failure surfaces.
+    // The `app` instance is non-null at any call site (constructor-injected).
+    private fun diag(msg: String, throwable: Throwable? = null) {
+        android.util.Log.e("RcloneDiag", msg, throwable)
+        try {
+            val logFile = java.io.File(app.filesDir, "sync_log.txt")
+            logFile.appendText("\n[RcloneDiag] $msg\n")
+            if (throwable != null) {
+                logFile.appendText(throwable.stackTraceToString() + "\n")
+            }
+        } catch (_: Exception) {
+            // Never let diag() itself throw and disrupt the calling code path.
+        }
+    }
+
     private val _state = MutableStateFlow(RcdState.STOPPED)
     val state = _state.asStateFlow()
 
@@ -138,6 +159,8 @@ class RcloneController @Inject constructor(
     suspend fun listRemote(remoteFs: String, remoteDir: String): Result<List<RemoteFileInfo>> =
         withContext(Dispatchers.IO) {
             runCatching {
+                diag("listRemote: BEGIN fs=$remoteFs dir=$remoteDir state=${_state.value}")
+
                 awaitRcdReady().getOrThrow()
                 callMutex.withLock {
                     val resp = invokeRc(
@@ -151,7 +174,7 @@ class RcloneController @Inject constructor(
                     val list = resp["list"] as? JsonArray
                         ?: throw IOException("Malformed list response (no 'list' array): $resp")
 
-                    list.mapNotNull { entry ->
+                    val mapped = list.mapNotNull { entry ->
                         val obj = entry as? JsonObject ?: return@mapNotNull null
                         val name = (obj["Name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                             ?: return@mapNotNull null
@@ -159,6 +182,8 @@ class RcloneController @Inject constructor(
                             ?: -1L
                         RemoteFileInfo(name = name, size = size)
                     }
+                    diag("listRemote: DONE, ${mapped.size} entries")
+                    mapped
                 }
             }
         }
@@ -318,40 +343,53 @@ class RcloneController @Inject constructor(
     }
 
     private suspend fun awaitRcdReady(): Result<Unit> {
+        diag("awaitRcdReady: BEGIN state=${_state.value}")
         if (_state.value == RcdState.READY && ping().isSuccess) {
+            diag("awaitRcdReady: already READY (fast path)")
             return Result.success(Unit)
         }
 
         return readinessMutex.withLock {
             if (_state.value == RcdState.READY && ping().isSuccess) {
+                diag("awaitRcdReady: already READY (under mutex)")
                 return@withLock Result.success(Unit)
             }
 
             process?.let { existing ->
                 if (!existing.isAlive) {
+                    diag("awaitRcdReady: existing process not alive, clearing")
                     process = null
                     _state.value = RcdState.DEAD
                 } else if (!ping().isSuccess) {
+                    diag("awaitRcdReady: existing process alive but ping failed, killing")
                     runCatching { existing.destroyForcibly() }
                     process = null
                     _state.value = RcdState.DEAD
                 }
             }
 
+            diag("awaitRcdReady: about to call startRcdProcess()")
             startRcdProcess().getOrElse { err ->
+                diag(
+                    "awaitRcdReady: startRcdProcess FAILED — exception class=${err.javaClass.name} message=${err.message}",
+                    err
+                )
                 _state.value = RcdState.DEAD
                 return@withLock Result.failure(err)
             }
+            diag("awaitRcdReady: startRcdProcess returned OK, polling for readiness")
 
             val deadline = System.currentTimeMillis() + RCD_READY_TIMEOUT_MS
             while (System.currentTimeMillis() < deadline) {
                 if (ping().isSuccess) {
+                    diag("awaitRcdReady: ping succeeded, state=READY")
                     _state.value = RcdState.READY
                     return@withLock Result.success(Unit)
                 }
                 delay(POLL_INTERVAL_MS)
             }
 
+            diag("awaitRcdReady: TIMEOUT after ${RCD_READY_TIMEOUT_MS}ms — rcd did not become ready")
             _state.value = RcdState.DEAD
             Result.failure(IOException("rclone rcd did not become ready within ${RCD_READY_TIMEOUT_MS} ms"))
         }
@@ -359,15 +397,27 @@ class RcloneController @Inject constructor(
 
     private suspend fun startRcdProcess(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            diag(
+                "startRcdProcess: BEGIN state=${_state.value} " +
+                    "filesDir=${app.filesDir.absolutePath} " +
+                    "codeCacheDir=${app.codeCacheDir.absolutePath} " +
+                    "nativeLibraryDir=${app.applicationInfo.nativeLibraryDir}"
+            )
             val binary = locateRcloneBinary()
+            diag(
+                "startRcdProcess: locateRcloneBinary returned ${binary.absolutePath} " +
+                    "size=${binary.length()} canExecute=${binary.canExecute()}"
+            )
             val conf = configManager.configFile
                 ?: throw IllegalStateException(
                     "No rclone.conf imported. Call RcloneConfigManager.import() first."
                 )
+            diag("startRcdProcess: config=${conf.absolutePath} size=${conf.length()}")
 
             port = pickFreePort()
             authToken = generateToken()
             authUser = "photok"
+            diag("startRcdProcess: spawning rcd on port=$port")
 
             val argv = mutableListOf(
                 binary.absolutePath,
@@ -386,79 +436,133 @@ class RcloneController @Inject constructor(
             val pb = ProcessBuilder(argv).redirectErrorStream(true)
             pb.directory(app.filesDir)
 
+            diag("startRcdProcess: about to pb.start(), cmd=${argv.joinToString(" ")}")
             val p = try {
                 pb.start()
             } catch (e: IOException) {
+                // THE critical log point: this is where W^X / EACCES / ENOEXEC surfaces.
+                // Log the FULL cause chain — the actual errno string is usually in the
+                // innermost cause (e.g. "Permission denied" / "EACCES" / "Not executable").
+                diag("startRcdProcess: pb.start() THREW ${e.javaClass.name}: ${e.message}", e)
+                var cause: Throwable? = e.cause
+                var depth = 0
+                while (cause != null && depth < 10) {
+                    diag("startRcdProcess:   caused by [depth=$depth] ${cause.javaClass.name}: ${cause.message}")
+                    cause = cause.cause
+                    depth++
+                }
                 throw IOException("Failed to spawn rclone binary at ${binary.absolutePath}", e)
             }
             process = p
             _state.value = RcdState.STARTING
+            diag("startRcdProcess: pb.start() OK, alive=${p.isAlive} toString=${p}")
 
             Thread({
                 runCatching {
                     p.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
+                            diag("rclone-stdout: $line")
                             if (line.isNotBlank()) Timber.tag("rclone").v(line)
                         }
                     }
                 }
+                // Drain thread exits when the process exits or the stream closes.
+                // Capture the exit code — if rcd starts and immediately crashes,
+                // this is the only signal we'll get.
+                val exitCode = runCatching { p.waitFor() }.getOrDefault(-1)
+                diag("rclone-stdout-drain: EXIT — process exitCode=$exitCode alive=${p.isAlive}")
                 _state.value = RcdState.DEAD
             }, "rclone-stdout-drain").apply {
                 isDaemon = true
                 start()
             }
 
+            diag("startRcdProcess: DONE, returning")
             Unit
         }
     }
 
     /**
-     * Locate the rclone binary at runtime and prepare it for execution.
+     * Locate the rclone binary at runtime and return a path that can be `exec()`'d.
      *
-     * ## Android execution restriction (the bug this fixes)
+     * ## The bug history (read this if debugging "binary not found" or EACCES)
      *
-     * The rclone binary is packaged as `librclone.so` under `jniLibs/<abi>/` (Android requires
-     * the `lib*.so` naming for files in that directory). At install time, Android extracts it
-     * to `nativeLibraryDir`. However, on Android 14+ (API 34+), `nativeLibraryDir` is mapped
-     * read-only + executable for **loading** (via `dlopen`/`System.loadLibrary`), NOT for
-     * `exec()` as a subprocess. Attempting `ProcessBuilder(nativeLibraryDir/librclone.so).start()`
-     * fails with `EACCES` or `ENOEXEC` — the file exists but cannot be executed.
+     * The rclone binary is packaged as `librclone.so` under `jniLibs/<abi>/` (Android
+     * requires the `lib*.so` naming convention for jniLibs). Three layers of issues
+     * had to be peeled back to get to a working subprocess execution:
      *
-     * ## Fix: copy to codeCacheDir
+     * **Issue 1 (solved in build.gradle.kts):** AGP's default
+     * `useLegacyPackaging = null` → `extractNativeLibs = false` → `.so` files are
+     * mmap'd from the APK zip by `dlopen`, NEVER extracted to `nativeLibraryDir`
+     * on disk. Symptom: `nativeSrcLib.exists = false`. Fix:
+     * `packaging { jniLibs { useLegacyPackaging = true } }` forces on-disk extraction
+     * at install time. After this fix, `librclone.so` is present in
+     * `nativeLibraryDir` as a real file.
      *
-     * `app.codeCacheDir` is writable + executable on all Android versions — it's designed for
-     * JIT-compiled code but also works for app-bundled executables that need to be run as
-     * subprocesses. We copy `librclone.so` from `nativeLibraryDir` to `codeCacheDir/rclone`,
-     * set the executable bit, and execute from there.
+     * **Issue 2 (solved in this function — CURRENT FIX):** After Issue 1 was solved,
+     * the prior approach copied `librclone.so` from `nativeLibraryDir` to
+     * `codeCacheDir/rclone` and exec'd from there. This fails with `EACCES` (errno 13)
+     * at the kernel `exec()` syscall level on Android 10+ (API 29+), enforced
+     * increasingly strictly in every release (Android 16 included). This is the
+     * **W^X (write XOR execute) policy**: Android blocks executing any file the app
+     * wrote itself at runtime — including `files/`, `code_cache/`, `cache/`, and
+     * any other app-private writable directory. This is enforced via SELinux policy
+     * + `noexec`-equivalent mount semantics, NOT via POSIX file mode bits. Setting
+     * `File.setExecutable(true)` succeeds (Java reports `canExecute()=true`) but the
+     * kernel still refuses `execve()`.
      *
-     * The copy is cached — we only re-copy if the source file's size differs from the cached
-     * copy (e.g. after an app update that ships a new rclone version).
+     * **The one exception** to the W^X policy: files under `nativeLibraryDir` —
+     * because those are extracted by the **system package installer** from the
+     * app's own **signed, verified APK** at install time, not written by the app
+     * process itself at runtime. That's the entire reason `nativeLibraryDir` is
+     * exempted: the OS trusts what it extracted from a signed package, not what
+     * the app wrote to its own sandbox afterward.
+     *
+     * ## Current fix: exec directly from nativeLibraryDir, no copy
+     *
+     * When the binary is found in `nativeLibraryDir` (Layer 1, the normal case
+     * after Issue 1 is solved), **return that path directly** — do not copy it
+     * anywhere, do not rename it. Exec the OS-extracted file in place. This is
+     * the only location where Android's W^X policy allows `exec()` of an
+     * app-bundled binary on Android 10+.
+     *
+     * ## Layer 2 fallback: APK-zip extraction (last-ditch, expected to fail on 10+)
+     *
+     * If `nativeLibraryDir` is somehow empty (OEM ROM quirk, future AGP regression,
+     * user-side install glitch), `extractBinaryFromApkZip()` extracts the binary
+     * from the app's own APK zip into `codeCacheDir/rclone`. **Note: this will
+     * fail with EACCES on Android 10+ per the W^X policy above** — it exists only
+     * to produce a more informative error than "binary not found" on devices where
+     * Layer 1 didn't apply, and to keep working on the (rare) Android versions
+     * where W^X is not yet enforced. If Layer 2 is reached AND fails with EACCES,
+     * the only remaining viable path is rebuilding rclone as a real JNI library
+     * (via `github.com/rclone/rclone/librclone`, the gomobile-bindable package)
+     * and calling into it via `System.loadLibrary()` — that's a separate project.
      *
      * @since PR1 sync — fix for "binary not found" / EACCES on Android 14+
      */
     private fun locateRcloneBinary(): File {
-        val tag = "RcloneDiag"
-
-        // ─── DIAGNOSTIC LOGGING (unconditional, not debug-only) ──────────────
-        // Write to both Log.e (logcat) and sync_log.txt (file, readable via
-        // adb shell run-as dev.leonlatsch.photok cat files/sync_log.txt).
-        // This is the only way to diagnose "code_cache empty" without logcat.
-        fun diag(msg: String, throwable: Throwable? = null) {
-            android.util.Log.e(tag, msg, throwable)
-            try {
-                val logFile = java.io.File(app.filesDir, "sync_log.txt")
-                logFile.appendText("\n[$tag] $msg\n")
-                if (throwable != null) {
-                    logFile.appendText(throwable.stackTraceToString() + "\n")
-                }
-            } catch (_: Exception) {}
-        }
-
         diag("locateRcloneBinary: START")
 
         // Step 1: find the source binary in nativeLibraryDir
         val nativeLibDir = app.applicationInfo.nativeLibraryDir
         diag("nativeLibraryDir=$nativeLibDir")
+
+        // Detect symlink: with `useLegacyPackaging = null` (AGP default), .so files
+        // are stored uncompressed+page-aligned inside the APK and accessed via a
+        // virtual symlink-like path at nativeLibraryDir. If absolutePath !=
+        // canonicalPath, the file is a symlink into the APK — ProcessBuilder.start()
+        // on it will fail because there's no real on-disk file to execve().
+        try {
+            val nativeLibDirFile = java.io.File(nativeLibDir)
+            diag(
+                "nativeLibraryDir canonical=${nativeLibDirFile.canonicalPath} " +
+                    "absolute=${nativeLibDirFile.absolutePath} " +
+                    "isSymlink=${nativeLibDirFile.absolutePath != nativeLibDirFile.canonicalPath}"
+            )
+        } catch (e: Exception) {
+            diag("nativeLibraryDir canonicalPath FAILED: ${e.message}", e)
+        }
 
         val nativeSrcLib = if (nativeLibDir.isNotBlank()) {
             java.io.File(nativeLibDir, BINARY_LIB_NAME)
@@ -473,53 +577,199 @@ class RcloneController @Inject constructor(
         val devPath = java.io.File(configManager.binDir, BINARY_NAME)
         diag("devPath(${devPath.absolutePath}) exists=${devPath.exists()} size=${devPath.length()} canRead=${devPath.canRead()}")
 
-        val source = nativeSrcLib?.takeIf { it.exists() && it.isFile }
+        // Detect symlinks on each candidate source file too.
+        for (cand in listOf(nativeSrcLib, nativeSrcPlain, devPath)) {
+            if (cand == null) continue
+            try {
+                val isSymlink = cand.absolutePath != cand.canonicalPath
+                diag("cand ${cand.absolutePath} canonical=${cand.canonicalPath} isFile=${cand.isFile} isSymlink=$isSymlink")
+            } catch (e: Exception) {
+                diag("cand ${cand.absolutePath} canonicalPath FAILED: ${e.message}", e)
+            }
+        }
+
+        val onDiskSource = nativeSrcLib?.takeIf { it.exists() && it.isFile }
             ?: nativeSrcPlain?.takeIf { it.exists() && it.isFile }
             ?: devPath.takeIf { it.exists() && it.isFile }
 
-        if (source == null) {
-            diag("locateRcloneBinary: SOURCE NOT FOUND in any location")
+        // ─── Layer 1: nativeLibraryDir — exec directly, NO COPY ───────────────────
+        //
+        // This is the ONLY location where Android 10+ W^X policy allows exec() of an
+        // app-bundled binary. The file was extracted by the system package installer
+        // from the signed APK at install time, so the OS trusts it. Copying it to
+        // codeCacheDir/filesDir/cacheDir would mark it as "app-written at runtime"
+        // and the kernel would refuse to execve() it with EACCES, regardless of the
+        // file's mode bits. So: do NOT copy. Return the nativeLibraryDir path
+        // directly. The OS already set the executable bit during install-time
+        // extraction (and `ProcessBuilder.start()` does not require Java's
+        // `canExecute()` to return true — it goes straight to `execve()`).
+        //
+        // `devPath` (files/rclone/bin/rclone) is also handled here for backwards
+        // compatibility — but note that on Android 10+ this path is also W^X-blocked
+        // (it's app-writable). It will only work on older Android versions.
+        if (onDiskSource != null) {
+            diag("locateRcloneBinary: Layer 1 — returning ${onDiskSource.absolutePath} directly (no copy, no codeCacheDir)")
+            diag("locateRcloneBinary: WARNING — if this path is NOT under nativeLibraryDir (e.g. it's under files/), expect EACCES on Android 10+")
+            diag("locateRcloneBinary: DONE, returning ${onDiskSource.absolutePath} (sourced from nativeLibraryDir-or-binDir, Layer 1, NO COPY)")
+            return onDiskSource
+        }
+
+        // ─── Layer 2: APK-zip extraction fallback (EXPECTED TO FAIL on Android 10+) ─
+        // Used when Layer 1 found nothing on disk (extractNativeLibs=false install,
+        // OEM ROM quirk, future AGP regression, etc.). Sources the binary directly
+        // from the app's own APK at `applicationInfo.sourceDir`, entry
+        // `lib/<abi>/librclone.so`. The app can always read its own APK file.
+        // ZipFile.getInputStream() transparently decompresses Stored OR Defl:N.
+        //
+        // ⚠️ This writes to codeCacheDir, which is W^X-blocked on Android 10+. The
+        // file will be created and `setExecutable(true)` will return true, but
+        // `ProcessBuilder.start()` will subsequently fail with EACCES at execve()
+        // time. Layer 2 is kept only to produce a more informative error than
+        // "binary not found" on devices where Layer 1 didn't apply, and to keep
+        // working on the rare Android versions where W^X is not yet enforced.
+        // If Layer 2 is reached AND fails with EACCES, the only remaining viable
+        // path is rebuilding rclone as a real JNI library via
+        // `github.com/rclone/rclone/librclone` (gomobile-bindable, distinct from
+        // the CLI `main` package currently bundled) and calling into it via
+        // `System.loadLibrary()` — that's a separate project.
+        diag("locateRcloneBinary: Layer 1 found nothing on disk; falling back to Layer 2 (APK zip extraction — EXPECTED TO FAIL on Android 10+ per W^X)")
+        val apkSource = extractBinaryFromApkZip()
+        if (apkSource == null) {
+            diag("locateRcloneBinary: Layer 2 ALSO failed — no source obtainable")
             throw IllegalStateException(
                 "rclone binary not found. " +
                     "nativeLibraryDir=$nativeLibDir, " +
-                    "checked: ${BINARY_LIB_NAME} (exists=${nativeSrcLib?.exists()}), " +
+                    "checked on-disk: ${BINARY_LIB_NAME} (exists=${nativeSrcLib?.exists()}), " +
                     "${BINARY_NAME} (exists=${nativeSrcPlain?.exists()}) in nativeLibraryDir; " +
-                    "${BINARY_NAME} in ${configManager.binDir} (exists=${devPath.exists()}). " +
+                    "${BINARY_NAME} in ${configManager.binDir} (exists=${devPath.exists()}); " +
+                    "also tried APK-zip extraction (Layer 2) — see RcloneDiag logs above for details. " +
                     "Run scripts/build-rclone.sh first; see README sync section."
             )
         }
+        diag("locateRcloneBinary: Layer 2 succeeded (file extracted to codeCacheDir), but EXPECT EACCES on Android 10+ when pb.start() is called")
+        diag("locateRcloneBinary: DONE, returning ${apkSource.absolutePath} (sourced from apk-zip-extraction, Layer 2)")
+        return apkSource
+    }
 
-        diag("source=${source.absolutePath} size=${source.length()}")
+    /**
+     * Layer 2 fallback: extract `librclone.so` directly from the app's own APK zip.
+     *
+     * Opens `applicationInfo.sourceDir` (the on-disk path of the installed base APK) as a
+     * `java.util.zip.ZipFile`, locates entry `lib/<abi>/librclone.so` for the current ABI,
+     * streams it to `codeCacheDir/rclone`, and sets the executable bit.
+     *
+     * This works regardless of `useLegacyPackaging` / `extractNativeLibs` because the app
+     * can always read its own APK file, and `ZipFile.getInputStream()` transparently
+     * decompresses both `Stored` (uncompressed) and `Defl:N` (deflate-compressed) entries.
+     *
+     * @return the extracted `File` (in `codeCacheDir`, executable bit set), or `null` if
+     *   the entry could not be found in the APK or extraction failed (failure is logged
+     *   via `diag()` before returning null — never throws, so the caller can fall through
+     *   to its own error handling).
+     */
+    private fun extractBinaryFromApkZip(): java.io.File? {
+        val apkPath = app.applicationInfo.sourceDir
+        diag("extractBinaryFromApkZip: BEGIN apkPath=$apkPath")
+        if (apkPath.isNullOrBlank()) {
+            diag("extractBinaryFromApkZip: ABORT — applicationInfo.sourceDir is null/blank")
+            return null
+        }
+        val apkFile = java.io.File(apkPath)
+        if (!apkFile.exists() || !apkFile.canRead()) {
+            diag("extractBinaryFromApkZip: ABORT — apk file not readable: ${apkFile.absolutePath} exists=${apkFile.exists()} canRead=${apkFile.canRead()}")
+            return null
+        }
+        diag("extractBinaryFromApkZip: apk exists size=${apkFile.length()} canRead=${apkFile.canRead()}")
 
-        // Step 2: copy to codeCacheDir
+        // Determine the current ABI. We use `Build.SUPPORTED_ABIS[0]` (the device's
+        // preferred ABI) rather than `applicationInfo.primaryCpuAbi` because the latter
+        // is hidden behind Android's system-API surface and not directly accessible
+        // from Kotlin app code without reflection. For an arm64-v8a-only APK installed
+        // on an arm64 device (the only supported configuration), SUPPORTED_ABIS[0] is
+        // `arm64-v8a` — exactly what we want. If the APK were multi-ABI, the OS would
+        // pick the best match and we'd want the same one for extraction; since we ship
+        // arm64-v8a-only, this is deterministic.
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull()
+        diag("extractBinaryFromApkZip: chosenAbi=$abi SUPPORTED_ABIS=${android.os.Build.SUPPORTED_ABIS.joinToString(",")}")
+        if (abi.isNullOrBlank()) {
+            diag("extractBinaryFromApkZip: ABORT — no ABI determinable")
+            return null
+        }
+
+        // Inside the APK, jniLibs entries are packed under `lib/<abi>/`, NOT `jniLibs/<abi>/`.
+        // This is the post-build in-APK path; the `jniLibs/` source path is only the
+        // gradle source-set name.
+        val entryName = "lib/$abi/$BINARY_LIB_NAME"
+        diag("extractBinaryFromApkZip: looking for zip entry '$entryName'")
+
         val execDir = app.codeCacheDir
-        diag("codeCacheDir=${execDir.absolutePath} exists=${execDir.exists()} canWrite=${execDir.canWrite()}")
         execDir.mkdirs()
         val execFile = java.io.File(execDir, "rclone")
 
-        if (!execFile.exists() || execFile.length() != source.length()) {
-            diag("copying ${source.absolutePath} → ${execFile.absolutePath}")
-            try {
-                source.copyTo(execFile, overwrite = true)
-                diag("copyTo succeeded, execFile size=${execFile.length()}")
-            } catch (e: Exception) {
-                diag("copyTo FAILED", e)
-                throw e
+        return try {
+            java.util.zip.ZipFile(apkFile).use { zf ->
+                val entry = zf.getEntry(entryName)
+                if (entry == null) {
+                    diag("extractBinaryFromApkZip: entry '$entryName' NOT FOUND in APK. Listing all lib/* entries:")
+                    // List available lib entries to aid debugging (e.g. wrong ABI name,
+                    // binary not packaged at all, etc.).
+                    val entries = zf.entries()
+                    while (entries.hasMoreElements()) {
+                        val e = entries.nextElement()
+                        if (e.name.startsWith("lib/")) {
+                            diag("extractBinaryFromApkZip:   apk contains: ${e.name} size=${e.size} method=${e.method}")
+                        }
+                    }
+                    return null
+                }
+                diag("extractBinaryFromApkZip: entry found, compressedSize=${entry.compressedSize} size=${entry.size} method=${entry.method} (0=STORED, 8=DEFLATED)")
+
+                // Stream the entry to codeCacheDir/rclone. Use a temp file + atomic rename
+                // so a partial write never leaves a corrupt rclone in codeCacheDir.
+                val tmpFile = java.io.File(execDir, "rclone.tmp.${System.currentTimeMillis()}")
+                try {
+                    zf.getInputStream(entry).use { input ->
+                        java.io.FileOutputStream(tmpFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    diag("extractBinaryFromApkZip: wrote tmp file, size=${tmpFile.length()}")
+                } catch (e: Exception) {
+                    diag("extractBinaryFromApkZip: tmp write FAILED: ${e.javaClass.name}: ${e.message}", e)
+                    tmpFile.delete()
+                    return null
+                }
+
+                // Atomic rename over any existing rclone.
+                if (!tmpFile.renameTo(execFile)) {
+                    diag("extractBinaryFromApkZip: rename FAILED — falling back to copy+delete")
+                    try {
+                        tmpFile.copyTo(execFile, overwrite = true)
+                        tmpFile.delete()
+                    } catch (e: Exception) {
+                        diag("extractBinaryFromApkZip: fallback copy FAILED: ${e.javaClass.name}: ${e.message}", e)
+                        tmpFile.delete()
+                        return null
+                    }
+                }
+                diag("extractBinaryFromApkZip: execFile in place, size=${execFile.length()}")
+
+                // Set executable bit.
+                if (!execFile.canExecute()) {
+                    val ok = execFile.setExecutable(true, true)
+                    diag("extractBinaryFromApkZip: setExecutable result=$ok canExecute=${execFile.canExecute()}")
+                    if (!ok) {
+                        diag("extractBinaryFromApkZip: WARNING — setExecutable returned false; exec may fail with EACCES")
+                    }
+                }
+
+                diag("extractBinaryFromApkZip: DONE, returning ${execFile.absolutePath}")
+                execFile
             }
-        } else {
-            diag("cached copy exists, size matches (${execFile.length()}), skipping copy")
+        } catch (e: Exception) {
+            diag("extractBinaryFromApkZip: ZipFile open/read FAILED: ${e.javaClass.name}: ${e.message}", e)
+            null
         }
-
-        // Step 3: ensure executable bit
-        if (!execFile.canExecute()) {
-            val setExecOk = execFile.setExecutable(true, true)
-            diag("setExecutable result=$setExecOk canExecute=${execFile.canExecute()}")
-        } else {
-            diag("already executable")
-        }
-
-        diag("locateRcloneBinary: DONE, returning ${execFile.absolutePath}")
-        return execFile
     }
 
     private suspend fun ping(): Result<Unit> = withContext(Dispatchers.IO) {

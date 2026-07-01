@@ -91,17 +91,39 @@ class RepoManager @Inject constructor(
      * have completed (i.e. rcd is running with a valid config and a chosen remote).
      */
     suspend fun detectRepo(): RepoState = withContext(Dispatchers.IO) {
+        // ─── DIAGNOSTIC LOGGING (Step B) ─────────────────────────────────
+        // detectRepo() is the user-facing entry point for the bug: it's the first
+        // call that triggers locateRcloneBinary() during login/repo-init. If we
+        // never see this log line, the bug is in the call chain ABOVE detectRepo
+        // (e.g. the ViewModel doesn't call it, or short-circuits before).
+        android.util.Log.e(
+            "RcloneDiag",
+            "detectRepo: BEGIN remote=${config.syncChosenRemote} repoConfirmed=${config.repoConfirmed}"
+        )
+        try {
+            java.io.File(app.filesDir, "sync_log.txt").appendText(
+                "\n[RcloneDiag] detectRepo: BEGIN remote=${config.syncChosenRemote} repoConfirmed=${config.repoConfirmed}\n"
+            )
+        } catch (_: Exception) {}
+
         val remote = config.syncChosenRemote
         if (remote.isNullOrBlank()) {
+            android.util.Log.e("RcloneDiag", "detectRepo: ABORT — no remote chosen")
             return@withContext RepoState.ERROR("No remote chosen")
         }
 
         val repoRoot = "$remote:$REPO_DIR"
         try {
             // Use operations/list to check for the marker file
+            android.util.Log.e("RcloneDiag", "detectRepo: calling listRemote($repoRoot)")
             val result = rcloneController.listRemote("$remote:", REPO_DIR)
             if (result.isFailure) {
                 val err = result.exceptionOrNull()?.message ?: "unknown error"
+                android.util.Log.e(
+                    "RcloneDiag",
+                    "detectRepo: listRemote FAILED class=${result.exceptionOrNull()?.javaClass?.name} msg=$err",
+                    result.exceptionOrNull()
+                )
                 // Only treat as "repo not initialized" if the error is specifically about
                 // the remote directory not existing. Do NOT match "not found" generically —
                 // that would also match "rclone binary not found" from locateRcloneBinary(),
@@ -113,24 +135,33 @@ class RepoManager @Inject constructor(
                         !err.contains("binary", ignoreCase = true) &&
                         !err.contains("rclone", ignoreCase = true))
                 if (isDirNotFound) {
+                    android.util.Log.e("RcloneDiag", "detectRepo: classifying as NOT_INITIALIZED (dir not found)")
                     return@withContext RepoState.NOT_INITIALIZED
                 }
+                android.util.Log.e("RcloneDiag", "detectRepo: classifying as ERROR (not a dir-not-found error)")
                 return@withContext RepoState.ERROR(err)
             }
 
             val files = result.getOrThrow()
+            android.util.Log.e("RcloneDiag", "detectRepo: listRemote OK, ${files.size} files")
             val markerFile = files.find { it.name == MARKER_FILENAME }
             if (markerFile == null) {
+                android.util.Log.e("RcloneDiag", "detectRepo: marker not in listing → NOT_INITIALIZED")
                 return@withContext RepoState.NOT_INITIALIZED
             }
 
             // Marker exists — download and parse it
+            android.util.Log.e("RcloneDiag", "detectRepo: marker found, downloading")
             val tempMarker = File(app.cacheDir, "repo-config-download-${System.currentTimeMillis()}.json")
             val downloadResult = rcloneController.downloadFile(
                 "$remote:$REPO_DIR/$MARKER_FILENAME",
                 tempMarker.absolutePath
             )
             if (downloadResult.isFailure) {
+                android.util.Log.e(
+                    "RcloneDiag",
+                    "detectRepo: downloadFile FAILED msg=${downloadResult.exceptionOrNull()?.message}"
+                )
                 return@withContext RepoState.ERROR(
                     "Failed to download marker: ${downloadResult.exceptionOrNull()?.message}"
                 )
@@ -141,8 +172,10 @@ class RepoManager @Inject constructor(
             val marker = parseMarker(markerContent)
                 ?: return@withContext RepoState.ERROR("Malformed marker file")
 
+            android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LOGGED_IN repoId=${marker.repoId}")
             RepoState.LOGGED_IN(marker)
         } catch (e: Exception) {
+            android.util.Log.e("RcloneDiag", "detectRepo: CAUGHT ${e.javaClass.name}: ${e.message}", e)
             RepoState.ERROR(e.message ?: e.javaClass.simpleName)
         }
     }
