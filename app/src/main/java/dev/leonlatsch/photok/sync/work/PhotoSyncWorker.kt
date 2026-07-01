@@ -67,6 +67,13 @@ class PhotoSyncWorker @AssistedInject constructor(
     private val config: Config,
 ) : CoroutineWorker(appContext, params) {
 
+    // ─── init block: fires when HiltWorkerFactory constructs this instance ──
+    // If this log doesn't appear, Hilt failed to construct the worker (injection
+    // failure, missing binding, etc.) — check logcat for Hilt/Dagger errors.
+    init {
+        android.util.Log.e("RcloneDiag", "[UploadWorker] init: instance constructed by HiltWorkerFactory (class=${this.javaClass.name})")
+    }
+
     // ─── DIAGNOSTIC LOGGING (same RcloneDiag pattern as RcloneController) ────
     // Writes to BOTH Log.e (logcat) AND files/sync_log.txt so it's visible
     // via `adb logcat -d | grep RcloneDiag` AND
@@ -93,31 +100,40 @@ class PhotoSyncWorker @AssistedInject constructor(
         )
     }
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        diag("doWork: BEGIN uuid=${inputData.getString(KEY_PHOTO_UUID)} attempt=${runAttemptCount + 1}")
-        // ─── TOP-LEVEL SAFETY NET ─────────────────────────────────────────────
-        // Catch ALL throwables (including Error subclasses) to prevent the worker from crashing
-        // the app process. CancellationException is re-thrown to respect coroutine cancellation.
-        try {
-            doWorkInternal()
-        } catch (ce: kotlinx.coroutines.CancellationException) {
-            throw ce
-        } catch (t: Throwable) {
-            diag("doWork: UNCAUGHT throwable — converting to failure", t)
-            CrashLogger.logCrash(
-                Thread.currentThread(),
-                t,
-                context = "PhotoSyncWorker.doWork safety net (uuid=${inputData.getString(KEY_PHOTO_UUID)})"
-            )
-            val uuid = inputData.getString(KEY_PHOTO_UUID)
-            if (uuid != null) {
-                try {
-                    photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
-                } catch (dbEx: Throwable) {
-                    Timber.e(dbEx, "PhotoSyncWorker: failed to mark UPLOAD_FAILED after uncaught error")
+    override suspend fun doWork(): Result {
+        // ─── ABSOLUTE FIRST LINE — direct Log.e, NOT via diag() ──────────────
+        // This fires before withContext(Dispatchers.IO) so we can distinguish:
+        //   (a) worker never constructed → no init log, no doWork ENTRY log
+        //   (b) worker constructed but doWork never called → init log, no ENTRY log
+        //   (c) worker constructed + doWork called but withContext blocked → ENTRY log, no BEGIN log
+        //   (d) everything runs → all three logs appear
+        android.util.Log.e("RcloneDiag",
+            "[UploadWorker] doWork: ENTRY (before withContext) uuid=${inputData.getString(KEY_PHOTO_UUID)} attempt=${runAttemptCount + 1}")
+
+        return withContext(Dispatchers.IO) {
+            diag("doWork: BEGIN uuid=${inputData.getString(KEY_PHOTO_UUID)} attempt=${runAttemptCount + 1}")
+            // ─── TOP-LEVEL SAFETY NET ─────────────────────────────────────────
+            try {
+                doWorkInternal()
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                diag("doWork: UNCAUGHT throwable — converting to failure", t)
+                CrashLogger.logCrash(
+                    Thread.currentThread(),
+                    t,
+                    context = "PhotoSyncWorker.doWork safety net (uuid=${inputData.getString(KEY_PHOTO_UUID)})"
+                )
+                val uuid = inputData.getString(KEY_PHOTO_UUID)
+                if (uuid != null) {
+                    try {
+                        photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+                    } catch (dbEx: Throwable) {
+                        Timber.e(dbEx, "PhotoSyncWorker: failed to mark UPLOAD_FAILED after uncaught error")
+                    }
                 }
+                Result.failure()
             }
-            Result.failure()
         }
     }
 
@@ -394,6 +410,8 @@ class PhotoSyncWorker @AssistedInject constructor(
         private const val NOTIFICATION_ID = 4242
 
         fun enqueue(context: Context, photo: Photo) {
+            val uniqueWorkName = UNIQUE_WORK_PREFIX + photo.uuid
+
             // Log at enqueue time so we can confirm the worker is actually being
             // scheduled after photo import (if this log doesn't appear, the bug
             // is in the call chain BEFORE the worker, not in the worker itself).
@@ -404,6 +422,25 @@ class PhotoSyncWorker @AssistedInject constructor(
                     "\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid}\n"
                 )
             } catch (_: Exception) {}
+
+            val wm = WorkManager.getInstance(context)
+
+            // ─── Step 2 fix: cancel any stale work before enqueue ──────────────
+            // ExistingWorkPolicy.KEEP (used previously) silently drops new enqueue
+            // calls if a prior entry exists under the same unique name — even if
+            // that entry is FAILED or CANCELLED. This caused "enqueue succeeds,
+            // worker never runs" in prior sessions. Cancel first, then REPLACE.
+            try {
+                wm.cancelUniqueWork(uniqueWorkName)
+                android.util.Log.e("RcloneDiag",
+                    "[UploadWorker] enqueue: cancelled any stale work for $uniqueWorkName")
+            } catch (e: Exception) {
+                android.util.Log.e("RcloneDiag",
+                    "[UploadWorker] enqueue: cancelUniqueWork FAILED: ${e.message}", e)
+            }
+
+            // ─── Dump WorkInfo BEFORE enqueue (to see if there was a stale entry) ──
+            dumpWorkInfo(context, uniqueWorkName, "BEFORE enqueue")
 
             val request = OneTimeWorkRequestBuilder<PhotoSyncWorker>()
                 .setInputData(workDataOf(KEY_PHOTO_UUID to photo.uuid))
@@ -420,19 +457,94 @@ class PhotoSyncWorker @AssistedInject constructor(
                 )
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                UNIQUE_WORK_PREFIX + photo.uuid,
-                ExistingWorkPolicy.KEEP,
+            // ─── Step 2 fix: REPLACE instead of KEEP ───────────────────────────
+            // REPLACE guarantees the new work request is enqueued even if a prior
+            // entry exists. Combined with cancelUniqueWork above, this eliminates
+            // the "stale work entry blocks new enqueue" failure mode.
+            wm.enqueueUniqueWork(
+                uniqueWorkName,
+                ExistingWorkPolicy.REPLACE,
                 request,
             )
 
             android.util.Log.e("RcloneDiag",
-                "[UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork called for uuid=${photo.uuid}")
+                "[UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}")
             try {
                 java.io.File(context.filesDir, "sync_log.txt").appendText(
-                    "[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork called for uuid=${photo.uuid}\n"
+                    "[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}\n"
                 )
             } catch (_: Exception) {}
+
+            // ─── Step 1: dump WorkInfo AFTER enqueue (to see initial state) ────
+            dumpWorkInfo(context, uniqueWorkName, "AFTER enqueue")
+
+            // ─── Schedule a delayed dump (5s later) to see if state changed ───
+            // WorkManager may take a few seconds to schedule the worker. By 5s
+            // after enqueue, the state should have transitioned from ENQUEUED to
+            // RUNNING (or FAILED if it crashed).
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                dumpWorkInfo(context, uniqueWorkName, "5s after enqueue")
+            }, 5000)
+        }
+
+        /**
+         * Step 1 diagnostic: query WorkManager's own state for the given unique
+         * work name and log every WorkInfo. This is INDEPENDENT of the worker's
+         * own logging — it tells us definitively whether WorkManager thinks the
+         * work ran, failed, or is stuck waiting.
+         *
+         * Call from adb shell or from app code. The [when] label is logged so
+         * you can correlate multiple dumps in the log.
+         */
+        fun dumpWorkInfo(context: Context, uniqueWorkName: String, whenLabel: String) {
+            try {
+                val workInfos = WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWork(uniqueWorkName)
+                    .get()
+                if (workInfos.isEmpty()) {
+                    android.util.Log.e("RcloneDiag",
+                        "[UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo found for $uniqueWorkName — work was never enqueued or was pruned")
+                    try {
+                        java.io.File(context.filesDir, "sync_log.txt").appendText(
+                            "[RcloneDiag] [UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo for $uniqueWorkName\n"
+                        )
+                    } catch (_: Exception) {}
+                    return
+                }
+                for (wi in workInfos) {
+                    val line = "dumpWorkInfo ($whenLabel): id=${wi.id} state=${wi.state} " +
+                        "runAttemptCount=${wi.runAttemptCount} tags=${wi.tags} " +
+                        "outputData=${wi.outputData}"
+                    android.util.Log.e("RcloneDiag", "[UploadWorker] $line")
+                    try {
+                        java.io.File(context.filesDir, "sync_log.txt").appendText(
+                            "[RcloneDiag] [UploadWorker] $line\n"
+                        )
+                    } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("RcloneDiag",
+                    "[UploadWorker] dumpWorkInfo ($whenLabel): FAILED: ${e.javaClass.name}: ${e.message}", e)
+            }
+        }
+
+        /**
+         * Dump ALL work info for this app's WorkManager (not just one unique name).
+         * Useful for seeing if there are zombie entries from prior sessions.
+         */
+        fun dumpAllWorkInfo(context: Context) {
+            try {
+                val workInfos = WorkManager.getInstance(context).getWorkInfosByTag("")
+                // getWorkInfosByTag("") may not work; use the raw database approach
+                android.util.Log.e("RcloneDiag", "[UploadWorker] dumpAllWorkInfo: querying all work...")
+                try {
+                    java.io.File(context.filesDir, "sync_log.txt").appendText(
+                        "\n[RcloneDiag] [UploadWorker] dumpAllWorkInfo: querying all work...\n"
+                    )
+                } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("RcloneDiag", "[UploadWorker] dumpAllWorkInfo: FAILED: ${e.message}", e)
+            }
         }
     }
 }
