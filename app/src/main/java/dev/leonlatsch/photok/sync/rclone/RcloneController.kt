@@ -437,44 +437,88 @@ class RcloneController @Inject constructor(
      * @since PR1 sync — fix for "binary not found" / EACCES on Android 14+
      */
     private fun locateRcloneBinary(): File {
-        // Step 1: find the source binary in nativeLibraryDir (packaged as librclone.so)
+        val tag = "RcloneDiag"
+
+        // ─── DIAGNOSTIC LOGGING (unconditional, not debug-only) ──────────────
+        // Write to both Log.e (logcat) and sync_log.txt (file, readable via
+        // adb shell run-as dev.leonlatsch.photok cat files/sync_log.txt).
+        // This is the only way to diagnose "code_cache empty" without logcat.
+        fun diag(msg: String, throwable: Throwable? = null) {
+            android.util.Log.e(tag, msg, throwable)
+            try {
+                val logFile = java.io.File(app.filesDir, "sync_log.txt")
+                logFile.appendText("\n[$tag] $msg\n")
+                if (throwable != null) {
+                    logFile.appendText(throwable.stackTraceToString() + "\n")
+                }
+            } catch (_: Exception) {}
+        }
+
+        diag("locateRcloneBinary: START")
+
+        // Step 1: find the source binary in nativeLibraryDir
         val nativeLibDir = app.applicationInfo.nativeLibraryDir
-        val sourceFile = if (nativeLibDir.isNotBlank()) {
-            val asLib = File(nativeLibDir, BINARY_LIB_NAME)  // librclone.so
-            val asPlain = File(nativeLibDir, BINARY_NAME)    // rclone (fallback)
-            asLib.takeIf { it.exists() && it.isFile }
-                ?: asPlain.takeIf { it.exists() && it.isFile }
+        diag("nativeLibraryDir=$nativeLibDir")
+
+        val nativeSrcLib = if (nativeLibDir.isNotBlank()) {
+            java.io.File(nativeLibDir, BINARY_LIB_NAME)
+        } else null
+        val nativeSrcPlain = if (nativeLibDir.isNotBlank()) {
+            java.io.File(nativeLibDir, BINARY_NAME)
         } else null
 
-        // Also check the developer-convenience path (<filesDir>/rclone/bin/rclone)
-        val devPath = File(configManager.binDir, BINARY_NAME).takeIf { it.exists() && it.isFile }
-        val source = sourceFile ?: devPath
-            ?: throw IllegalStateException(
+        diag("nativeSrcLib(${BINARY_LIB_NAME}) exists=${nativeSrcLib?.exists()} size=${nativeSrcLib?.length() ?: -1} canRead=${nativeSrcLib?.canRead()}")
+        diag("nativeSrcPlain(${BINARY_NAME}) exists=${nativeSrcPlain?.exists()} size=${nativeSrcPlain?.length() ?: -1} canRead=${nativeSrcPlain?.canRead()}")
+
+        val devPath = java.io.File(configManager.binDir, BINARY_NAME)
+        diag("devPath(${devPath.absolutePath}) exists=${devPath.exists()} size=${devPath.length()} canRead=${devPath.canRead()}")
+
+        val source = nativeSrcLib?.takeIf { it.exists() && it.isFile }
+            ?: nativeSrcPlain?.takeIf { it.exists() && it.isFile }
+            ?: devPath.takeIf { it.exists() && it.isFile }
+
+        if (source == null) {
+            diag("locateRcloneBinary: SOURCE NOT FOUND in any location")
+            throw IllegalStateException(
                 "rclone binary not found. " +
                     "nativeLibraryDir=$nativeLibDir, " +
-                    "checked: ${BINARY_LIB_NAME}, ${BINARY_NAME} in nativeLibraryDir; " +
-                    "${BINARY_NAME} in ${configManager.binDir}. " +
+                    "checked: ${BINARY_LIB_NAME} (exists=${nativeSrcLib?.exists()}), " +
+                    "${BINARY_NAME} (exists=${nativeSrcPlain?.exists()}) in nativeLibraryDir; " +
+                    "${BINARY_NAME} in ${configManager.binDir} (exists=${devPath.exists()}). " +
                     "Run scripts/build-rclone.sh first; see README sync section."
             )
+        }
 
-        // Step 2: copy to codeCacheDir (writable + executable on all Android versions).
-        // This is the critical fix — nativeLibraryDir is NOT executable for subprocesses
-        // on Android 14+. codeCacheDir is.
+        diag("source=${source.absolutePath} size=${source.length()}")
+
+        // Step 2: copy to codeCacheDir
         val execDir = app.codeCacheDir
+        diag("codeCacheDir=${execDir.absolutePath} exists=${execDir.exists()} canWrite=${execDir.canWrite()}")
         execDir.mkdirs()
-        val execFile = File(execDir, "rclone")
+        val execFile = java.io.File(execDir, "rclone")
 
-        // Only re-copy if the cached copy doesn't exist or size differs (app update with
-        // new rclone version).
         if (!execFile.exists() || execFile.length() != source.length()) {
-            source.copyTo(execFile, overwrite = true)
+            diag("copying ${source.absolutePath} → ${execFile.absolutePath}")
+            try {
+                source.copyTo(execFile, overwrite = true)
+                diag("copyTo succeeded, execFile size=${execFile.length()}")
+            } catch (e: Exception) {
+                diag("copyTo FAILED", e)
+                throw e
+            }
+        } else {
+            diag("cached copy exists, size matches (${execFile.length()}), skipping copy")
         }
 
-        // Step 3: ensure executable bit is set.
+        // Step 3: ensure executable bit
         if (!execFile.canExecute()) {
-            execFile.setExecutable(true, true)
+            val setExecOk = execFile.setExecutable(true, true)
+            diag("setExecutable result=$setExecOk canExecute=${execFile.canExecute()}")
+        } else {
+            diag("already executable")
         }
 
+        diag("locateRcloneBinary: DONE, returning ${execFile.absolutePath}")
         return execFile
     }
 

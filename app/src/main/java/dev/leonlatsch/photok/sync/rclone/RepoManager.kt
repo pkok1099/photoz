@@ -102,10 +102,17 @@ class RepoManager @Inject constructor(
             val result = rcloneController.listRemote("$remote:", REPO_DIR)
             if (result.isFailure) {
                 val err = result.exceptionOrNull()?.message ?: "unknown error"
-                // "directory not found" means the repo root doesn't exist → NOT_INITIALIZED
-                if (err.contains("not found", ignoreCase = true) ||
-                    err.contains("directory not found", ignoreCase = true)
-                ) {
+                // Only treat as "repo not initialized" if the error is specifically about
+                // the remote directory not existing. Do NOT match "not found" generically —
+                // that would also match "rclone binary not found" from locateRcloneBinary(),
+                // swallowing a real infrastructure error as a false "repo doesn't exist yet".
+                // @since PR1 sync — fix for error-swallowing bug that hid binary-not-found
+                val isDirNotFound = err.contains("directory not found", ignoreCase = true) ||
+                    err.contains("error in ListJSON", ignoreCase = true) ||
+                    (err.contains("not found", ignoreCase = true) &&
+                        !err.contains("binary", ignoreCase = true) &&
+                        !err.contains("rclone", ignoreCase = true))
+                if (isDirNotFound) {
                     return@withContext RepoState.NOT_INITIALIZED
                 }
                 return@withContext RepoState.ERROR(err)
