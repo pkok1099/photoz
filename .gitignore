@@ -13,8 +13,13 @@
 
 kls_database.db
 
-# rclone native binaries — downloaded by scripts/build-rclone.sh, not committed.
+# rclone native binaries — built by scripts/build-rclone.sh, not committed.
 /app/src/main/jniLibs/
+
+# rclone source tree + Go build cache — created by scripts/build-rclone.sh
+/.rclone-src/
+/.gocache/
+/.gopath/
 
 # rclone.conf — never commit user secrets.
 **/rclone.conf
