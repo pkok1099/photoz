@@ -20,6 +20,7 @@ import dev.leonlatsch.photok.sort.domain.Sort
 import android.net.Uri
 import dev.leonlatsch.photok.gallery.components.PhotoTile
 import dev.leonlatsch.photok.model.database.entity.Photo
+import dev.leonlatsch.photok.sync.domain.SyncState
 import javax.inject.Inject
 
 class GalleryUiStateFactory @Inject constructor() {
@@ -31,16 +32,22 @@ class GalleryUiStateFactory @Inject constructor() {
         return if (photos.isEmpty()) {
             GalleryUiState.Empty
         } else {
+            // @since PR2 sync — count photos still queued for upload, for the global
+            // sync status indicator in the gallery top bar.
+            val pendingCount = photos.count { it.syncState == SyncState.UPLOAD_PENDING }
             GalleryUiState.Content(
                 photos = photos.map {
                     PhotoTile(
                         fileName = it.fileName,
                         type = it.type,
-                        uuid = it.uuid
+                        uuid = it.uuid,
+                        // @since PR2 sync — surface per-photo sync state in the gallery tile
+                        syncState = it.syncState,
                     )
                 },
                 showAlbumSelectionDialog = showAlbumSelectionDialog,
                 sort = sort,
+                pendingSyncCount = pendingCount,
             )
         }
     }

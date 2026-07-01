@@ -85,7 +85,14 @@ class RepoSetupFragment : Fragment() {
                     RepoSetupScreen(
                         viewModel = viewModel,
                         onCompleted = {
-                            navigateToGallery(findNavController())
+                            // @since PR3 — repo setup now chains forward to SetupFragment
+                            // (vault password) instead of jumping directly to the gallery.
+                            // The OpenGalleryUseCase gate inside SetupFragment's
+                            // navigateToGallery will pass because repoConfirmed was set
+                            // to true during repo setup.
+                            findNavController().navigate(
+                                R.id.action_repoSetupFragment_to_setupFragment
+                            )
                         }
                     )
                 }
@@ -124,6 +131,7 @@ private fun RepoSetupScreen(
                 RepoSetupState.Checking -> CheckingContent()
                 RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
                 RepoSetupState.Connecting -> ConnectingContent()
+                RepoSetupState.RestoringBackup -> RestoringBackupContent()
                 RepoSetupState.Completed -> {
                     // Will be navigated away by LaunchedEffect
                 }
@@ -232,6 +240,23 @@ private fun ConnectingContent() {
     Text(
         text = stringResource(R.string.repo_setup_connecting),
         modifier = Modifier.padding(top = 16.dp),
+    )
+}
+
+/**
+ * Shown while [RepoSetupViewModel] calls [RepoManager.restoreThumbnailsAfterLogin]
+ * after a successful login. Keeps the user informed that the brief delay is
+ * expected — without this screen, login would appear to hang.
+ *
+ * @since PR4 sync — restore thumbnails on login
+ */
+@Composable
+private fun RestoringBackupContent() {
+    CircularProgressIndicator()
+    Text(
+        text = stringResource(R.string.repo_setup_restoring_backup),
+        modifier = Modifier.padding(top = 16.dp),
+        textAlign = TextAlign.Center,
     )
 }
 

@@ -22,6 +22,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.rclone.RepoManager
 import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
@@ -53,7 +54,10 @@ object SyncModule {
         config: Config,
         rcloneController: RcloneController,
         configManager: RcloneConfigManager,
-    ) = RepoManager(app, config, rcloneController, configManager)
+        // @since PR4 sync — RepoManager.restoreThumbnailsAfterLogin() inserts Photo
+        // DB rows for each thumbnail pulled back from the remote after login.
+        photoDao: PhotoDao,
+    ) = RepoManager(app, config, rcloneController, configManager, photoDao)
 
     @Provides
     @Singleton

@@ -222,6 +222,17 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.activity:activity-compose")
 
+    // Compose Material Icons (extended) — @since PR2 sync
+    // Required for Icons.Filled.Cloud / CloudDone / CloudUpload / Warning used in the
+    // per-thumbnail sync-state badge and the gallery top-bar sync status indicator.
+    // The material-icons-core bundle (pulled in transitively by material3) only ships
+    // ~30 icons; Cloud*, CloudDone, CloudUpload live in the extended artifact.
+    // material-icons-extended removed — it adds ~30MB to the APK. The 4 cloud
+    // icons needed for sync-state badges are provided as XML vector drawables
+    // in res/drawable/ instead (ic_cloud_done, ic_cloud_upload, ic_cloud_off,
+    // ic_cloud). The Warning icon is already in material-icons-core (bundled
+    // with material3).
+
     // ZXing - QR code generation and scanning
     implementation("com.google.zxing:core:3.5.3")
 

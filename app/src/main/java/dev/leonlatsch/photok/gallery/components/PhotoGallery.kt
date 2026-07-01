@@ -46,6 +46,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +78,7 @@ import dev.leonlatsch.photok.R
 import dev.leonlatsch.photok.model.database.entity.PhotoType
 import dev.leonlatsch.photok.other.extensions.launchAndIgnoreTimer
 import dev.leonlatsch.photok.settings.ui.compose.LocalConfig
+import dev.leonlatsch.photok.sync.domain.SyncState
 import dev.leonlatsch.photok.transcoding.compose.model.EncryptedImageRequestData
 import dev.leonlatsch.photok.transcoding.compose.rememberEncryptedImagePainter
 import dev.leonlatsch.photok.ui.components.ConfirmationDialog
@@ -296,6 +298,8 @@ private fun PhotoGrid(
 private val VideoIconSize = 20.dp
 private val SelectedPadding = 15.dp
 private val CheckmarkPadding = SelectedPadding - 9.dp
+private val SyncBadgeSize = 18.dp
+private val SyncBadgeIconSize = 12.dp
 
 @Composable
 fun Modifier.multiSelectionItem(selected: Boolean): Modifier {
@@ -402,6 +406,47 @@ private fun GalleryPhotoTile(
                         )
                     )
             )
+        }
+
+        // ─── Sync state badge (PR2) ──────────────────────────────────────────
+        // Small icon in the bottom-right corner indicating per-photo cloud sync
+        // status. LOCAL_ONLY photos show no badge (keeps the gallery visually
+        // quiet right after import — most photos briefly sit in LOCAL_ONLY
+        // before the WorkManager upload job fires).
+        AnimatedVisibility(
+            visible = photoTile.syncState != SyncState.LOCAL_ONLY && !selected,
+            enter = scaleIn(),
+            exit = scaleOut(),
+            modifier = Modifier
+                .padding(4.dp)
+                .align(Alignment.BottomEnd)
+        ) {
+            val iconTint = when (photoTile.syncState) {
+                SyncState.UPLOADED -> Color(0xFF66BB6A)      // green
+                SyncState.UPLOAD_PENDING -> Color(0xFFFFCA28) // amber
+                SyncState.UPLOAD_FAILED -> Color(0xFFEF5350)  // red
+                SyncState.LOCAL_ONLY -> Color.White
+            }
+            val iconPainter = when (photoTile.syncState) {
+                SyncState.UPLOADED -> painterResource(R.drawable.ic_cloud_done)
+                SyncState.UPLOAD_PENDING -> painterResource(R.drawable.ic_cloud_upload)
+                SyncState.UPLOAD_FAILED -> painterResource(R.drawable.ic_warning) // Warning is in material-icons-core, but use our own drawable for consistency
+                SyncState.LOCAL_ONLY -> painterResource(R.drawable.ic_cloud) // unreachable — kept for exhaustiveness
+            }
+            Box(
+                modifier = Modifier
+                    .size(SyncBadgeSize)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = iconPainter,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(SyncBadgeIconSize),
+                )
+            }
         }
 
         AnimatedVisibility(

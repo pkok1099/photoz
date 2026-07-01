@@ -429,4 +429,11 @@
     <string name="repo_setup_connected">Connected to %1$s</string>
     <string name="repo_setup_error">Error</string>
     <string name="repo_setup_retry">Retry</string>
+
+    <!-- Gallery sync status — @since PR2 sync — per-thumbnail badges + global indicator -->
+    <string name="gallery_sync_status_syncing">Syncing %1$d…</string>
+    <string name="gallery_sync_status_all_synced">All synced</string>
+
+    <!-- Repo setup: restore-after-login — @since PR4 sync — restore thumbnails on login -->
+    <string name="repo_setup_restoring_backup">Restoring thumbnails from backup…</string>
 </resources>

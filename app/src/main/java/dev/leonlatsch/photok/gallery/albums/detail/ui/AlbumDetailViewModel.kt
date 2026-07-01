@@ -82,6 +82,8 @@ class AlbumDetailViewModel @AssistedInject constructor(
                     it.type,
                     it.uuid,
                     pinned = it.uuid in pinnedIds,
+                    // @since PR2 sync — surface per-photo sync state in album detail tiles
+                    syncState = it.syncState,
                 )
             },
             sort = sort,

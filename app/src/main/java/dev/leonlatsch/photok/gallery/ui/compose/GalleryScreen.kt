@@ -16,21 +16,34 @@
 
 package dev.leonlatsch.photok.gallery.ui.compose
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.leonlatsch.photok.R
 import dev.leonlatsch.photok.gallery.components.AlbumPickerDialog
 import dev.leonlatsch.photok.gallery.components.ImportSharedDialog
 import dev.leonlatsch.photok.gallery.components.rememberMultiSelectionState
@@ -63,7 +76,13 @@ fun GalleryScreen(
                     scrollBehavior = scrollBehavior,
                     actions = {
                         if (uiState is GalleryUiState.Content) {
-                            val sort = (uiState as GalleryUiState.Content).sort
+                            val content = uiState as GalleryUiState.Content
+                            // @since PR2 sync — global sync status indicator
+                            GallerySyncStatusIndicator(
+                                pendingCount = content.pendingSyncCount,
+                            )
+
+                            val sort = content.sort
 
                             var showSortMenu by remember { mutableStateOf(false) }
 
@@ -123,5 +142,54 @@ fun GalleryScreen(
 
         NewFeaturesSheet()
         TelemetryOptInQuestionSheet()
+    }
+}
+
+/**
+ * Lightweight global sync status chip for the gallery top bar.
+ *
+ * Shows the count of photos still queued for upload. When the queue is empty, shows a subtle
+ * "all synced" state. Kept minimal on purpose — this is a status hint, not a primary action.
+ *
+ * @since PR2 sync — global sync status indicator
+ */
+@Composable
+private fun GallerySyncStatusIndicator(
+    pendingCount: Int,
+) {
+    val isSyncing = pendingCount > 0
+    val text = if (isSyncing) {
+        stringResource(R.string.gallery_sync_status_syncing, pendingCount)
+    } else {
+        stringResource(R.string.gallery_sync_status_all_synced)
+    }
+    val tint = if (isSyncing) {
+        Color(0xFFFFCA28) // amber — there's pending work
+    } else {
+        MaterialTheme.colorScheme.outline
+    }
+    val iconPainter = if (isSyncing) {
+        painterResource(R.drawable.ic_cloud_upload)
+    } else {
+        painterResource(R.drawable.ic_cloud_done)
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(end = 8.dp),
+    ) {
+        Icon(
+            painter = iconPainter,
+            contentDescription = text,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            maxLines = 1,
+        )
     }
 }

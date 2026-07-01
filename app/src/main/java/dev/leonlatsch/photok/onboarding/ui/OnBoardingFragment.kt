@@ -123,10 +123,14 @@ class OnBoardingFragment :
     }
 
     /**
-     * Navigate to setup and set first start to false.
+     * Navigate to repo setup (remote config + repo register/login) and set first start to false.
+     *
+     * @since PR3 — onboarding now routes to RepoSetupFragment first (remote config before
+     * vault password). Repo setup then chains forward to SetupFragment via
+     * action_repoSetupFragment_to_setupFragment.
      */
     fun finish() {
-        findNavController().navigate(R.id.action_onBoardingFragment_to_setupFragment)
+        findNavController().navigate(R.id.action_onBoardingFragment_to_repoSetupFragment)
         config.systemFirstStart = false
     }
 

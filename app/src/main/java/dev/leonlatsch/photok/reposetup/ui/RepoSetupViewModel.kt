@@ -54,6 +54,14 @@ sealed interface RepoSetupState {
     /** Remote reachable, repo exists — connecting (read-only confirmation). */
     object Connecting : RepoSetupState
 
+    /**
+     * Repo session confirmed — restoring thumbnails from the remote backup before
+     * completing the login flow. Shows a brief progress indicator.
+     *
+     * @since PR4 sync — restore thumbnails on login
+     */
+    object RestoringBackup : RepoSetupState
+
     /** Repo session confirmed — gallery can be unlocked. */
     object Completed : RepoSetupState
 
@@ -157,6 +165,19 @@ class RepoSetupViewModel @Inject constructor(
                 _state.value = RepoSetupState.Connecting
                 val loginResult = repoManager.loginRepo(repoState.marker)
                 if (loginResult.isSuccess) {
+                    // @since PR4 sync — restore thumbnails from backup before completing.
+                    // Show a brief "Restoring backup…" state so the user knows why
+                    // login is taking longer than a no-op connect. Restore failure
+                    // MUST NOT block login — the user can still get into the gallery;
+                    // photos will be re-uploaded on the next sync cycle.
+                    _state.value = RepoSetupState.RestoringBackup
+                    val restored = try {
+                        repoManager.restoreThumbnailsAfterLogin()
+                    } catch (e: Exception) {
+                        Timber.w(e, "restoreThumbnailsAfterLogin failed; continuing to Completed")
+                        0
+                    }
+                    Timber.i("Repo login complete; restored $restored thumbnails from backup")
                     _state.value = RepoSetupState.Completed
                 } else {
                     _state.value = RepoSetupState.Error(

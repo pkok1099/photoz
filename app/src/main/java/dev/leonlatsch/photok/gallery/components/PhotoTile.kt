@@ -18,12 +18,15 @@ package dev.leonlatsch.photok.gallery.components
 
 import dev.leonlatsch.photok.model.database.entity.PhotoType
 import dev.leonlatsch.photok.model.database.entity.internalThumbnailFileName
+import dev.leonlatsch.photok.sync.domain.SyncState
 
 data class PhotoTile(
     val fileName: String,
     val type: PhotoType,
     val uuid: String,
     val pinned: Boolean = false,
+    // @since PR2 sync — per-thumbnail sync state badge
+    val syncState: SyncState = SyncState.LOCAL_ONLY,
 ) {
     val internalThumbnailFileName = internalThumbnailFileName(uuid)
 }

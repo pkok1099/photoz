@@ -17,7 +17,13 @@
 package dev.leonlatsch.photok.sync.rclone
 
 import android.app.Application
+import dev.leonlatsch.photok.model.database.dao.PhotoDao
+import dev.leonlatsch.photok.model.database.entity.PHOTOK_FILE_EXTENSION
+import dev.leonlatsch.photok.model.database.entity.Photo
+import dev.leonlatsch.photok.model.database.entity.PhotoType
 import dev.leonlatsch.photok.settings.data.Config
+import dev.leonlatsch.photok.sync.domain.SyncConfig
+import dev.leonlatsch.photok.sync.domain.SyncState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -61,7 +67,29 @@ class RepoManager @Inject constructor(
     private val config: Config,
     private val rcloneController: RcloneController,
     private val configManager: RcloneConfigManager,
+    // @since PR4 sync — needed by restoreThumbnailsAfterLogin() to insert DB rows for
+    // each thumbnail pulled back from the remote after a successful login.
+    private val photoDao: PhotoDao,
 ) {
+
+    // ─── DIAGNOSTIC LOGGING (RcloneDiag pattern, same as RcloneController) ────
+    // Writes to BOTH Log.e (logcat) AND files/sync_log.txt so it's visible via
+    // `adb logcat -d | grep RcloneDiag` AND
+    // `adb shell run-as <pkg> cat files/sync_log.txt`.
+    // Used by restoreThumbnailsAfterLogin() — restore bugs are otherwise silent
+    // (no UI surfaces failures, just empty gallery).
+    private fun diag(msg: String, throwable: Throwable? = null) {
+        android.util.Log.e("RcloneDiag", "[Restore] $msg", throwable)
+        try {
+            val logFile = File(app.filesDir, "sync_log.txt")
+            logFile.appendText("\n[RcloneDiag] [Restore] $msg\n")
+            if (throwable != null) {
+                logFile.appendText(throwable.stackTraceToString() + "\n")
+            }
+        } catch (_: Exception) {
+            // Never let diag() itself throw.
+        }
+    }
 
     data class RepoMarker(
         val repoId: String,
@@ -266,6 +294,123 @@ class RepoManager @Inject constructor(
     }
 
     /**
+     * Restore thumbnails from the remote backup after a successful [loginRepo].
+     *
+     * Lists `<remote>:<remoteThumbnailsDir>/` (i.e. `<remote>:thumbnails/`) and downloads
+     * every `<uuid>.crypt.tn` file back to local storage. For each thumbnail, creates a
+     * Photo DB row with [SyncState.UPLOADED] and NO local original — the original will be
+     * fetched on-demand by [dev.leonlatsch.photok.sync.work.SyncRestorer] when the user
+     * opens the photo.
+     *
+     * Idempotent: if a Photo row already exists for a uuid, that thumbnail is skipped.
+     *
+     * NOTE: the task spec mentioned `photok-backup/thumbnails/` as the listing path,
+     * but the actual upload path used by [dev.leonlatsch.photok.sync.work.PhotoSyncWorker]
+     * is `<remote>:thumbnails/<uuid>.crypt.tn` (see [SyncConfig.remoteThumbnailsDir]).
+     * We list at the actual upload path so restore matches what was uploaded.
+     *
+     * @return count of thumbnails restored (DB rows inserted). Returns 0 if the remote
+     *   has no thumbnails dir yet (fresh repo) or if listing fails — restore failure
+     *   MUST NOT block login.
+     *
+     * @since PR4 sync — restore thumbnails on login
+     */
+    suspend fun restoreThumbnailsAfterLogin(): Int = withContext(Dispatchers.IO) {
+        diag("restoreThumbnailsAfterLogin: BEGIN remote=${config.syncChosenRemote}")
+
+        val remote = config.syncChosenRemote
+        if (remote.isNullOrBlank()) {
+            diag("restoreThumbnailsAfterLogin: ABORT — no remote chosen")
+            return@withContext 0
+        }
+
+        val thumbnailsDir = SyncConfig.remoteThumbnailsDir
+        diag("restoreThumbnailsAfterLogin: listing $remote:$thumbnailsDir/")
+
+        val listResult = rcloneController.listRemote("$remote:", thumbnailsDir)
+        if (listResult.isFailure) {
+            val err = listResult.exceptionOrNull()?.message ?: "unknown error"
+            diag(
+                "restoreThumbnailsAfterLogin: listRemote FAILED: $err — treating as 0 thumbnails",
+                listResult.exceptionOrNull(),
+            )
+            // A missing thumbnails directory on a fresh remote is not an error —
+            // there's just nothing to restore. Listing failure MUST NOT block login;
+            // the user can still get into the gallery and re-import.
+            return@withContext 0
+        }
+
+        val remoteThumbs = listResult.getOrThrow()
+            .filter { it.name.endsWith(THUMBNAIL_SUFFIX) }
+        diag("restoreThumbnailsAfterLogin: listRemote OK, ${remoteThumbs.size} thumbnail candidates")
+
+        var restored = 0
+        for (thumb in remoteThumbs) {
+            val name = thumb.name
+            // Filename pattern: <uuid>.crypt.tn — strip the .crypt.tn suffix to recover the uuid.
+            val uuid = name.removeSuffix(THUMBNAIL_SUFFIX)
+            if (uuid.isBlank()) {
+                diag("restoreThumbnailsAfterLogin: skipping malformed thumbnail name: $name")
+                continue
+            }
+
+            // Idempotent: skip if a Photo row already exists for this uuid.
+            val existing = runCatching { photoDao.get(uuid) }.getOrNull()
+            if (existing != null) {
+                diag("restoreThumbnailsAfterLogin: $uuid already in DB — skipping")
+                continue
+            }
+
+            // Download the thumbnail to the same local path the gallery tile reads from
+            // (app filesDir/<uuid>.crypt.tn — see VaultFileStorage / app.openFileInput).
+            val localThumb = app.getFileStreamPath("$uuid$THUMBNAIL_SUFFIX")
+            val remoteThumbPath = "$remote:$thumbnailsDir/$name"
+            diag("restoreThumbnailsAfterLogin: downloading $remoteThumbPath → ${localThumb.absolutePath}")
+            val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
+            if (dlResult.isFailure) {
+                diag(
+                    "restoreThumbnailsAfterLogin: download FAILED for $uuid: ${dlResult.exceptionOrNull()?.message}",
+                    dlResult.exceptionOrNull(),
+                )
+                continue
+            }
+
+            // Create a DB row for the photo. The original is NOT local — it will be
+            // fetched on-demand by SyncRestorer when the user opens the photo.
+            // TODO: PhotoType cannot be inferred from the thumbnail filename alone.
+            //   Defaulting to JPEG (most common). The correct type should be persisted
+            //   in the repo-config.json marker file during registerRepo() and read
+            //   back here. For now, the type will be corrected when the original is
+            //   downloaded on-demand. Tracked as a follow-up.
+            val photo = Photo(
+                fileName = "$uuid.$PHOTOK_FILE_EXTENSION",
+                importedAt = System.currentTimeMillis(),
+                lastModified = null,
+                type = PhotoType.JPEG,
+                size = 0L,
+                uuid = uuid,
+                syncState = SyncState.UPLOADED,
+            )
+            try {
+                photoDao.insert(photo)
+                restored++
+                diag("restoreThumbnailsAfterLogin: inserted DB row for $uuid (syncState=UPLOADED)")
+            } catch (e: Exception) {
+                diag(
+                    "restoreThumbnailsAfterLogin: insert FAILED for $uuid: ${e.message}",
+                    e,
+                )
+                // Best-effort cleanup of the orphaned local thumbnail file so a
+                // later retry doesn't see a stray file with no DB row.
+                localThumb.delete()
+            }
+        }
+
+        diag("restoreThumbnailsAfterLogin: DONE — restored $restored thumbnails")
+        restored
+    }
+
+    /**
      * Whether this device has a confirmed repo session. This is the gate for gallery access.
      *
      * Note: this reads a local flag. On cold start, [revalidateRepo] should be called to
@@ -308,5 +453,9 @@ class RepoManager @Inject constructor(
     companion object {
         const val REPO_DIR = "photok-backup"
         const val MARKER_FILENAME = "repo-config.json"
+
+        // @since PR4 sync — thumbnail filename suffix, mirrors
+        // internalThumbnailFileName(uuid) = "${uuid}.$PHOTOK_FILE_EXTENSION.tn"
+        private const val THUMBNAIL_SUFFIX = ".$PHOTOK_FILE_EXTENSION.tn"
     }
 }

@@ -28,5 +28,8 @@ sealed interface GalleryUiState {
         val photos: List<PhotoTile> = emptyList(),
         val showAlbumSelectionDialog: Boolean = false,
         val sort: Sort,
+        // @since PR2 sync — count of photos still pending upload, for the global
+        // sync status indicator in the gallery top bar.
+        val pendingSyncCount: Int = 0,
     ) : GalleryUiState
 }
