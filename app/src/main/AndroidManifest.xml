@@ -159,6 +159,25 @@
             android:foregroundServiceType="dataSync|shortService"
             tools:node="merge"
             android:exported="false" />
+
+        <!--
+            FileProvider for the file-upload feature's external viewer.
+            DOCUMENT / ARCHIVE / AUDIO files can't be rendered by the in-app
+            image viewer — tapping one in the gallery decrypts it to a cache
+            file under files/extview/ and hands a content:// URI to Android
+            via Intent.ACTION_VIEW. The viewer app resolves the URI through
+            this FileProvider.
+            @since file-upload feature
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

@@ -47,7 +47,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
-    photoRepository: PhotoRepository,
+    // @since file-upload feature — promoted to private val so navigateToPhoto
+    // can look up the photo and route file-type taps to openFileExternally
+    // instead of the in-app image viewer (which can't render PDF/ZIP/audio).
+    private val photoRepository: PhotoRepository,
     private val galleryUiStateFactory: GalleryUiStateFactory,
     private val sortRepository: SortRepository,
     // @since v9 followup (Bug 2) — needed by OnRestoreFromBackup to re-download
@@ -69,12 +72,18 @@ class GalleryViewModel @Inject constructor(
 
     private val showAlbumSelectionDialog = MutableStateFlow(false)
 
+    // @since file-upload feature — current Photos/Files filter selection.
+    //  Drives the client-side filter in [galleryUiStateFactory.create] and
+    //  the FilterChip selection in the gallery header.
+    private val filterFlow = MutableStateFlow(GalleryFilter.PHOTOS)
+
     val uiState: StateFlow<GalleryUiState> = combine(
         photosFlow,
         showAlbumSelectionDialog,
         sortFlow,
-    ) { photos, showAlbumSelection, sort ->
-        galleryUiStateFactory.create(photos, showAlbumSelection, sort)
+        filterFlow,
+    ) { photos, showAlbumSelection, sort, filter ->
+        galleryUiStateFactory.create(photos, showAlbumSelection, sort, filter)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), GalleryUiState.Empty)
 
     private val eventsChannel = Channel<GalleryNavigationEvent>()
@@ -94,6 +103,8 @@ class GalleryViewModel @Inject constructor(
             is GalleryUiEvent.SortChanged -> viewModelScope.launch {
                 sortRepository.updateSortFor(albumUuid = null, sort = event.sort)
             }
+            // @since file-upload feature — Photos/Files filter chip toggle.
+            is GalleryUiEvent.FilterChanged -> filterFlow.value = event.filter
             // @since v9 followup (Bug 2) — Restore from cloud backup. Re-runs
             // the pack-based thumbnail restore (downloads packs, extracts
             // thumbnails by offset+length, creates Photo rows for any registry
@@ -184,6 +195,32 @@ class GalleryViewModel @Inject constructor(
     }
 
     private fun navigateToPhoto(item: PhotoTile) {
+        // @since file-upload feature — route file-type taps to the external
+        //  viewer (PDF / ZIP / audio can't be rendered by the in-app image
+        //  viewer). The in-app image viewer is unchanged for photo/video
+        //  types — they keep going through PhotoAction.OpenPhoto and the
+        //  navigation graph.
+        if (item.type.isFile) {
+            viewModelScope.launch {
+                val photo = photoRepository.get(item.uuid) ?: run {
+                    eventsChannel.trySend(
+                        GalleryNavigationEvent.ShowToast(
+                            resources.getString(R.string.gallery_open_file_not_found),
+                        ),
+                    )
+                    return@launch
+                }
+                val launched = photoRepository.openFileExternally(photo)
+                if (!launched) {
+                    eventsChannel.trySend(
+                        GalleryNavigationEvent.ShowToast(
+                            resources.getString(R.string.gallery_open_file_failed),
+                        ),
+                    )
+                }
+            }
+            return
+        }
         photoActionsChannel.trySend(PhotoAction.OpenPhoto(item.uuid))
     }
 }

@@ -16,8 +16,14 @@
 
 package onlasdan.gallery.gallery.ui.compose
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -26,7 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import onlasdan.gallery.R
+import onlasdan.gallery.gallery.ui.GalleryFilter
 import onlasdan.gallery.gallery.ui.GalleryUiEvent
 import onlasdan.gallery.gallery.ui.GalleryUiState
 import onlasdan.gallery.gallery.components.MultiSelectionState
@@ -45,47 +53,89 @@ fun GalleryContent(
     multiSelectionState: MultiSelectionState,
     modifier: Modifier = Modifier,
 ) {
-    PhotoGallery(
-        modifier = modifier.fillMaxSize(),
-        photos = uiState.photos,
-        albumName = null,
-        multiSelectionState = multiSelectionState,
-        onOpenPhoto = { handleUiEvent(GalleryUiEvent.OpenPhoto(it)) },
-        onExport = { targetUri ->
-            handleUiEvent(
-                GalleryUiEvent.OnExport(
-                    multiSelectionState.selectedItems.value.toList(),
-                    targetUri
-                )
-            )
-        },
-        onDelete = {
-            handleUiEvent(
-                GalleryUiEvent.OnDelete(
-                    multiSelectionState.selectedItems.value.toList()
-                )
-            )
-        },
-        onImportChoice = {
-            handleUiEvent(GalleryUiEvent.OnImportChoice(it))
-        },
-        additionalMultiSelectionActions = {
-            HorizontalDivider()
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_folder),
-                        contentDescription = null
+    Column(modifier = modifier.fillMaxSize()) {
+        // ─── Photos / Files filter chip row (file-upload feature) ────────────
+        // Sits above the photo grid. The actual filtering happens in
+        // [onlasdan.gallery.gallery.ui.GalleryUiStateFactory.create] —
+        // this row only toggles the filterFlow selection on the ViewModel.
+        GalleryFilterRow(
+            selected = uiState.filter,
+            onSelect = { handleUiEvent(GalleryUiEvent.FilterChanged(it)) },
+        )
+        PhotoGallery(
+            modifier = Modifier.fillMaxSize(),
+            photos = uiState.photos,
+            albumName = null,
+            multiSelectionState = multiSelectionState,
+            onOpenPhoto = { handleUiEvent(GalleryUiEvent.OpenPhoto(it)) },
+            onExport = { targetUri ->
+                handleUiEvent(
+                    GalleryUiEvent.OnExport(
+                        multiSelectionState.selectedItems.value.toList(),
+                        targetUri
                     )
-                },
-                text = { Text(stringResource(R.string.menu_ms_add_to_album)) },
-                onClick = {
-                    handleUiEvent(GalleryUiEvent.OnAddToAlbum)
-                    multiSelectionState.dismissMore()
-                },
-            )
-        }
-    )
+                )
+            },
+            onDelete = {
+                handleUiEvent(
+                    GalleryUiEvent.OnDelete(
+                        multiSelectionState.selectedItems.value.toList()
+                    )
+                )
+            },
+            onImportChoice = {
+                handleUiEvent(GalleryUiEvent.OnImportChoice(it))
+            },
+            additionalMultiSelectionActions = {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_folder),
+                            contentDescription = null
+                        )
+                    },
+                    text = { Text(stringResource(R.string.menu_ms_add_to_album)) },
+                    onClick = {
+                        handleUiEvent(GalleryUiEvent.OnAddToAlbum)
+                        multiSelectionState.dismissMore()
+                    },
+                )
+            }
+        )
+    }
+}
+
+/**
+ * Photos/Files filter row at the top of the gallery. Two FilterChips in a
+ * horizontally-spaced row — "Photos" (default) shows image+video tiles,
+ * "Files" shows DOCUMENT/ARCHIVE/AUDIO tiles.
+ *
+ * @since file-upload feature
+ */
+@Composable
+private fun GalleryFilterRow(
+    selected: GalleryFilter,
+    onSelect: (GalleryFilter) -> Unit,
+) {
+    androidx.compose.foundation.layout.Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        FilterChip(
+            selected = selected == GalleryFilter.PHOTOS,
+            onClick = { onSelect(GalleryFilter.PHOTOS) },
+            label = { Text(stringResource(R.string.gallery_filter_photos)) },
+        )
+        FilterChip(
+            selected = selected == GalleryFilter.FILES,
+            onClick = { onSelect(GalleryFilter.FILES) },
+            label = { Text(stringResource(R.string.gallery_filter_files)) },
+            colors = FilterChipDefaults.filterChipColors(),
+        )
+    }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFF, showSystemUi = true)

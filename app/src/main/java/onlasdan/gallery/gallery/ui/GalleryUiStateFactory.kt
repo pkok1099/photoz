@@ -28,27 +28,48 @@ class GalleryUiStateFactory @Inject constructor() {
         photos: List<Photo>,
         showAlbumSelectionDialog: Boolean,
         sort: Sort,
+        filter: GalleryFilter = GalleryFilter.PHOTOS,
     ): GalleryUiState {
         return if (photos.isEmpty()) {
             GalleryUiState.Empty
         } else {
-            // @since PR2 sync — count photos still queued for upload, for the global
-            // sync status indicator in the gallery top bar.
-            val pendingCount = photos.count { it.syncState == SyncState.UPLOAD_PENDING }
-            GalleryUiState.Content(
-                photos = photos.map {
-                    PhotoTile(
-                        fileName = it.fileName,
-                        type = it.type,
-                        uuid = it.uuid,
-                        // @since PR2 sync — surface per-photo sync state in the gallery tile
-                        syncState = it.syncState,
-                    )
-                },
-                showAlbumSelectionDialog = showAlbumSelectionDialog,
-                sort = sort,
-                pendingSyncCount = pendingCount,
-            )
+            // @since file-upload feature — split photos vs files for the
+            // gallery filter chip. "Photos" = image + video types; "Files" =
+            // DOCUMENT / ARCHIVE / AUDIO. The split is on `PhotoType.isFile`
+            // so adding a new photo/video type automatically shows up under
+            // "Photos" without touching this factory.
+            val (filteredPhotos, filteredPending) = when (filter) {
+                GalleryFilter.PHOTOS -> {
+                    val matched = photos.filter { !it.type.isFile }
+                    matched to matched.count { it.syncState == SyncState.UPLOAD_PENDING }
+                }
+                GalleryFilter.FILES -> {
+                    val matched = photos.filter { it.type.isFile }
+                    matched to matched.count { it.syncState == SyncState.UPLOAD_PENDING }
+                }
+            }
+            // If the selected filter has zero matches, show Empty so the
+            // gallery placeholder appears (e.g. user has only photos, picks
+            // the "Files" filter — show the empty state with the FAB).
+            if (filteredPhotos.isEmpty()) {
+                GalleryUiState.Empty
+            } else {
+                GalleryUiState.Content(
+                    photos = filteredPhotos.map {
+                        PhotoTile(
+                            fileName = it.fileName,
+                            type = it.type,
+                            uuid = it.uuid,
+                            // @since PR2 sync — surface per-photo sync state in the gallery tile
+                            syncState = it.syncState,
+                        )
+                    },
+                    showAlbumSelectionDialog = showAlbumSelectionDialog,
+                    sort = sort,
+                    pendingSyncCount = filteredPending,
+                    filter = filter,
+                )
+            }
         }
     }
 }

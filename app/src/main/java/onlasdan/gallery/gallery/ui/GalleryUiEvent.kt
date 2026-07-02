@@ -31,6 +31,13 @@ sealed interface GalleryUiEvent {
     data class SortChanged(val sort: Sort) : GalleryUiEvent
 
     /**
+     * User changed the Photos/Files filter chip in the gallery header.
+     *
+     * @since file-upload feature
+     */
+    data class FilterChanged(val filter: GalleryFilter) : GalleryUiEvent
+
+    /**
      * User tapped "Restore from backup" in the gallery's overflow menu.
      *
      * Triggers a re-download of thumbnails from the cloud backup (via

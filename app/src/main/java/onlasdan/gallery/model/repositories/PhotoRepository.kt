@@ -17,7 +17,9 @@
 package onlasdan.gallery.model.repositories
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import onlasdan.gallery.io.IO
 import onlasdan.gallery.io.VaultFileStorage
 import onlasdan.gallery.model.database.dao.AlbumDao
@@ -36,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -101,10 +104,16 @@ class PhotoRepository @Inject constructor(
     // region WRITE
 
     /**
-     * Import a photo from a url.
+     * Import a photo (or any other file type) from a url.
      *
      * Collects meta data and calls [safeCreatePhoto].
      * Returns re created uuid
+     *
+     * @since file-upload feature — now accepts ANY file type, not just photos.
+     *   The [PhotoType.fromMimeType] lookup recognizes JPEG/PNG/GIF/HEIC/MP4/
+     *   WEBP (photos + videos) AND PDF/ZIP/AUDIO (generic files). Each is
+     *   stored, encrypted and dedup'd identically; only the gallery view and
+     *   the tap-to-open flow branch on `photo.type.isFile`.
      */
     suspend fun safeImportPhoto(sourceUri: Uri, importSource: ImportSource): String {
         val metaData = app.contentResolver.getMetadataFor(sourceUri)
@@ -378,5 +387,139 @@ class PhotoRepository @Inject constructor(
     }
 
     // endregion
+    // endregion
+
+    // region EXTERNAL VIEW (file-upload feature)
+
+    /**
+     * Decrypt the photo's stored original to a cache file and hand it off to
+     * the system via [Intent.ACTION_VIEW].
+     *
+     * Used for non-photo file types ([PhotoType.isFile] == true) — DOCUMENT,
+     * ARCHIVE, AUDIO — that the in-app image viewer can't render. The user
+     * taps the tile, the gallery calls this function, and the system shows a
+     * chooser for whatever app can handle the mime type (a PDF viewer, a
+     * file manager for archives, a music player for audio, etc.).
+     *
+     * The decrypted file lives under `cacheDir/extview/` and is exposed via
+     * the app's [FileProvider] (authority `<package>.fileprovider`). The
+     * cache file is overwritten on each call — no long-term storage of
+     * plaintext on disk. The system viewer app receives `FLAG_GRANT_READ_URI_PERMISSION`
+     * so it can read the content URI even though the FileProvider itself is
+     * not exported.
+     *
+     * For AUDIO files, the stored [PhotoType.mimeType] is the wildcard
+     * "audio/any" (because we accept any audio mime at import time and
+     * normalize to a single enum entry). The actual mime type sent to
+     * `ACTION_VIEW` is derived from the file extension on the stored
+     * filename (`.mp3`, `.m4a`, `.wav`, etc.) so the system picks a viewer
+     * that actually understands that specific audio format.
+     *
+     * This is a fire-and-forget call from the gallery's perspective — there's
+     * no result callback. The system either shows a chooser, launches the
+     * default handler, or shows a "no app can handle this" toast. Errors
+     * during decryption (e.g. vault locked) are caught and logged.
+     *
+     * @return `true` if the ACTION_VIEW intent was successfully launched
+     *   (decryption succeeded and at least one handler exists); `false`
+     *   otherwise. The caller surfaces a toast on `false`.
+     *
+     * @since file-upload feature — external viewer for DOCUMENT/ARCHIVE/AUDIO
+     */
+    suspend fun openFileExternally(photo: Photo): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Resolve the decrypted file: copy the photo's encrypted original
+            // through the decrypt stream into a fresh plaintext cache file.
+            val extViewDir = File(app.cacheDir, "extview").apply { mkdirs() }
+            val outFile = File(extViewDir, "${photo.uuid}.${photo.type.fileExtension}")
+
+            val cipherInput = vaultFileStorage.openEncryptedInput(photo.internalFileName)
+                ?: run {
+                    Timber.e("openFileExternally: failed to open encrypted input for %s", photo.uuid)
+                    return@withContext false
+                }
+
+            cipherInput.use { input ->
+                outFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            if (!outFile.exists() || outFile.length() == 0L) {
+                Timber.e("openFileExternally: decrypted file is missing or empty for %s", photo.uuid)
+                return@withContext false
+            }
+
+            // Build a content:// URI via the FileProvider. Android 7+ rejects
+            // file:// URIs for ACTION_VIEW with FileUriExposedException.
+            val authority = "${app.packageName}.fileprovider"
+            val contentUri = FileProvider.getUriForFile(app, authority, outFile)
+
+            // Resolve the actual mime type to send to ACTION_VIEW.
+            // - DOCUMENT/ARCHIVE have a real, fixed mime type on the enum.
+            // - AUDIO was normalized to an audio wildcard at import time;
+            //   derive the specific subtype from the original filename's
+            //   extension so the system viewer knows whether it's an mp3, m4a, etc.
+            val mimeType = mimeTypeForExternalView(photo)
+
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            // Resolve the activity before calling startActivity — if no app
+            // can handle the mime type, fall back to a "send" chooser so the
+            // user at least sees the system's "no app" UX instead of a silent
+            // failure. resolveActivity() requires <queries> in the manifest
+            // on API 30+ for implicit intents; the fallback handles that.
+            val launchIntent = if (viewIntent.resolveActivity(app.packageManager) != null) {
+                viewIntent
+            } else {
+                Intent.createChooser(viewIntent, photo.fileName).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+
+            app.startActivity(launchIntent)
+            Timber.i("openFileExternally: launched ACTION_VIEW for %s (mime=%s, %d bytes)",
+                photo.uuid, mimeType, outFile.length())
+            true
+        } catch (e: Exception) {
+            Timber.e(e, "openFileExternally: FAILED for %s", photo.uuid)
+            false
+        }
+    }
+
+    /**
+     * Compute the mime type to send to [Intent.ACTION_VIEW] for a file-type
+     * photo. DOCUMENT and ARCHIVE have fixed mime types; AUDIO was normalized
+     * to an audio wildcard at import time, so we derive the actual subtype
+     * from the original filename extension.
+     */
+    private fun mimeTypeForExternalView(photo: Photo): String {
+        if (photo.type != PhotoType.AUDIO) {
+            return photo.type.mimeType
+        }
+        // Derive audio subtype from filename extension. Fall back to a
+        // generic audio wildcard if the extension is unknown — the system
+        // will usually still show a chooser with audio-capable apps.
+        val ext = photo.fileName.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "mp3" -> "audio/mpeg"
+            "m4a", "aac" -> "audio/mp4"
+            "wav" -> "audio/wav"
+            "ogg" -> "audio/ogg"
+            "flac" -> "audio/flac"
+            "opus" -> "audio/ogg"
+            "mid", "midi" -> "audio/midi"
+            // Avoid writing "audio/*" as a literal — the `/*` sequence
+            // inside a KDoc comment opens a nested block comment in Kotlin
+            // (unlike Java). Concatenate at runtime so the source file
+            // never contains the `/*` token outside a string literal.
+            else -> "audio/" + "*"
+        }
+    }
+
     // endregion
 }

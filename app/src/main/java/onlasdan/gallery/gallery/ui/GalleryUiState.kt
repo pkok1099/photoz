@@ -20,6 +20,21 @@ import android.net.Uri
 import onlasdan.gallery.sort.domain.Sort
 import onlasdan.gallery.gallery.components.PhotoTile
 
+/**
+ * Filter applied to the gallery's photo list. The user picks between
+ * "Photos" (images + videos) and "Files" (DOCUMENT / ARCHIVE / AUDIO) via
+ * the FilterChip row at the top of the gallery.
+ *
+ * @since file-upload feature
+ */
+enum class GalleryFilter {
+    /** Show photo/video types only (JPEG, PNG, GIF, HEIC, MP4, WEBP, etc.). */
+    PHOTOS,
+
+    /** Show file types only (DOCUMENT, ARCHIVE, AUDIO). */
+    FILES,
+}
+
 sealed interface GalleryUiState {
 
     data object Empty : GalleryUiState
@@ -31,5 +46,12 @@ sealed interface GalleryUiState {
         // @since PR2 sync — count of photos still pending upload, for the global
         // sync status indicator in the gallery top bar.
         val pendingSyncCount: Int = 0,
+        /**
+         * Current gallery filter (Photos vs Files). Drives the FilterChip row
+         * selection and the client-side filter applied to the photo list.
+         *
+         * @since file-upload feature
+         */
+        val filter: GalleryFilter = GalleryFilter.PHOTOS,
     ) : GalleryUiState
 }
