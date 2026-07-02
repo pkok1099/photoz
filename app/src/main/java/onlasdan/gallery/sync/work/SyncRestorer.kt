@@ -78,4 +78,58 @@ class SyncRestorer @Inject constructor(
             rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
         }
     }
+
+    /**
+     * Restore ALL uploaded photos from the remote back to local storage.
+     *
+     * Downloads every photo whose syncState is UPLOADED but whose local original
+     * file is missing (e.g. after a fresh-install login, or after local files
+     * were cleared). The decrypted files land in the app's private storage
+     * (filesDir), preserving the 1:1 path structure via [Photo.albumPath] —
+     * the gallery's album view reflects the original folder structure.
+     *
+     * This is the "Restore from backup" action: remote → local, path 1:1,
+     * inside PhotoZ's managed storage (NOT the public filesystem).
+     *
+     * @return count of originals successfully downloaded
+     */
+    suspend fun restoreAllOriginals(): Int = withContext(Dispatchers.IO) {
+        val remote = config.syncChosenRemote
+        if (remote.isNullOrBlank()) {
+            android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: no remote chosen")
+            return@withContext 0
+        }
+
+        val photos = try {
+            photoDao.getAll()
+        } catch (e: Exception) {
+            android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: failed to query photos: ${e.message}", e)
+            return@withContext 0
+        }
+
+        var restored = 0
+        for (photo in photos) {
+            if (photo.syncState != SyncState.UPLOADED) continue
+
+            val localFile = File(app.filesDir, internalFileName(photo.uuid))
+            if (localFile.exists() && localFile.length() > 0) continue // already local
+
+            val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+            try {
+                android.util.Log.e("RcloneDiag",
+                    "[SyncRestorer] restoreAllOriginals: downloading ${photo.uuid} (${photo.fileName}) ← $remoteOrig")
+                rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+                restored++
+                android.util.Log.e("RcloneDiag",
+                    "[SyncRestorer] restoreAllOriginals: OK ${photo.uuid} (${localFile.length()} bytes)")
+            } catch (e: Exception) {
+                android.util.Log.e("RcloneDiag",
+                    "[SyncRestorer] restoreAllOriginals: FAILED for ${photo.uuid}: ${e.message}", e)
+            }
+        }
+
+        android.util.Log.e("RcloneDiag",
+            "[SyncRestorer] restoreAllOriginals: DONE — restored $restored of ${photos.size} photos")
+        restored
+    }
 }

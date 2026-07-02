@@ -64,6 +64,9 @@ interface PhotoDao {
     @Query("SELECT * FROM photo WHERE photo_uuid = :uuid")
     suspend fun get(uuid: String): Photo
 
+    @Query("SELECT * FROM photo")
+    suspend fun getAll(): List<Photo>
+
     /**
      * Get all photos, ordered by imported At (desc).
      * Used for re-encrypting.

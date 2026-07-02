@@ -53,10 +53,10 @@ class GalleryViewModel @Inject constructor(
     // @since v9 followup (Bug 2) — needed by OnRestoreFromBackup to re-download
     // thumbnails from the cloud backup. The gallery's overflow menu has a new
     // "Restore from backup" option that calls [RepoManager.restoreThumbnailsFromPacks]
-    // to re-sync thumbnails (and create Photo rows for any registry entries that
-    // don't have one yet). Useful when a prior restore was interrupted, or when
-    // the user has deleted local thumbnails and wants to re-fetch them.
+    // to re-sync thumbnails + [SyncRestorer.restoreAllOriginals] to download
+    // the full original files back to local storage (path 1:1 inside PhotoZ).
     private val repoManager: RepoManager,
+    private val syncRestorer: onlasdan.gallery.sync.work.SyncRestorer,
     private val resources: Resources,
 ) : ViewModel() {
 
@@ -118,8 +118,6 @@ class GalleryViewModel @Inject constructor(
      * @since v9 followup (Bug 2) — Restore button alongside Export
      */
     private fun onRestoreFromBackup() {
-        // Show "started" toast immediately so the user gets feedback before the
-        // (potentially slow) pack downloads complete.
         eventsChannel.trySend(
             GalleryNavigationEvent.ShowToast(
                 resources.getString(R.string.menu_restore_from_backup_toast_started),
@@ -127,11 +125,18 @@ class GalleryViewModel @Inject constructor(
         )
         viewModelScope.launch {
             try {
-                val restored = repoManager.restoreThumbnailsFromPacks()
+                // Step 1: restore thumbnails + create DB rows from registry
+                val thumbsRestored = repoManager.restoreThumbnailsFromPacks()
+
+                // Step 2: restore full original files from remote to local storage
+                // (path 1:1 inside PhotoZ's private storage)
+                val originalsRestored = syncRestorer.restoreAllOriginals()
+
                 eventsChannel.trySend(
                     GalleryNavigationEvent.ShowToast(
                         resources.getString(
-                            R.string.menu_restore_from_backup_toast_success, restored,
+                            R.string.menu_restore_from_backup_toast_success,
+                            thumbsRestored + originalsRestored,
                         ),
                     ),
                 )
