@@ -417,6 +417,14 @@
     <string name="sync_settings_import_io_error">Couldn\'t save the config file, try again</string>
     <string name="sync_settings_import_success">rclone config imported</string>
 
+    <!-- Cloud sync settings toggles — @since sync settings feature -->
+    <string name="settings_sync_auto_upload_title">Auto-upload photos</string>
+    <string name="settings_sync_auto_upload_summary">Upload new photos to your cloud backup as soon as they\'re imported. Turn off to upload manually.</string>
+    <string name="settings_sync_wifi_only_title">Sync over Wi-Fi only</string>
+    <string name="settings_sync_wifi_only_summary">Wait for an unmetered (Wi-Fi) connection before uploading. Avoids cellular data charges.</string>
+    <string name="settings_sync_delete_after_upload_title">Delete local after upload</string>
+    <string name="settings_sync_delete_after_upload_summary">Remove the local encrypted original after a successful upload to free device storage. Thumbnails are kept so the gallery still shows the photo.</string>
+
     <!-- Remote picker dialog — @since PR1 sync addendum -->
     <string name="sync_remote_picker_title">Pick a remote to use for backup</string>
     <string name="sync_remote_picker_subtitle">Found %1$d remote(s) in your config. Pick which one PhotoZ should back up to.</string>

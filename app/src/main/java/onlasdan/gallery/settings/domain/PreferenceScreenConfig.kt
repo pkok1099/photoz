@@ -28,6 +28,12 @@ import onlasdan.gallery.settings.data.Config.Companion.SECURITY_BIOMETRIC_AUTHEN
 import onlasdan.gallery.settings.data.Config.Companion.SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN
 import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.domain.models.LockTimeout
 import onlasdan.gallery.settings.domain.models.SettingsEnum
 import onlasdan.gallery.settings.domain.models.StartPage
@@ -109,7 +115,7 @@ val PreferenceScreenConfigContent = buildList {
             )
         )
     )
-    // ─── Cloud Sync section (PR1 addendum) ────────────────────────────────────
+    // ─── Cloud Sync section (PR1 addendum + sync-settings feature) ───────────
     add(
         PreferenceSection(
             title = R.string.settings_category_cloud_sync,
@@ -120,6 +126,31 @@ val PreferenceScreenConfigContent = buildList {
                     icon = R.drawable.ic_cloud_upload,
                     title = R.string.settings_cloud_sync_config_title,
                     summaryPlaceholder = R.string.settings_cloud_sync_not_configured,
+                ),
+                // ─── sync-settings feature — three user-configurable toggles ──
+                // Replacements for the previously-hardcoded flags in
+                // SyncConfig. Defaults match the prior hardcoded values so
+                // existing users see no behaviour change on upgrade.
+                Preference.Switch(
+                    key = SYNC_AUTO_UPLOAD,
+                    icon = R.drawable.ic_cloud_upload,
+                    title = R.string.settings_sync_auto_upload_title,
+                    summary = R.string.settings_sync_auto_upload_summary,
+                    default = SYNC_AUTO_UPLOAD_DEFAULT,
+                ),
+                Preference.Switch(
+                    key = SYNC_WIFI_ONLY,
+                    icon = R.drawable.ic_cloud,
+                    title = R.string.settings_sync_wifi_only_title,
+                    summary = R.string.settings_sync_wifi_only_summary,
+                    default = SYNC_WIFI_ONLY_DEFAULT,
+                ),
+                Preference.Switch(
+                    key = SYNC_DELETE_AFTER_UPLOAD,
+                    icon = R.drawable.ic_delete,
+                    title = R.string.settings_sync_delete_after_upload_title,
+                    summary = R.string.settings_sync_delete_after_upload_summary,
+                    default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
                 ),
             ),
         )

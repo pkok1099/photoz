@@ -246,10 +246,17 @@ class PhotoRepository @Inject constructor(
             return false
         }
 
-        // ─── Sync hook (PR1) ────────────────────────────────────────────────────
+        // ─── Sync hook (PR1 + sync-settings feature) ────────────────────────
         // After the DB row is committed, enqueue a WorkManager job to push the encrypted
         // original + thumbnail to the rclone remote. Idempotent via ExistingWorkPolicy.KEEP.
-        if (SyncConfig.autoUploadEnabled) {
+        //
+        // @since sync-settings feature: the auto-upload toggle is now a user
+        //   preference (config.syncAutoUpload), not a hardcoded SyncConfig flag.
+        //   The worker's enqueue() also re-checks the flag (so callers that
+        //   don't have a Config instance still respect it), but checking here
+        //   too avoids the (cheap) WorkManager.getInstance() call when the
+        //   user has explicitly disabled auto-upload.
+        if (config.syncAutoUpload) {
             runCatching {
                 PhotoSyncWorker.enqueue(app, photo)
             }.onFailure { e ->

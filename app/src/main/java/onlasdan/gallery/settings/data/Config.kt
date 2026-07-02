@@ -167,6 +167,54 @@ class Config(context: Context) {
         set(value) = putString(SYNC_CHOSEN_REMOTE, value)
 
     /**
+     * Whether photos are auto-uploaded to the cloud as soon as they're
+     * imported. When `false`, the user must trigger uploads manually
+     * (the worker's enqueue() is a no-op, so newly-imported photos sit
+     * in LOCAL_ONLY until the user re-enables auto-upload or runs a
+     * manual "Restore from backup" pass that re-queues everything).
+     *
+     * Replaces the hardcoded [onlasdan.gallery.sync.domain.SyncConfig.autoUploadEnabled]
+     * flag with a user-configurable preference. The hardcoded default is
+     * `true` to preserve existing behaviour.
+     *
+     * @since sync settings feature — auto-upload toggle
+     */
+    var syncAutoUpload: Boolean
+        get() = getBoolean(SYNC_AUTO_UPLOAD, SYNC_AUTO_UPLOAD_DEFAULT)
+        set(value) = putBoolean(SYNC_AUTO_UPLOAD, value)
+
+    /**
+     * When `true`, sync only runs over unmetered networks (Wi-Fi or
+     * Ethernet). Mobile data uploads would burn through the user's
+     * data plan, so this is the safer default for users on metered
+     * connections. Implemented as a `NetworkType.UNMETERED` constraint
+     * on the WorkManager request — WorkManager won't even start the
+     * worker until the constraint is satisfied.
+     *
+     * @since sync settings feature — WiFi-only toggle
+     */
+    var syncWifiOnly: Boolean
+        get() = getBoolean(SYNC_WIFI_ONLY, SYNC_WIFI_ONLY_DEFAULT)
+        set(value) = putBoolean(SYNC_WIFI_ONLY, value)
+
+    /**
+     * Whether to delete the local encrypted original file after a
+     * successful upload. Frees up device storage at the cost of needing
+     * a re-download to view the photo offline (the gallery tile shows
+     * the local thumbnail, which is kept regardless of this setting).
+     *
+     * Replaces the hardcoded [onlasdan.gallery.sync.domain.SyncConfig.deleteLocalAfterUpload]
+     * flag with a user-configurable preference. Default `false` (keep
+     * local copies) to preserve existing behaviour and avoid surprising
+     * data loss.
+     *
+     * @since sync settings feature — delete-after-upload toggle
+     */
+    var syncDeleteAfterUpload: Boolean
+        get() = getBoolean(SYNC_DELETE_AFTER_UPLOAD, SYNC_DELETE_AFTER_UPLOAD_DEFAULT)
+        set(value) = putBoolean(SYNC_DELETE_AFTER_UPLOAD, value)
+
+    /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
      *
@@ -336,5 +384,19 @@ class Config(context: Context) {
 
         /** @since PR1 sync — mandatory repo setup */
         const val REPO_CONFIRMED = "sync^repoConfirmed"
+
+        // ─── Sync user preferences (settings UI) ────────────────────────────
+        // Three toggles surfaced under Settings → Cloud Sync. Replacements
+        // for the hardcoded flags previously in [SyncConfig].
+        // @since sync settings feature
+
+        const val SYNC_AUTO_UPLOAD = "sync^autoUpload"
+        const val SYNC_AUTO_UPLOAD_DEFAULT = true
+
+        const val SYNC_WIFI_ONLY = "sync^wifiOnly"
+        const val SYNC_WIFI_ONLY_DEFAULT = false
+
+        const val SYNC_DELETE_AFTER_UPLOAD = "sync^deleteAfterUpload"
+        const val SYNC_DELETE_AFTER_UPLOAD_DEFAULT = false
     }
 }

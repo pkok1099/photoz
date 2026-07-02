@@ -328,7 +328,11 @@ class PhotoSyncWorker @AssistedInject constructor(
                 diag("doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
                     "total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}")
                 onBatchCompleteIfDone()
-                if (SyncConfig.deleteLocalAfterUpload) {
+                // @since sync-settings feature — read the user-configurable
+                //  delete-after-upload flag from Config (was previously a
+                //  hardcoded SyncConfig constant). Default is `false` (keep
+                //  local copies) to preserve prior behaviour.
+                if (config.syncDeleteAfterUpload) {
                     deleteLocalOriginalAfterUpload(photo)
                 }
                 Result.success()
@@ -1130,14 +1134,57 @@ class PhotoSyncWorker @AssistedInject constructor(
         fun enqueue(context: Context, photo: Photo) {
             val uniqueWorkName = UNIQUE_WORK_PREFIX + photo.uuid
 
+            // ─── sync-settings feature: respect user's auto-upload toggle ──────
+            // Read the user-facing preference directly from SharedPreferences.
+            // We can't inject Config here (this is a companion-object method),
+            // but Config is just a thin wrapper around the same SharedPreferences
+            // file, so reading the same key with the same default is equivalent.
+            //
+            // When `syncAutoUpload == false`, return immediately WITHOUT calling
+            // WorkManager.getInstance().enqueueUniqueWork(). The photo stays in
+            // LOCAL_ONLY syncState; the user can re-enable auto-upload at any
+            // time and the next import will start enqueuing again.
+            //
+            // NOTE: photos already queued before the user toggled auto-upload off
+            // are NOT canceled — they will still upload. This matches the user's
+            // expectation that "off" means "no new uploads", not "cancel the
+            // in-flight batch".
+            val prefs = context.getSharedPreferences(
+                onlasdan.gallery.settings.data.Config.FILE_NAME,
+                android.content.Context.MODE_PRIVATE,
+            )
+            val autoUpload = prefs.getBoolean(
+                onlasdan.gallery.settings.data.Config.SYNC_AUTO_UPLOAD,
+                onlasdan.gallery.settings.data.Config.SYNC_AUTO_UPLOAD_DEFAULT,
+            )
+            // @since sync-settings feature: WiFi-only — adds NetworkType.UNMETERED
+            // to the WorkManager constraints so the worker won't run on metered
+            // (cellular) connections. The user toggles this in Settings → Cloud
+            // Sync → "Sync over Wi-Fi only". Default is false (allow cellular) to
+            // preserve the prior behaviour.
+            val wifiOnly = prefs.getBoolean(
+                onlasdan.gallery.settings.data.Config.SYNC_WIFI_ONLY,
+                onlasdan.gallery.settings.data.Config.SYNC_WIFI_ONLY_DEFAULT,
+            )
+            if (!autoUpload) {
+                android.util.Log.e("RcloneDiag",
+                    "[UploadWorker] enqueue: SKIPPED — syncAutoUpload=false (user disabled auto-upload in Settings). uuid=${photo.uuid}")
+                try {
+                    java.io.File(context.filesDir, "sync_log.txt").appendText(
+                        "[RcloneDiag] [UploadWorker] enqueue: SKIPPED — syncAutoUpload=false uuid=${photo.uuid}\n"
+                    )
+                } catch (_: Exception) {}
+                return
+            }
+
             // Log at enqueue time so we can confirm the worker is actually being
             // scheduled after photo import (if this log doesn't appear, the bug
             // is in the call chain BEFORE the worker, not in the worker itself).
             android.util.Log.e("RcloneDiag",
-                "[UploadWorker] enqueue: BEGIN uuid=${photo.uuid} autoUploadEnabled=${SyncConfig.autoUploadEnabled}")
+                "[UploadWorker] enqueue: BEGIN uuid=${photo.uuid} autoUploadEnabled=$autoUpload wifiOnly=$wifiOnly")
             try {
                 java.io.File(context.filesDir, "sync_log.txt").appendText(
-                    "\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid}\n"
+                    "\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid} wifiOnly=$wifiOnly\n"
                 )
             } catch (_: Exception) {}
 
@@ -1160,11 +1207,18 @@ class PhotoSyncWorker @AssistedInject constructor(
             // ─── Dump WorkInfo BEFORE enqueue (to see if there was a stale entry) ──
             dumpWorkInfo(context, uniqueWorkName, "BEFORE enqueue")
 
+            // @since sync-settings feature: when the user enabled "WiFi only",
+            // require an UNMETERED network. Combined with CONNECTED (always
+            // required), this means "connected AND unmetered" — i.e. Wi-Fi or
+            // Ethernet, not cellular. WorkManager won't even start the worker
+            // until the constraint is met, so mobile data is preserved.
+            val requiredNetworkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+
             val request = OneTimeWorkRequestBuilder<PhotoSyncWorker>()
                 .setInputData(workDataOf(KEY_PHOTO_UUID to photo.uuid))
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiredNetworkType(requiredNetworkType)
                         .build()
                 )
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
