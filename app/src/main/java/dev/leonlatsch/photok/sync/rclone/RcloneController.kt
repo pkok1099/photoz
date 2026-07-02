@@ -175,6 +175,14 @@ class RcloneController @Inject constructor(
 
             awaitRcdReady().getOrThrow()
 
+            // STEP-0 DIAG: log entry into uploadFileWithProgress so we can prove
+            // from the on-device log that the progress-polling code path is
+            // actually being exercised during real uploads (vs. just existing
+            // in the source but never reached). Includes file size so the
+            // poll-count vs. expected-duration can be sanity-checked.
+            val uploadStartMs = System.currentTimeMillis()
+            diag("uploadFileWithProgress: ENTRY localPath=$localPath size=${localFile.length()} remotePath=$remotePath pollIntervalMs=$PROGRESS_POLL_INTERVAL_MS")
+
             coroutineScope {
                 // Launch the copyfile call in a child coroutine. It holds callMutex
                 // for its full duration — same serialization contract as uploadFile().
@@ -195,29 +203,75 @@ class RcloneController @Inject constructor(
 
                 // Poll core/stats until the upload completes. Bypasses callMutex
                 // (see concurrency-model note in the function kdoc).
+                //
+                // STEP-0 DIAG: every poll is logged unconditionally — raw response
+                // shape, computed percent (or null + reason), and whether onProgress
+                // was actually called. This is the only way to distinguish
+                // "core/stats is being polled but returning empty transferring[]"
+                // from "polling loop never runs" from "polling runs but onProgress
+                // is rate-limited away" — three failure modes that all look
+                // identical ("notification only shows the final result") from
+                // the user's perspective.
+                var pollCount = 0
+                var onProgressCallCount = 0
+                var lastPercent: Float? = null
                 while (!uploadDeferred.isCompleted) {
+                    val pollStartMs = System.currentTimeMillis()
+                    val msSinceUploadStart = pollStartMs - uploadStartMs
                     try {
                         val stats = invokeRc(
                             op = "core/stats",
                             params = buildJsonObject {},
                         ).getOrNull()
-                        if (stats != null) {
+                        pollCount += 1
+                        if (stats == null) {
+                            diag("uploadFileWithProgress: stats poll #$pollCount t=${msSinceUploadStart}ms — invokeRc returned null (rcd error or non-200 response)")
+                        } else {
                             val percent = computeUploadProgressPercent(stats)
+                            // Capture a compact summary of the stats object so we
+                            // can see what rclone actually returned. The full
+                            // object can be large; we just log the keys + the
+                            // transferring array's size + first entry's fields
+                            // if present. This is enough to diagnose:
+                            //   - empty transferring[] (copyfile doesn't register)
+                            //   - missing bytes/totalBytes fields
+                            //   - zero totalBytes (divide-by-zero guard hit)
+                            val transferringArr = stats["transferring"] as? JsonArray
+                            val transferringSize = transferringArr?.size ?: 0
+                            val firstEntryKeys = (transferringArr?.firstOrNull() as? JsonObject)?.keys?.joinToString(",") ?: ""
+                            val topKeys = stats.keys.joinToString(",")
+                            val bytesField = (transferringArr?.firstOrNull() as? JsonObject)?.let { e ->
+                                (e["bytes"] as? JsonPrimitive)?.content
+                            }
+                            val totalBytesField = (transferringArr?.firstOrNull() as? JsonObject)?.let { e ->
+                                (e["totalBytes"] as? JsonPrimitive)?.content
+                            }
                             if (percent != null) {
+                                val isChange = percent != lastPercent
+                                lastPercent = percent
+                                onProgressCallCount += 1
+                                diag("uploadFileWithProgress: stats poll #$pollCount t=${msSinceUploadStart}ms — percent=$percent% isChange=$isChange onProgressCall#$onProgressCallCount — topKeys=[$topKeys] transferring.size=$transferringSize firstEntryKeys=[$firstEntryKeys] bytes=$bytesField totalBytes=$totalBytesField — CALLING onProgress")
                                 onProgress(percent)
+                            } else {
+                                diag("uploadFileWithProgress: stats poll #$pollCount t=${msSinceUploadStart}ms — percent=null (onProgress NOT called) — topKeys=[$topKeys] transferring.size=$transferringSize firstEntryKeys=[$firstEntryKeys] bytes=$bytesField totalBytes=$totalBytesField")
                             }
                         }
                     } catch (e: Exception) {
+                        pollCount += 1
                         // Stats polling failure is non-fatal — keep polling. The
                         // upload itself is unaffected; we just lose one progress tick.
-                        diag("uploadFileWithProgress: stats poll skipped: ${e.javaClass.name}: ${e.message}")
+                        diag("uploadFileWithProgress: stats poll #$pollCount t=${msSinceUploadStart}ms — EXCEPTION ${e.javaClass.name}: ${e.message}")
                     }
                     delay(PROGRESS_POLL_INTERVAL_MS)
                 }
 
+                val uploadEndMs = System.currentTimeMillis()
+                diag("uploadFileWithProgress: polling loop EXIT — $pollCount polls total, onProgress called $onProgressCallCount times, totalDuration=${uploadEndMs - uploadStartMs}ms — awaiting uploadDeferred for final result")
+
                 // Await the upload result — propagates any exception thrown inside
                 // the async block (CancellationException flows naturally).
                 uploadDeferred.await()
+                diag("uploadFileWithProgress: EXIT OK — localPath=$localPath totalPolls=$pollCount onProgressCalls=$onProgressCallCount totalDuration=${uploadEndMs - uploadStartMs}ms")
                 Unit
             }
         }
