@@ -425,6 +425,14 @@
     <string name="settings_sync_delete_after_upload_title">Delete local after upload</string>
     <string name="settings_sync_delete_after_upload_summary">Remove the local encrypted original after a successful upload to free device storage. Thumbnails are kept so the gallery still shows the photo.</string>
 
+    <!-- Registry garbage collection — @since registry-gc feature -->
+    <string name="settings_cleanup_backup_title">Clean up backup</string>
+    <string name="settings_cleanup_backup_summary">Reclaim cloud space by repacking thumbnail packs and deleting originals for photos you\'ve removed. Safe to run any time.</string>
+    <string name="settings_cleanup_backup_toast_started">Cleaning up backup…</string>
+    <string name="settings_cleanup_backup_toast_success">Cleaned up backup — repacked %1$d pack(s), deleted %2$d original(s)</string>
+    <string name="settings_cleanup_backup_toast_failed">Cleanup failed: %1$s</string>
+    <string name="settings_cleanup_backup_toast_nothing">Nothing to clean up — no deleted photos to reclaim.</string>
+
     <!-- Remote picker dialog — @since PR1 sync addendum -->
     <string name="sync_remote_picker_title">Pick a remote to use for backup</string>
     <string name="sync_remote_picker_subtitle">Found %1$d remote(s) in your config. Pick which one PhotoZ should back up to.</string>

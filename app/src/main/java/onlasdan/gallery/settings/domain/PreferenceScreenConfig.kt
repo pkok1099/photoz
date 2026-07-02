@@ -152,6 +152,17 @@ val PreferenceScreenConfigContent = buildList {
                     summary = R.string.settings_sync_delete_after_upload_summary,
                     default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
                 ),
+                // @since registry-gc feature — manual cleanup of soft-deleted
+                // entries' remote originals + thumbnail pack compaction. The
+                // row's onClick callback (registered in SettingsCallbacks)
+                // runs HashRegistry.gcThumbnailPacks() + gcOriginals() in a
+                // background coroutine and surfaces the result via a toast.
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_CLEANUP_BACKUP,
+                    icon = R.drawable.ic_refresh,
+                    title = R.string.settings_cleanup_backup_title,
+                    summary = R.string.settings_cleanup_backup_summary,
+                ),
             ),
         )
     )

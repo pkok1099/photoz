@@ -225,6 +225,15 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
             false
         }
 
+        // @since registry-gc feature — "Clean up backup" row. Triggers
+        // HashRegistry.gcThumbnailPacks() + gcOriginals() in the ViewModel.
+        // The ViewModel surfaces the result via toast; no UI state needs to
+        // be observed here.
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEANUP_BACKUP) {
+            viewModel.cleanupBackup()
+            false
+        }
+
         viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_FEEDBACK) {
             val email = context.getString(R.string.settings_other_feedback_mail_emailaddress)
             val subject =

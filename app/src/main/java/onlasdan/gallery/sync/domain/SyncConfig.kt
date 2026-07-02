@@ -77,4 +77,14 @@ object SyncConfig {
     const val THUMBNAIL_PACK_DIR = "$REPO_DIR/thumbnails"
     const val THUMBNAIL_PACK_PREFIX = "pack-"
     const val THUMBNAIL_PACK_SUFFIX = ".pack"
+
+    // ─── Suffixes for individual (non-packed) artifacts on the remote ──────
+    // These mirror the on-disk names used by VaultFileStorage
+    // (`${uuid}.$PHOTOK_FILE_EXTENSION` and `${uuid}.$PHOTOK_FILE_EXTENSION.tn`).
+    // The GC path ([HashRegistry.gcOriginals]) needs them to build remote paths
+    // when deleting orphaned originals + thumbnails for tombstoned entries.
+    //
+    // @since registry-gc feature — soft delete + repack + remote cleanup
+    const val ORIGINAL_FILE_SUFFIX = ".crypt"
+    const val THUMBNAIL_FILE_SUFFIX = ".crypt.tn"
 }

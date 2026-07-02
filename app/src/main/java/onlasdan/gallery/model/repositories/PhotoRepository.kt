@@ -33,6 +33,7 @@ import onlasdan.gallery.other.getMetadataFor
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sort.domain.Sort
 import onlasdan.gallery.sync.domain.SyncConfig
+import onlasdan.gallery.sync.work.HashRegistry
 import onlasdan.gallery.sync.work.PhotoSyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -64,6 +65,13 @@ class PhotoRepository @Inject constructor(
     private val app: Application,
     private val config: Config,
     private val io: IO,
+    // @since registry-gc feature — used by [safeDeletePhoto] to tombstone the
+    // dedup registry entry for a deleted photo's content_hash BEFORE the local
+    // encrypted file is removed. The tombstone is propagated to the remote
+    // registry so other devices stop referencing this hash. The actual remote
+    // original + thumbnail cleanup happens later in [HashRegistry.gcOriginals]
+    // when the user runs "Clean up backup" from Settings.
+    private val hashRegistry: HashRegistry,
 ) {
 
     // region DATABASE
@@ -320,6 +328,29 @@ class PhotoRepository @Inject constructor(
      * @return true, if the photo was successfully deleted on disk and in db.
      */
     suspend fun safeDeletePhoto(photo: Photo): Boolean {
+        // ─── registry-gc feature — tombstone the dedup registry entry ──────
+        // BEFORE the local encrypted file is removed, mark the registry entry
+        // for this photo's content_hash as soft-deleted. The tombstone is
+        // propagated to the remote registry so other devices stop referencing
+        // this hash. The actual remote original + thumbnail cleanup happens
+        // later in [HashRegistry.gcOriginals] when the user runs "Clean up
+        // backup" from Settings — we don't pay that network cost on every
+        // delete.
+        //
+        // Non-fatal: if the tombstone fails (no registry entry for pre-v9
+        // imports, vault locked, network blip), the local delete still
+        // proceeds. The orphaned remote original is reclaimable later via
+        // the Settings → "Clean up backup" button, which scans for tombstones
+        // (or missing entries) and deletes the corresponding remote files.
+        val contentHash = photo.contentHash
+        if (!contentHash.isNullOrBlank()) {
+            try {
+                hashRegistry.softDelete(contentHash)
+            } catch (e: Exception) {
+                Timber.w(e, "safeDeletePhoto: hashRegistry.softDelete FAILED (non-fatal — local delete still proceeds): %s", photo.uuid)
+            }
+        }
+
         val deletedElements = delete(photo)
         val success = deletedElements != -1
 

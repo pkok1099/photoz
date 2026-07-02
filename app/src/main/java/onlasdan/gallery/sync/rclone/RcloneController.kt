@@ -368,6 +368,37 @@ class RcloneController @Inject constructor(
             }
         }
 
+    /**
+     * Delete a single file from the remote.
+     *
+     * Wraps rclone's `operations/deletefile` rc call. Idempotent-ish: if the
+     * file doesn't exist, rclone returns an error which we surface via
+     * `Result.failure` — the caller (typically the GC path) is expected to
+     * catch and treat as non-fatal (the file is already gone, which is what
+     * the caller wanted).
+     *
+     * @param remotePath full rclone remote path, e.g. `myremote:photoz-backup/originals/abc.crypt`
+     * @since registry GC feature — soft-delete + remote cleanup
+     */
+    suspend fun deleteFile(remotePath: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                awaitRcdReady().getOrThrow()
+                callMutex.withLock {
+                    val remoteName = remotePath.substringBefore(':')
+                    val remoteRelPath = remotePath.substringAfter(':').removePrefix("/")
+                    invokeRc(
+                        op = "operations/deletefile",
+                        params = buildJsonObject {
+                            put("fs", "$remoteName:")
+                            put("remote", remoteRelPath)
+                        },
+                    ).getOrThrow()
+                }
+                Unit
+            }
+        }
+
     suspend fun verifyFileExists(remotePath: String, expectedSize: Long): Result<Boolean> =
         withContext(Dispatchers.IO) {
             runCatching {

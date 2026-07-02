@@ -38,8 +38,33 @@ interface HashRegistryDao {
     @Query("SELECT * FROM hash_registry WHERE content_hash = :hash AND deleted = 0 LIMIT 1")
     suspend fun findByHash(hash: String): HashRegistryEntry?
 
+    /**
+     * Look up an entry by content_hash, INCLUDING tombstoned entries.
+     *
+     * Used by [HashRegistry.softDelete] so a tombstone can be re-marked
+     * (or its UUID updated) even if the entry was already soft-deleted by
+     * a prior call.
+     *
+     * @since registry GC feature — soft delete + repack + remote cleanup
+     */
+    @Query("SELECT * FROM hash_registry WHERE content_hash = :hash LIMIT 1")
+    suspend fun findByHashIncludingDeleted(hash: String): HashRegistryEntry?
+
     @Query("SELECT * FROM hash_registry WHERE deleted = 0")
     suspend fun getAll(): List<HashRegistryEntry>
+
+    /**
+     * Return ALL entries including tombstoned (deleted=true) ones.
+     *
+     * Used by the registry garbage collector
+     * ([HashRegistry.gcThumbnailPacks] / [HashRegistry.gcOriginals])
+     * to enumerate dead entries for cleanup. Regular callers should use
+     * [getAll] which filters out the tombstones.
+     *
+     * @since registry GC feature — soft delete + repack + remote cleanup
+     */
+    @Query("SELECT * FROM hash_registry")
+    suspend fun getAllIncludingDeleted(): List<HashRegistryEntry>
 
     /**
      * Look up a registry entry by the canonical photo UUID.
@@ -66,4 +91,16 @@ interface HashRegistryDao {
 
     @Query("DELETE FROM hash_registry")
     suspend fun clear()
+
+    /**
+     * Physically remove a registry row by content_hash.
+     *
+     * Used by [HashRegistry.gcOriginals] to delete tombstoned rows AFTER the
+     * remote original file has been confirmed deleted — the row is no longer
+     * needed as a tombstone because the original it pointed to is gone.
+     *
+     * @since registry GC feature — soft delete + repack + remote cleanup
+     */
+    @Query("DELETE FROM hash_registry WHERE content_hash = :hash")
+    suspend fun deleteByHash(hash: String)
 }

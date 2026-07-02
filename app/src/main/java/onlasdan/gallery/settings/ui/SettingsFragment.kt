@@ -73,5 +73,10 @@ class SettingsFragment : Fragment() {
         /** Action key for the "Cloud Sync" row. Opens SAF file picker to import rclone.conf.
          *  @since PR1 sync addendum (Settings UI) */
         const val KEY_ACTION_CLOUD_SYNC = "action_cloud_sync"
+
+        /** Action key for the "Clean up backup" row. Runs registry GC: repacks
+         *  thumbnail packs with >30% tombstoned entries, then deletes the remote
+         *  originals for tombstoned entries. @since registry-gc feature */
+        const val KEY_ACTION_CLEANUP_BACKUP = "action_cleanup_backup"
     }
 }

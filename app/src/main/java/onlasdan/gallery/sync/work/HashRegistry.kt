@@ -103,12 +103,27 @@ class HashRegistry @Inject constructor(
     private val app: Application,
     private val rcloneController: RcloneController,
     private val dao: HashRegistryDao,
+    // @since registry-gc feature — needed by [softDelete] / [gcThumbnailPacks] /
+    // [gcOriginals] to obtain the VMK for encrypting the registry when flushing
+    // tombstones + compacted state to the remote. Already Hilt-provided
+    // (SessionRepositoryImpl has @Inject constructor + @Singleton).
+    private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
 ) {
     companion object {
         private const val TAG = "RcloneDiag"
         private const val REGISTRY_REMOTE_PATH = "${SyncConfig.REPO_DIR}/registry.json.crypt"
         private const val GCM_NONCE_SIZE = 12 // bytes (96 bits, standard for GCM)
         private const val GCM_TAG_SIZE = 128 // bits
+
+        /**
+         * Threshold (in percent) of tombstoned entries within a single
+         * thumbnail pack above which the GC will repack it. Below this, the
+         * bandwidth cost of re-downloading + re-uploading outweighs the
+         * dead-space savings.
+         *
+         * @since registry-gc feature
+         */
+        private const val GC_DEAD_SPACE_THRESHOLD_PCT = 30
 
         // ─── GZIP compression for registry (file-upload feature) ──────────────
         // The registry is hand-rolled JSON — text-heavy, with lots of repeated
@@ -596,6 +611,420 @@ class HashRegistry @Inject constructor(
         // Flush the final partial pack.
         uploadCurrentPack()
         diag("flushPendingThumbnailPacks: DONE — packed ${pendingThumbs.size} thumbnails into $packIndex pack(s)")
+    }
+
+    // ─── Registry garbage collection (registry-gc feature) ───────────────────
+    // The dedup registry is monotonic — entries are tombstoned (`deleted=true`)
+    // rather than physically removed so other devices that still hold a stale
+    // local cache know not to reference a deleted hash. Over time the tombstones
+    // accumulate:
+    //   - In the registry JSON itself (each tombstone is ~200 bytes; at 1000
+    //     deleted photos that's ~200 KB of pure dead weight in registry.json.crypt).
+    //   - In the thumbnail packs: a 50 MB pack with 60% tombstoned entries is
+    //     holding ~30 MB of orphaned thumbnail bytes that no live photo on any
+    //     device references.
+    //   - On the originals side: the original encrypted file (`<remote>:
+    //     photoz-backup/originals/<uuid>.crypt`) for a tombstoned entry is also
+    //     orphaned — no live Photo row references it.
+    //
+    // The three GC operations below reclaim that space:
+    //
+    //   1. [softDelete] — marks ONE entry as `deleted=true` (called from
+    //      PhotoRepository.safeDeletePhoto when the user deletes a photo).
+    //      The local cache + remote registry are both updated so other devices
+    //      see the tombstone on their next login.
+    //
+    //   2. [gcThumbnailPacks] — iterates each thumbnail pack, computes the
+    //      fraction of tombstoned entries inside it, and if >30% are dead,
+    //      re-downloads the pack, extracts ONLY the live entries, uploads them
+    //      as a fresh (smaller) pack, and updates the registry entries' pack
+    //      name / offset / length. The old pack is then deleted from the remote.
+    //
+    //   3. [gcOriginals] — iterates tombstoned entries and deletes the
+    //      corresponding `<remote>:photoz-backup/originals/<uuid>.crypt` from
+    //      the remote. The registry entry is then PHYSICALLY removed (not just
+    //      tombstoned) — the original is gone, so there's nothing left to
+    //      reference.
+    //
+    // The user triggers (2) + (3) from Settings → "Clean up backup". They're
+    // safe to run at any time — they're idempotent and don't touch live
+    // (non-tombstoned) entries.
+    //
+    // @since registry-gc feature — soft delete + thumbnail repack + remote cleanup
+
+    /**
+     * Mark the entry for [contentHash] as soft-deleted (tombstoned).
+     *
+     * Called by [onlasdan.gallery.model.repositories.PhotoRepository.safeDeletePhoto]
+     * before the local file is removed, so the dedup registry knows this hash
+     * is no longer referenced by any live photo on THIS device. The tombstone
+     * is propagated to the remote registry via [uploadToRemote] — other
+     * devices will see it on their next login and won't reference this hash.
+     *
+     * Idempotent: if the entry doesn't exist (e.g. pre-v9 import that never
+     * got a registry entry, or already tombstoned), the call is a no-op.
+     *
+     * @since registry-gc feature
+     */
+    suspend fun softDelete(contentHash: String) = withContext(Dispatchers.IO) {
+        if (contentHash.isBlank()) {
+            diag("softDelete: blank contentHash — skipping")
+            return@withContext
+        }
+        val existing = try {
+            dao.findByHashIncludingDeleted(contentHash)
+        } catch (e: Exception) {
+            diag("softDelete: lookup FAILED for $contentHash: ${e.message}", e)
+            return@withContext
+        } ?: run {
+            diag("softDelete: no registry entry for $contentHash — skipping (pre-v9 import or never uploaded)")
+            return@withContext
+        }
+        if (existing.deleted) {
+            diag("softDelete: $contentHash already tombstoned — skipping")
+            return@withContext
+        }
+        val tombstoned = existing.copy(deleted = true)
+        try {
+            dao.upsert(tombstoned)
+            diag("softDelete: tombstoned $contentHash (uuid=${existing.uuid}, filename=${existing.filename})")
+        } catch (e: Exception) {
+            diag("softDelete: upsert FAILED for $contentHash: ${e.message}", e)
+            return@withContext
+        }
+        // Best-effort flush to the remote registry so other devices see the
+        // tombstone on their next login. Failure is non-fatal — the local
+        // cache has the tombstone and the next batch-end flush will retry.
+        try {
+            val session = sessionRepository.get()
+            if (session != null) {
+                uploadToRemote(session.vmk.encoded)
+                diag("softDelete: flushed tombstone for $contentHash to remote registry")
+            } else {
+                diag("softDelete: vault session unavailable — tombstone stays local, will flush on next batch")
+            }
+        } catch (e: Exception) {
+            diag("softDelete: remote flush FAILED (non-fatal — local cache has the tombstone): ${e.message}", e)
+        }
+    }
+
+    /**
+     * Reclaim space from thumbnail packs that are >30% tombstoned.
+     *
+     * For each pack referenced by any registry entry (live or tombstoned):
+     *   1. Compute the fraction of tombstoned entries in the pack.
+     *   2. If ≤ [GC_DEAD_SPACE_THRESHOLD_PCT] (30%), skip — the pack is
+     *      healthy and re-packing it would just waste bandwidth.
+     *   3. If > threshold: download the pack, extract ONLY the live entries
+     *      (re-building offset/length as we go), upload the live-only pack as
+     *      a NEW pack, update each live entry's `thumbnail_pack` / `thumbnail_offset`
+     *      / `thumbnail_length` in the local cache, then delete the OLD pack
+     *      from the remote.
+     *
+     * Tombstoned entries in the OLD pack are dropped entirely — they no longer
+     * reference any live photo, so their thumbnail bytes are pure dead weight.
+     *
+     * Non-fatal: if a pack download or repack fails for any reason, that pack
+     * is skipped and the next GC run will retry it.
+     *
+     * @return count of packs repacked (0 if nothing needed GC)
+     * @since registry-gc feature
+     */
+    suspend fun gcThumbnailPacks(): Int = withContext(Dispatchers.IO) {
+        val remote = try {
+            val config = app.getSharedPreferences(
+                "onlasdan.gallery_preferences",
+                android.content.Context.MODE_PRIVATE,
+            )
+            config.getString("sync^chosenRemote", null)
+        } catch (e: Exception) {
+            null
+        } ?: run {
+            diag("gcThumbnailPacks: no remote chosen — skipping")
+            return@withContext 0
+        }
+
+        val allEntries = try {
+            dao.getAllIncludingDeleted()
+        } catch (e: Exception) {
+            diag("gcThumbnailPacks: failed to read registry: ${e.message}", e)
+            return@withContext 0
+        }
+        if (allEntries.isEmpty()) {
+            diag("gcThumbnailPacks: registry empty — nothing to GC")
+            return@withContext 0
+        }
+
+        // Group by thumbnail_pack (skip entries with no pack — those are
+        // individual-file uploads that aren't part of any pack).
+        val byPack: Map<String, List<HashRegistryEntry>> = allEntries
+            .filter { !it.thumbnailPack.isNullOrBlank() }
+            .groupBy { it.thumbnailPack!! }
+        if (byPack.isEmpty()) {
+            diag("gcThumbnailPacks: no packed thumbnails — nothing to GC")
+            return@withContext 0
+        }
+        diag("gcThumbnailPacks: ${byPack.size} packs to evaluate (total entries=${allEntries.size})")
+
+        var repacked = 0
+        for ((packName, entries) in byPack) {
+            val live = entries.filter { !it.deleted }
+            val dead = entries.filter { it.deleted }
+            val deadPct = if (entries.isEmpty()) 0 else (dead.size * 100) / entries.size
+            diag("gcThumbnailPacks: pack $packName — ${live.size} live, ${dead.size} dead ($deadPct% dead)")
+
+            if (dead.isEmpty()) {
+                // No tombstones in this pack — nothing to reclaim.
+                continue
+            }
+            if (deadPct <= GC_DEAD_SPACE_THRESHOLD_PCT) {
+                // Below threshold — keep the pack as-is.
+                diag("gcThumbnailPacks: pack $packName below $GC_DEAD_SPACE_THRESHOLD_PCT% threshold — skipping")
+                continue
+            }
+            if (live.isEmpty()) {
+                // Entire pack is dead — just delete the pack file. No repack
+                // needed (no live entries to migrate). The tombstoned entries'
+                // thumbnail_pack field is cleared so a future GC run doesn't
+                // try to download a non-existent pack.
+                diag("gcThumbnailPacks: pack $packName 100% dead — deleting pack file, no repack")
+                val packRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+                try {
+                    rcloneController.deleteFile(packRemotePath).getOrThrow()
+                    diag("gcThumbnailPacks: deleted pack $packName from remote")
+                } catch (e: Exception) {
+                    diag("gcThumbnailPacks: delete pack $packName FAILED (non-fatal): ${e.message}", e)
+                }
+                for (d in dead) {
+                    try {
+                        dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
+                    } catch (_: Exception) {}
+                }
+                repacked++
+                continue
+            }
+
+            // Download the pack, extract live entries, upload as a new pack,
+            // update live entries' offset/length, delete the old pack.
+            try {
+                val packRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+                val packLocalFile = File(app.cacheDir, "gc-pack-$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+                try {
+                    rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath).getOrThrow()
+                } catch (e: Exception) {
+                    diag("gcThumbnailPacks: download pack $packName FAILED (non-fatal — skipping): ${e.message}", e)
+                    continue
+                }
+                val packBytes = packLocalFile.readBytes()
+                diag("gcThumbnailPacks: downloaded pack $packName (${packBytes.size} bytes)")
+
+                // Extract live thumbnails IN ORDER (sorted by current offset
+                // so we preserve the original ordering within the pack).
+                data class LiveThumb(
+                    val entry: HashRegistryEntry,
+                    val bytes: ByteArray,
+                )
+                val liveThumbs = mutableListOf<LiveThumb>()
+                for (e in live.sortedBy { it.thumbnailOffset }) {
+                    val off = e.thumbnailOffset.toInt()
+                    val len = e.thumbnailLength.toInt()
+                    if (off < 0 || len <= 0 || off + len > packBytes.size) {
+                        diag("gcThumbnailPacks: entry ${e.uuid} has invalid offset/length (off=$off len=$len packSize=${packBytes.size}) — skipping entry")
+                        continue
+                    }
+                    liveThumbs.add(LiveThumb(e, packBytes.copyOfRange(off, off + len)))
+                }
+                if (liveThumbs.isEmpty()) {
+                    diag("gcThumbnailPacks: no extractable live thumbnails in $packName — falling back to delete-pack + clear-field")
+                    packLocalFile.delete()
+                    try {
+                        rcloneController.deleteFile(packRemotePath).getOrThrow()
+                    } catch (_: Exception) {}
+                    for (d in dead) {
+                        try { dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L)) } catch (_: Exception) {}
+                    }
+                    repacked++
+                    continue
+                }
+
+                // Concatenate live thumbnails into a new pack.
+                val newPackBytes = ByteArrayOutputStream(liveThumbs.sumOf { it.bytes.size }).use { baos ->
+                    for (lt in liveThumbs) baos.write(lt.bytes)
+                    baos.toByteArray()
+                }
+                val newPackName = "pack-${System.currentTimeMillis()}-${(0..9999).random().toString().padStart(4, '0')}"
+                val newPackFile = File(app.cacheDir, "gc-newpack-$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+                newPackFile.writeBytes(newPackBytes)
+
+                val newPackRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+                try {
+                    rcloneController.uploadFile(newPackFile.absolutePath, newPackRemotePath).getOrThrow()
+                    diag("gcThumbnailPacks: uploaded new pack $newPackName (${newPackBytes.size} bytes, ${liveThumbs.size} thumbnails)")
+                } catch (e: Exception) {
+                    diag("gcThumbnailPacks: upload new pack $newPackName FAILED (non-fatal): ${e.message}", e)
+                    packLocalFile.delete()
+                    newPackFile.delete()
+                    continue
+                }
+
+                // Update each live entry's pack name + offset + length.
+                var offset = 0L
+                for (lt in liveThumbs) {
+                    try {
+                        dao.upsert(lt.entry.copy(
+                            thumbnailPack = newPackName,
+                            thumbnailOffset = offset,
+                            thumbnailLength = lt.bytes.size.toLong(),
+                        ))
+                    } catch (e: Exception) {
+                        diag("gcThumbnailPacks: update entry ${lt.entry.uuid} FAILED (non-fatal): ${e.message}", e)
+                    }
+                    offset += lt.bytes.size
+                }
+
+                // Clear tombstoned entries' pack fields so a future GC run
+                // doesn't try to download the now-deleted pack for them.
+                for (d in dead) {
+                    try {
+                        dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
+                    } catch (_: Exception) {}
+                }
+
+                // Delete the OLD pack from the remote.
+                try {
+                    rcloneController.deleteFile(packRemotePath).getOrThrow()
+                    diag("gcThumbnailPacks: deleted old pack $packName from remote")
+                } catch (e: Exception) {
+                    diag("gcThumbnailPacks: delete old pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}", e)
+                }
+
+                packLocalFile.delete()
+                newPackFile.delete()
+                repacked++
+                diag("gcThumbnailPacks: repacked $packName → $newPackName (was ${entries.size} entries, now ${liveThumbs.size} live)")
+            } catch (e: Exception) {
+                diag("gcThumbnailPacks: repack $packName FAILED (non-fatal): ${e.message}", e)
+            }
+        }
+
+        // Flush the updated registry (new pack names / offsets) to the remote.
+        if (repacked > 0) {
+            try {
+                val session = sessionRepository.get()
+                if (session != null) {
+                    uploadToRemote(session.vmk.encoded)
+                    diag("gcThumbnailPacks: flushed updated registry to remote")
+                } else {
+                    diag("gcThumbnailPacks: vault session unavailable — registry stays local, will flush on next batch")
+                }
+            } catch (e: Exception) {
+                diag("gcThumbnailPacks: remote flush FAILED (non-fatal): ${e.message}", e)
+            }
+        }
+
+        diag("gcThumbnailPacks: DONE — repacked $repacked pack(s)")
+        repacked
+    }
+
+    /**
+     * Delete the remote originals for tombstoned entries and physically remove
+     * their registry rows.
+     *
+     * For each entry with `deleted=true`:
+     *   1. Delete `<remote>:photoz-backup/originals/<uuid>.crypt` from the
+     *      remote. Failure (file already gone, network blip) is non-fatal —
+     *      the next GC run will retry.
+     *   2. Physically delete the registry row from the local cache (NOT just
+     *      tombstone — the original is gone, so there's nothing left to
+     *      reference). The remote registry is flushed at the end so other
+     *      devices see the row removed on their next login.
+     *
+     * SAFE because: only tombstoned entries are touched. Tombstones are only
+     * ever created by [softDelete], which is only ever called from
+     * [PhotoRepository.safeDeletePhoto] AFTER the local Photo row + local
+     * encrypted files have been deleted. So the original on the remote is
+     * truly orphaned at this point.
+     *
+     * @return count of originals deleted
+     * @since registry-gc feature
+     */
+    suspend fun gcOriginals(): Int = withContext(Dispatchers.IO) {
+        val remote = try {
+            val config = app.getSharedPreferences(
+                "onlasdan.gallery_preferences",
+                android.content.Context.MODE_PRIVATE,
+            )
+            config.getString("sync^chosenRemote", null)
+        } catch (e: Exception) {
+            null
+        } ?: run {
+            diag("gcOriginals: no remote chosen — skipping")
+            return@withContext 0
+        }
+
+        val tombstoned = try {
+            dao.getAllIncludingDeleted().filter { it.deleted }
+        } catch (e: Exception) {
+            diag("gcOriginals: failed to read registry: ${e.message}", e)
+            return@withContext 0
+        }
+        if (tombstoned.isEmpty()) {
+            diag("gcOriginals: no tombstoned entries — nothing to GC")
+            return@withContext 0
+        }
+        diag("gcOriginals: ${tombstoned.size} tombstoned entries to clean up")
+
+        var deleted = 0
+        for (entry in tombstoned) {
+            val origRemotePath = "$remote:${SyncConfig.remoteOriginalsDir}/${entry.uuid}${SyncConfig.ORIGINAL_FILE_SUFFIX}"
+            try {
+                rcloneController.deleteFile(origRemotePath).getOrNull()
+                // deleteFile returns Result.failure if the file doesn't exist
+                // (already GC'd, or never uploaded). Either way, the original
+                // is gone — safe to drop the registry row.
+                deleted++
+                diag("gcOriginals: deleted original for ${entry.uuid} (hash=${entry.contentHash})")
+            } catch (e: Exception) {
+                diag("gcOriginals: delete original for ${entry.uuid} FAILED (non-fatal — leaving tombstone for retry): ${e.message}", e)
+                continue
+            }
+            // Also best-effort delete the (legacy) individual-thumbnail file
+            // at `<remote>:thumbnails/<uuid>.crypt.tn` — pre-pack thumbnails
+            // live there and are orphaned once the entry is tombstoned.
+            try {
+                val thumbRemotePath = "$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}${SyncConfig.THUMBNAIL_FILE_SUFFIX}"
+                rcloneController.deleteFile(thumbRemotePath).getOrNull()
+            } catch (_: Exception) {
+                // Non-fatal — the thumbnail may have been packed already, or
+                // may not exist on this backend.
+            }
+            // Physically remove the registry row. The original is gone, so
+            // there's nothing left to reference. Tombstone → no row.
+            try {
+                dao.deleteByHash(entry.contentHash)
+            } catch (e: Exception) {
+                diag("gcOriginals: delete registry row for ${entry.uuid} FAILED (non-fatal): ${e.message}", e)
+            }
+        }
+
+        // Flush the smaller registry to the remote so other devices see the
+        // rows removed on their next login.
+        if (deleted > 0) {
+            try {
+                val session = sessionRepository.get()
+                if (session != null) {
+                    uploadToRemote(session.vmk.encoded)
+                    diag("gcOriginals: flushed compacted registry to remote")
+                } else {
+                    diag("gcOriginals: vault session unavailable — registry stays local, will flush on next batch")
+                }
+            } catch (e: Exception) {
+                diag("gcOriginals: remote flush FAILED (non-fatal): ${e.message}", e)
+            }
+        }
+
+        diag("gcOriginals: DONE — deleted $deleted original(s)")
+        deleted
     }
 
     /**

@@ -38,6 +38,7 @@ import onlasdan.gallery.settings.domain.PreferenceScreenConfig
 import onlasdan.gallery.settings.domain.PreferenceScreenConfigContent
 import onlasdan.gallery.settings.domain.models.SettingsEnum
 import onlasdan.gallery.sync.rclone.RcloneConfigManager
+import onlasdan.gallery.sync.work.HashRegistry
 import onlasdan.gallery.uicomponnets.Dialogs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -79,6 +80,10 @@ class SettingsViewModel @Inject constructor(
     private val vaultService: VaultService,
     private val sessionRepository: SessionRepository,
     private val rcloneConfigManager: RcloneConfigManager,
+    // @since registry-gc feature — used by the "Clean up backup" action to
+    // run HashRegistry.gcThumbnailPacks() + gcOriginals(). Already
+    // Hilt-provided (HashRegistry has @Singleton @Inject constructor).
+    private val hashRegistry: HashRegistry,
 ) : ViewModel() {
 
 
@@ -241,5 +246,41 @@ class SettingsViewModel @Inject constructor(
         config.legacyUserSalt = null
 
         (app as BaseApplication).lockApp()
+    }
+
+    /**
+     * Run the registry garbage collector: repack thumbnail packs with >30%
+     * tombstoned entries, then delete the remote originals + thumbnail files
+     * for tombstoned entries.
+     *
+     * Triggered from Settings → "Clean up backup". Surfaces the result via
+     * toast — started / success (with counts) / failed / nothing to do.
+     *
+     * @since registry-gc feature
+     */
+    fun cleanupBackup() {
+        Dialogs.showLongToast(app, app.getString(R.string.settings_cleanup_backup_toast_started))
+        viewModelScope.launch {
+            try {
+                val repackedPacks = hashRegistry.gcThumbnailPacks()
+                val deletedOriginals = hashRegistry.gcOriginals()
+                if (repackedPacks == 0 && deletedOriginals == 0) {
+                    Dialogs.showLongToast(app, app.getString(R.string.settings_cleanup_backup_toast_nothing))
+                } else {
+                    Dialogs.showLongToast(
+                        app,
+                        app.getString(R.string.settings_cleanup_backup_toast_success, repackedPacks, deletedOriginals),
+                    )
+                }
+            } catch (e: Exception) {
+                Dialogs.showLongToast(
+                    app,
+                    app.getString(
+                        R.string.settings_cleanup_backup_toast_failed,
+                        e.message ?: e.javaClass.simpleName,
+                    ),
+                )
+            }
+        }
     }
 }
