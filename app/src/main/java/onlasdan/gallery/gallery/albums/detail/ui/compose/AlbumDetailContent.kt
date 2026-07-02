@@ -75,6 +75,12 @@ fun AlbumDetailContent(
         onImportChoice = {
             handleUiEvent(AlbumDetailUiEvent.OnImportChoice(it))
         },
+        // @since batch-operations feature — one-tap "Add to album" icon on
+        //   the multi-selection bar. Was previously only reachable via the
+        //   More dropdown.
+        onAddToAlbum = {
+            showAlbumSelection = true
+        },
         additionalMultiSelectionActions = {
             val selectedIds = multiSelectionState.selectedItems.value.toList()
             val anyPinned = selectedIds.any { it in uiState.pinnedPhotoIds }

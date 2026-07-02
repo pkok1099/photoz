@@ -100,6 +100,12 @@ fun GalleryContent(
             onImportChoice = {
                 handleUiEvent(GalleryUiEvent.OnImportChoice(it))
             },
+            // @since batch-operations feature — one-tap "Add to album" icon
+            //   on the multi-selection bar. Was previously only reachable via
+            //   the More dropdown.
+            onAddToAlbum = {
+                handleUiEvent(GalleryUiEvent.OnAddToAlbum)
+            },
             additionalMultiSelectionActions = {
                 HorizontalDivider()
                 DropdownMenuItem(

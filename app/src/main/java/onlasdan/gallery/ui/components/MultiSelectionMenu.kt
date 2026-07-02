@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -43,10 +44,31 @@ import onlasdan.gallery.R
 import onlasdan.gallery.gallery.components.MultiSelectionState
 import onlasdan.gallery.ui.theme.AppTheme
 
+/**
+ * Bottom-anchored multi-selection toolbar.
+ *
+ * Renders the standard "Close | info | [barActions] | More" structure. The
+ * [barActions] slot surfaces the most common batch operations (Delete,
+ * Export, Move-to-album) as one-tap icon buttons directly on the bar; the
+ * [actions] slot is the dropdown opened by the More button and is used for
+ * less-frequent operations (Select All, plus duplicates of the bar actions
+ * for users who prefer text labels).
+ *
+ * @param barActions icon buttons rendered between the "N item(s) selected"
+ *   label and the More button. Pass the most common batch actions here so
+ *   the user doesn't need to open the dropdown for them. `null` (default)
+ *   renders no icons — keeps backwards compatibility with callers that only
+ *   populate [actions].
+ *
+ * @since 1.0.0 — original bar with Close / info / More
+ * @since batch-operations feature — added [barActions] slot for one-tap
+ *   access to Delete / Export / Move-to-album
+ */
 @Composable
 fun MultiSelectionMenu(
     multiSelectionState: MultiSelectionState,
     modifier: Modifier = Modifier,
+    barActions: (@Composable RowScope.() -> Unit)? = null,
     actions: @Composable (ColumnScope.() -> Unit),
 ) {
     AnimatedVisibility(
@@ -82,6 +104,12 @@ fun MultiSelectionMenu(
                         ),
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    // @since batch-operations feature — one-tap icons for the
+                    //   most common batch actions, surfaced directly on the
+                    //   bar instead of hidden behind the More dropdown.
+                    if (barActions != null) {
+                        barActions()
+                    }
                     IconButton(onClick = { multiSelectionState.showMore() }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_more_vert),

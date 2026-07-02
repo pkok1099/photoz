@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -99,6 +100,15 @@ fun PhotoGallery(
     onDelete: () -> Unit,
     onImportChoice: (ImportChoice) -> Unit,
     additionalMultiSelectionActions: @Composable (ColumnScope.() -> Unit),
+    /**
+     * Called when the user taps the "Add to album" icon on the multi-selection
+     * bar. The caller (typically GalleryContent) opens the album picker dialog
+     * with the currently-selected UUIDs.
+     *
+     * @since batch-operations feature — surfaced Add-to-album as a one-tap
+     *   icon on the selection bar (was previously only in the More dropdown).
+     */
+    onAddToAlbum: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val activity = LocalActivity.current
@@ -193,6 +203,43 @@ fun PhotoGallery(
         MultiSelectionMenu(
             modifier = Modifier.align(Alignment.BottomCenter),
             multiSelectionState = multiSelectionState,
+            // @since batch-operations feature — surface the three most common
+            //   batch actions (Delete, Export, Add-to-album) as one-tap icon
+            //   buttons directly on the selection bar. The More dropdown
+            //   (below) retains Select All + text-label versions of the same
+            //   actions for users who prefer the menu.
+            barActions = {
+                IconButton(onClick = {
+                    showDeleteConfirmationDialog = true
+                }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_delete),
+                        contentDescription = stringResource(R.string.common_delete),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = {
+                    pickExportTargetLauncher.launchAndIgnoreTimer(
+                        input = null,
+                        activity = activity,
+                    )
+                }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_export),
+                        contentDescription = stringResource(R.string.common_export),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = {
+                    onAddToAlbum()
+                }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_folder),
+                        contentDescription = stringResource(R.string.menu_ms_add_to_album),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            },
         ) {
             DropdownMenuItem(
                 leadingIcon = {
