@@ -422,6 +422,38 @@ class RepoSetupViewModel @Inject constructor(
                         val loaded = repoManager.downloadRegistry(session.vmk.encoded)
                         android.util.Log.e("RcloneDiag",
                             "submitPassword: downloadRegistry loaded $loaded entries into local cache")
+
+                        // ─── v9 followup: backfill Photo metadata from registry ──
+                        // [restoreThumbnailsAfterLogin] (called earlier in the
+                        // login flow, BEFORE the vault was unlocked) created
+                        // Photo rows with placeholder metadata (type=JPEG,
+                        // size=0, relativePath=null) because the registry could
+                        // not be decrypted yet. Now that the registry is in the
+                        // local cache, walk those placeholder rows and backfill
+                        // the real metadata (filename, size, type, albumPath,
+                        // contentHash) from the matching registry entries.
+                        //
+                        // Without this step, the gallery shows restored photos
+                        // with bogus metadata (always JPEG, size 0, no album
+                        // path) until the user opens each one and the on-demand
+                        // original-fetch path corrects it — see the data-loss
+                        // bug report ("metadata hilang saat reinstall").
+                        val backfilled = repoManager.applyRegistryMetadataToPhotos()
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: applyRegistryMetadataToPhotos backfilled $backfilled placeholder rows")
+
+                        // ─── v9 followup (Bug 4): pack-based thumbnail restore ──
+                        // For repos created after Bug 4, individual thumbnails
+                        // are NOT uploaded (only packs). [restoreThumbnailsAfterLogin]
+                        // (called before unlock) found nothing in the thumbnails
+                        // dir for these repos. Now that the registry is cached,
+                        // we can download packs and extract thumbnails — one
+                        // pack download serves N thumbnails, instead of N
+                        // round-trips. Also handles legacy individual thumbnails
+                        // (for old repos) as a fallback.
+                        val packRestored = repoManager.restoreThumbnailsFromPacks()
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: restoreThumbnailsFromPacks restored $packRestored thumbnails from packs (and/or legacy individual)")
                     } catch (e: Exception) {
                         android.util.Log.e("RcloneDiag",
                             "submitPassword: downloadRegistry FAILED (non-fatal — uploads will still work, just no dedup): ${e.message}", e)

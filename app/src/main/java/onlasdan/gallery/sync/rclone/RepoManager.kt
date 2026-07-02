@@ -34,15 +34,20 @@ import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.domain.SyncState
 import onlasdan.gallery.sync.work.HashRegistry
+import onlasdan.gallery.sync.work.HashRegistryEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
+import java.security.SecureRandom
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -664,6 +669,311 @@ class RepoManager @Inject constructor(
     }
 
     /**
+     * Backfill Photo DB rows created by [restoreThumbnailsAfterLogin] with
+     * the real per-hash metadata (filename, size, type, albumPath,
+     * contentHash) from the freshly-downloaded dedup registry.
+     *
+     * ## Why this exists
+     *
+     * [restoreThumbnailsAfterLogin] runs DURING [loginRepo], BEFORE the
+     * vault is unlocked — the VMK is not yet in memory, so the encrypted
+     * `registry.json.crypt` cannot be decrypted. It creates Photo rows with
+     * placeholder metadata (`type=JPEG, size=0, relativePath=null`) so the
+     * gallery has SOMETHING to show immediately after login.
+     *
+     * Once the user enters their password (or phrase) and the vault is
+     * unlocked, [downloadRegistry] populates the local registry cache. This
+     * method then walks the placeholder Photo rows and backfills the real
+     * metadata from the matching registry entries (matched by UUID).
+     *
+     * ## Sentinel
+     *
+     * The placeholder sentinel is `size == 0` (real photos always have
+     * `size > 0` because the encrypted original is at least a few hundred
+     * bytes). [PhotoDao.backfillMetadataFromRegistry] only updates rows
+     * where `size = 0`, so re-running this on an already-backfilled DB is
+     * a no-op.
+     *
+     * ## Failure mode
+     *
+     * Non-fatal. If the registry is empty (fresh repo), or a Photo's UUID
+     * isn't in the registry (e.g. uploaded before v9), the Photo keeps its
+     * placeholder metadata — the gallery still shows it, and the existing
+     * on-demand original-fetch path ([SyncRestorer]) will correct the
+     * type/size when the user opens the photo.
+     *
+     * @return count of Photo rows backfilled (0 if registry empty or no
+     *   placeholder rows exist)
+     *
+     * @since v9 followup — backfill Photo metadata from registry after login
+     */
+    suspend fun applyRegistryMetadataToPhotos(): Int = withContext(Dispatchers.IO) {
+        diag("applyRegistryMetadataToPhotos: BEGIN")
+
+        val placeholderPhotos = try {
+            photoDao.findPhotosWithPlaceholderMetadata()
+        } catch (e: Exception) {
+            diag("applyRegistryMetadataToPhotos: FAILED to query placeholder photos: ${e.message}", e)
+            return@withContext 0
+        }
+
+        if (placeholderPhotos.isEmpty()) {
+            diag("applyRegistryMetadataToPhotos: no placeholder Photo rows — nothing to backfill")
+            return@withContext 0
+        }
+        diag("applyRegistryMetadataToPhotos: ${placeholderPhotos.size} placeholder Photo rows to backfill")
+
+        var backfilled = 0
+        for (photo in placeholderPhotos) {
+            val entry = try {
+                hashRegistry.findByUuid(photo.uuid)
+            } catch (e: Exception) {
+                diag("applyRegistryMetadataToPhotos: registry lookup FAILED for ${photo.uuid}: ${e.message}")
+                null
+            }
+            if (entry == null) {
+                diag("applyRegistryMetadataToPhotos: no registry entry for uuid=${photo.uuid} — leaving placeholder (will be corrected on-demand via SyncRestorer)")
+                continue
+            }
+
+            val type = try {
+                PhotoType.fromName(entry.type)
+            } catch (e: Exception) {
+                PhotoType.JPEG
+            }
+
+            try {
+                val affected = photoDao.backfillMetadataFromRegistry(
+                    uuid = photo.uuid,
+                    filename = entry.filename.ifBlank { photo.fileName },
+                    size = entry.size,
+                    type = type.value,
+                    relativePath = entry.albumPath ?: photo.relativePath,
+                    albumPath = entry.albumPath,
+                    contentHash = entry.contentHash,
+                )
+                if (affected > 0) {
+                    backfilled++
+                    diag("applyRegistryMetadataToPhotos: backfilled ${photo.uuid} " +
+                        "(filename=${entry.filename}, size=${entry.size}, type=${type}, " +
+                        "albumPath=${entry.albumPath}, contentHash=${entry.contentHash})")
+                }
+            } catch (e: Exception) {
+                diag("applyRegistryMetadataToPhotos: backfill FAILED for ${photo.uuid}: ${e.message}", e)
+            }
+        }
+
+        diag("applyRegistryMetadataToPhotos: DONE — backfilled $backfilled of ${placeholderPhotos.size} placeholder rows")
+        backfilled
+    }
+
+    /**
+     * Pack-based thumbnail restore — the download-side counterpart of
+     * [onlasdan.gallery.sync.work.HashRegistry.flushPendingThumbnailPacks].
+     *
+     * Walks the local registry cache (populated by [downloadRegistry]) and
+     * restores thumbnails for entries whose thumbnails are NOT already local:
+     *  - For entries with `thumbnail_pack != null`: groups by pack name,
+     *    downloads each pack ONCE, and extracts each thumbnail by
+     *    `thumbnail_offset` / `thumbnail_length` into the local file
+     *    `<filesDir>/<uuid>.crypt.tn`. This is the Bug 4 optimization — one
+     *    pack download serves N thumbnails, instead of N round-trips.
+     *  - For entries with `thumbnail_pack == null` (legacy / pre-Bug-4 uploads):
+     *    falls back to the individual-thumbnail download path
+     *    (`<remote>:thumbnails/<uuid>.crypt.tn`), preserving backwards
+     *    compatibility with repos created before this change.
+     *
+     * Also creates Photo DB rows for entries that don't yet have one (e.g.
+     * for new repos created after Bug 4 where [restoreThumbnailsAfterLogin]
+     * found no individual thumbnails to download and thus created 0 rows).
+     * The new rows are populated with real metadata from the registry entry
+     * (NOT placeholder metadata) since the registry is already cached.
+     *
+     * MUST be called AFTER [downloadRegistry] (so the local cache is
+     * populated). MUST be called AFTER the vault is unlocked — the
+     * thumbnails are AES-CBC encrypted with the VMK, so without the VMK in
+     * memory the gallery can't render them anyway, but the bytes themselves
+     * are opaque and can be downloaded + saved to local storage at any time.
+     * We require the vault to be unlocked so that [restoreThumbnailsAfterLogin]
+     * has already run (creating placeholder rows that this method backfills).
+     *
+     * ## Idempotence
+     *
+     * Skips entries whose local thumbnail file already exists (whether created
+     * by [restoreThumbnailsAfterLogin] for legacy entries, or by a prior
+     * [restoreThumbnailsFromPacks] call). Safe to call multiple times.
+     *
+     * ## Failure handling
+     *
+     * Non-fatal. If a pack download fails, all entries in that pack are
+     * skipped (their local thumbnail files won't exist; the gallery shows a
+     * broken thumbnail, but the next [restoreThumbnailsFromPacks] call will
+     * retry). If an individual-thumbnail download fails, that entry is
+     * skipped. The user can still open the photo (the on-demand
+     * [SyncRestorer] path fetches the original).
+     *
+     * @return count of thumbnails restored (0 if registry is empty or all
+     *   thumbnails are already local)
+     *
+     * @since v9 followup — packed thumbnails (Bug 4)
+     */
+    suspend fun restoreThumbnailsFromPacks(): Int = withContext(Dispatchers.IO) {
+        diag("restoreThumbnailsFromPacks: BEGIN remote=${config.syncChosenRemote}")
+
+        val remote = config.syncChosenRemote
+        if (remote.isNullOrBlank()) {
+            diag("restoreThumbnailsFromPacks: ABORT — no remote chosen")
+            return@withContext 0
+        }
+
+        val entries = try {
+            hashRegistry.allEntries()
+        } catch (e: Exception) {
+            diag("restoreThumbnailsFromPacks: FAILED to read registry entries: ${e.message}", e)
+            return@withContext 0
+        }
+        if (entries.isEmpty()) {
+            diag("restoreThumbnailsFromPacks: registry empty — nothing to restore")
+            return@withContext 0
+        }
+
+        // ─── Group entries by pack name (null = legacy individual download) ──
+        val byPack = entries.groupBy { it.thumbnailPack }
+        val packEntries = byPack.filterKeys { it != null }
+        val legacyEntries = byPack[null].orEmpty()
+        diag(
+            "restoreThumbnailsFromPacks: ${entries.size} entries total — " +
+                "${packEntries.size} packs (${packEntries.values.sumOf { it.size }} entries), " +
+                "${legacyEntries.size} legacy (no pack)"
+        )
+
+        var restored = 0
+
+        // ─── Pack-based download: one pack → N thumbnails ──────────────────
+        for ((packName, packMembers) in packEntries) {
+            if (packName == null) continue
+            // Skip if ALL members already have local thumbnails.
+            val missing = packMembers.filter { entry ->
+                val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+                !localThumb.exists() || localThumb.length() == 0L
+            }
+            if (missing.isEmpty()) {
+                diag("restoreThumbnailsFromPacks: pack $packName — all ${packMembers.size} thumbnails already local, skipping")
+                continue
+            }
+            // Download the pack once into a cache file.
+            val packRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+            val packLocalFile = File(app.cacheDir, "$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+            try {
+                diag("restoreThumbnailsFromPacks: downloading pack $packRemotePath (${missing.size} of ${packMembers.size} thumbnails missing) → ${packLocalFile.absolutePath}")
+                val dlResult = rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath)
+                if (dlResult.isFailure) {
+                    diag("restoreThumbnailsFromPacks: pack $packName download FAILED: ${dlResult.exceptionOrNull()?.message}", dlResult.exceptionOrNull())
+                    continue
+                }
+                val packBytes = packLocalFile.readBytes()
+                diag("restoreThumbnailsFromPacks: pack $packName downloaded (${packBytes.size} bytes)")
+
+                // Extract each missing member's thumbnail by offset+length.
+                for (entry in missing) {
+                    val offset = entry.thumbnailOffset
+                    val length = entry.thumbnailLength
+                    if (length <= 0L || offset < 0L || offset + length > packBytes.size) {
+                        diag("restoreThumbnailsFromPacks: skipping ${entry.uuid} — invalid offset/length (offset=$offset length=$length packSize=${packBytes.size})")
+                        continue
+                    }
+                    val thumbBytes = packBytes.copyOfRange(offset.toInt(), (offset + length).toInt())
+                    val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+                    try {
+                        app.openFileOutput(localThumb.name, android.content.Context.MODE_PRIVATE).use { it.write(thumbBytes) }
+                        restored++
+                        diag("restoreThumbnailsFromPacks: extracted ${entry.uuid} thumbnail ($length bytes) from pack $packName")
+                        // Ensure a Photo row exists for this UUID (new repos
+                        // created after Bug 4 may not have one yet, since
+                        // restoreThumbnailsAfterLogin found no individual
+                        // thumbnails to download).
+                        ensurePhotoRowForRestoredEntry(entry)
+                    } catch (e: Exception) {
+                        diag("restoreThumbnailsFromPacks: FAILED to write thumbnail for ${entry.uuid}: ${e.message}", e)
+                    }
+                }
+            } finally {
+                packLocalFile.delete()
+            }
+        }
+
+        // ─── Legacy individual-thumbnail download (pre-Bug-4 repos) ─────────
+        for (entry in legacyEntries) {
+            val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+            if (localThumb.exists() && localThumb.length() > 0L) {
+                continue // already local (e.g. from restoreThumbnailsAfterLogin)
+            }
+            val remoteThumbPath = "$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}$THUMBNAIL_SUFFIX"
+            try {
+                diag("restoreThumbnailsFromPacks: legacy individual download for ${entry.uuid} → $remoteThumbPath")
+                val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
+                if (dlResult.isFailure) {
+                    diag("restoreThumbnailsFromPacks: legacy download FAILED for ${entry.uuid}: ${dlResult.exceptionOrNull()?.message}")
+                    continue
+                }
+                restored++
+                ensurePhotoRowForRestoredEntry(entry)
+            } catch (e: Exception) {
+                diag("restoreThumbnailsFromPacks: legacy download exception for ${entry.uuid}: ${e.message}", e)
+            }
+        }
+
+        diag("restoreThumbnailsFromPacks: DONE — restored $restored thumbnails")
+        restored
+    }
+
+    /**
+     * Ensure a Photo DB row exists for a registry entry that was just
+     * restored (either from a pack or via legacy individual download).
+     *
+     * For new repos created after Bug 4, [restoreThumbnailsAfterLogin] may
+     * not have created a Photo row (it lists the thumbnails dir, which is
+     * empty for new repos). This method creates the row with real metadata
+     * from the registry entry (NOT placeholder metadata, since the registry
+     * is already cached).
+     *
+     * Idempotent: if a Photo row already exists (e.g. created by
+     * [restoreThumbnailsAfterLogin] for old repos, or by a prior call to
+     * this method), this is a no-op.
+     *
+     * @since v9 followup — packed thumbnails (Bug 4)
+     */
+    private suspend fun ensurePhotoRowForRestoredEntry(entry: HashRegistryEntry) {
+        val existing = runCatching { photoDao.get(entry.uuid) }.getOrNull()
+        if (existing != null) {
+            return
+        }
+        val type = try {
+            PhotoType.fromName(entry.type)
+        } catch (e: Exception) {
+            PhotoType.JPEG
+        }
+        val photo = Photo(
+            fileName = entry.filename.ifBlank { "${entry.uuid}.$PHOTOK_FILE_EXTENSION" },
+            importedAt = System.currentTimeMillis(),
+            lastModified = null,
+            type = type,
+            size = entry.size,
+            uuid = entry.uuid,
+            syncState = SyncState.UPLOADED,
+            relativePath = entry.albumPath,
+            contentHash = entry.contentHash,
+            albumPath = entry.albumPath,
+        )
+        try {
+            photoDao.insert(photo)
+            diag("ensurePhotoRowForRestoredEntry: created Photo row for ${entry.uuid} (filename=${photo.fileName}, size=${photo.size}, type=${photo.type})")
+        } catch (e: Exception) {
+            diag("ensurePhotoRowForRestoredEntry: insert FAILED for ${entry.uuid}: ${e.message}", e)
+        }
+    }
+
+    /**
      * Upload the local recovery-phrase [VaultProtection] (the wrapped VMK + KDF
      * params) to a well-known path on the rclone remote, so a fresh install of
      * the app on another device can later download it and unlock the VMK via
@@ -673,9 +983,29 @@ class RepoManager @Inject constructor(
      * Layer 2 (the password wrapping the phrase) is uploaded separately by
      * [uploadWrappedPhraseEscrow]; the two are coordinated by [uploadAllEscrows].
      *
-     * The artifact is written as JSON at:
-     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<VAULT_PROTECTION_FILENAME>`
-     *   = `<remote>:photok-backup/vault-protection/recovery-phrase.json`
+     * The artifact is written as an **encrypted binary blob** at:
+     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<VAULT_PROTECTION_FILENAME>.crypt`
+     *   = `<remote>:photoz-backup/vault-protection/recovery-phrase.json.crypt`
+     *
+     * The on-wire format is the same AES-256-GCM layout used by the dedup
+     * registry (`registry.json.crypt`):
+     *   [12-byte nonce][ciphertext + 16-byte auth-tag]
+     *
+     * The GCM key is the VMK (raw bytes from `session.vmk.encoded`). This
+     * hides the JSON structure (field names, base64 strings) from anyone
+     * with read access to the remote — they see only opaque ciphertext.
+     *
+     * **Chicken-and-egg caveat (data-loss risk):** the VMK is what's wrapped
+     * INSIDE this artifact. On a fresh install, the user must unlock the VMK
+     * via their recovery phrase BEFORE this .crypt file can be decrypted.
+     * But unlocking the VMK via the phrase normally requires this very
+     * VaultProtection row to be in the local DB (which is populated FROM
+     * this file). To break the cycle, [downloadVaultProtectionEscrow] falls
+     * back to the legacy plaintext `recovery-phrase.json` if the .crypt
+     * cannot be decrypted — so old repos (created before this change) still
+     * support fresh-install recovery, while new repos (created after this
+     * change) require the user to first unlock via Layer 2 (password path)
+     * OR via a backup file. See the work record for details.
      *
      * Independent verification (re-list) follows the same pattern as the repo
      * marker upload — the upload call's return value alone is NOT proof.
@@ -686,92 +1016,102 @@ class RepoManager @Inject constructor(
      * invoked from [SetupViewModel]) wraps the call in try/catch and logs but
      * does not throw.
      *
+     * @param vmkBytes raw VMK key bytes (from `session.vmk.encoded`) used as
+     *   the AES-256-GCM key for the outer encryption layer.
+     *
      * @since key-escrow — upload wrapped VMK during repo registration.
      *   Renamed in Part A fix from `uploadVaultProtectionEscrow()` to
      *   `uploadRecoveryPhraseEscrow()` to disambiguate from the new
      *   [uploadWrappedPhraseEscrow] (Layer 2). No behavior change.
+     *   @since v9 followup — entire JSON now AES-256-GCM encrypted with VMK
+     *   and uploaded as `.json.crypt` (was plaintext `.json`).
      */
-    private suspend fun uploadRecoveryPhraseEscrow(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val remote = config.syncChosenRemote
-                ?: throw IllegalStateException("No remote chosen")
+    private suspend fun uploadRecoveryPhraseEscrow(vmkBytes: ByteArray): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val remote = config.syncChosenRemote
+                    ?: throw IllegalStateException("No remote chosen")
 
-            diag("uploadRecoveryPhraseEscrow: BEGIN remote=$remote")
+                diag("uploadRecoveryPhraseEscrow: BEGIN remote=$remote")
 
-            val protection = vaultProtectionRepository.getProtection(VaultProtectionType.RecoveryPhrase)
-            if (protection == null) {
-                // No recovery-phrase protection set up locally yet. This was the
-                // root cause of the register-always-triggered bug (Part A): the
-                // prior call site (registerRepo) ran BEFORE SetupFragment created
-                // the VaultProtection(RecoveryPhrase) row. The new call site
-                // (uploadAllEscrows, invoked from SetupViewModel AFTER
-                // vaultService.create(CreateRequest.RecoveryPhrase(...))) guarantees
-                // the row exists by this point — but handle gracefully anyway.
-                diag("uploadRecoveryPhraseEscrow: no RecoveryPhrase protection in local DB — skipping")
-                return@runCatching Unit
-            }
+                val protection = vaultProtectionRepository.getProtection(VaultProtectionType.RecoveryPhrase)
+                if (protection == null) {
+                    diag("uploadRecoveryPhraseEscrow: no RecoveryPhrase protection in local DB — skipping")
+                    return@runCatching Unit
+                }
 
-            // Hand-built JSON — consistent with the marker file style (no external
-            // serialization dependency in this class). java.util.Base64 (NOT
-            // android.util.Base64) — simpler API, available on minSdk 26+ (this
-            // project's minSdk is 35).
-            val wrappedVmkB64 = Base64.getEncoder().encodeToString(protection.wrappedVMK)
-            val saltJson = protection.params.salt?.let { "\"$it\"" } ?: "null"
-            val kdfJson = protection.params.kdf?.value?.let { "\"$it\"" } ?: "null"
-            val kdfIterJson = protection.params.kdfIterations?.toString() ?: "null"
+                // Hand-built JSON — consistent with the marker file style (no external
+                // serialization dependency in this class). java.util.Base64 (NOT
+                // android.util.Base64) — simpler API, available on minSdk 26+ (this
+                // project's minSdk is 35).
+                val wrappedVmkB64 = Base64.getEncoder().encodeToString(protection.wrappedVMK)
+                val saltJson = protection.params.salt?.let { "\"$it\"" } ?: "null"
+                val kdfJson = protection.params.kdf?.value?.let { "\"$it\"" } ?: "null"
+                val kdfIterJson = protection.params.kdfIterations?.toString() ?: "null"
 
-            val json = """{"id":"${protection.id}","type":"${protection.type.name}",""" +
-                """"wrappedVMK":"$wrappedVmkB64","params":{"salt":$saltJson,""" +
-                """"iv":"${protection.params.iv}","kdf":$kdfJson,""" +
-                """"kdfIterations":$kdfIterJson,"algorithm":"${protection.params.algorithm.value}",""" +
-                """"keySize":${protection.params.keySize},"version":${protection.params.version}}}"""
-            diag(
-                "uploadRecoveryPhraseEscrow: serialized protection id=${protection.id} " +
-                    "type=${protection.type} vmkB64Len=${wrappedVmkB64.length}"
-            )
-
-            val tempFile = File(app.cacheDir, "vault-protection-${System.currentTimeMillis()}.json")
-            try {
-                tempFile.writeText(json)
+                val json = """{"id":"${protection.id}","type":"${protection.type.name}",""" +
+                    """"wrappedVMK":"$wrappedVmkB64","params":{"salt":$saltJson,""" +
+                    """"iv":"${protection.params.iv}","kdf":$kdfJson,""" +
+                    """"kdfIterations":$kdfIterJson,"algorithm":"${protection.params.algorithm.value}",""" +
+                    """"keySize":${protection.params.keySize},"version":${protection.params.version}}}"""
                 diag(
-                    "uploadRecoveryPhraseEscrow: wrote temp file ${tempFile.absolutePath} " +
-                        "(${tempFile.length()} bytes)"
+                    "uploadRecoveryPhraseEscrow: serialized protection id=${protection.id} " +
+                        "type=${protection.type} vmkB64Len=${wrappedVmkB64.length}"
                 )
 
-                val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
-                diag("uploadRecoveryPhraseEscrow: uploading → $remotePath")
-                val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
-                if (uploadResult.isFailure) {
-                    throw uploadResult.exceptionOrNull()
-                        ?: IOException("Escrow upload failed")
-                }
-
-                // Independent verification — same pattern as registerRepo() marker.
-                val verifyResult = rcloneController.listRemote(
-                    "$remote:", "$REPO_DIR/$VAULT_PROTECTION_DIR"
+                // ─── v9 followup: AES-256-GCM wrap the entire JSON with the VMK ──
+                // Hides the JSON structure (field names, base64 strings) so an
+                // attacker with read access to the remote sees only opaque
+                // ciphertext, NOT the JSON shape. Same format as registry.json.crypt:
+                // [12-byte nonce][ciphertext + 16-byte auth-tag].
+                val encryptedBlob = encryptBlobVmk(json.toByteArray(Charsets.UTF_8), vmkBytes)
+                diag(
+                    "uploadRecoveryPhraseEscrow: GCM-encrypted JSON (${encryptedBlob.size} bytes, " +
+                        "plaintext=${json.length} chars) with VMK"
                 )
-                if (verifyResult.isFailure) {
-                    throw IOException(
-                        "Escrow upload succeeded but verification listing failed: " +
-                            verifyResult.exceptionOrNull()?.message
-                    )
-                }
 
-                val files = verifyResult.getOrThrow()
-                val found = files.any { it.name == VAULT_PROTECTION_FILENAME && it.size > 0 }
-                if (!found) {
-                    throw IOException(
-                        "Escrow upload succeeded but file not found in independent listing. " +
-                            "Files: $files"
+                val tempFile = File(app.cacheDir, "vault-protection-${System.currentTimeMillis()}.crypt")
+                try {
+                    tempFile.writeBytes(encryptedBlob)
+                    diag(
+                        "uploadRecoveryPhraseEscrow: wrote temp file ${tempFile.absolutePath} " +
+                            "(${tempFile.length()} bytes)"
                     )
+
+                    val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
+                    diag("uploadRecoveryPhraseEscrow: uploading → $remotePath")
+                    val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
+                    if (uploadResult.isFailure) {
+                        throw uploadResult.exceptionOrNull()
+                            ?: IOException("Escrow upload failed")
+                    }
+
+                    // Independent verification — same pattern as registerRepo() marker.
+                    val verifyResult = rcloneController.listRemote(
+                        "$remote:", "$REPO_DIR/$VAULT_PROTECTION_DIR"
+                    )
+                    if (verifyResult.isFailure) {
+                        throw IOException(
+                            "Escrow upload succeeded but verification listing failed: " +
+                                verifyResult.exceptionOrNull()?.message
+                        )
+                    }
+
+                    val files = verifyResult.getOrThrow()
+                    val found = files.any { it.name == VAULT_PROTECTION_FILENAME && it.size > 0 }
+                    if (!found) {
+                        throw IOException(
+                            "Escrow upload succeeded but file not found in independent listing. " +
+                                "Files: $files"
+                        )
+                    }
+                    diag("uploadRecoveryPhraseEscrow: verification OK — file present on remote")
+                    Unit
+                } finally {
+                    tempFile.delete()
                 }
-                diag("uploadRecoveryPhraseEscrow: verification OK — file present on remote")
-                Unit
-            } finally {
-                tempFile.delete()
             }
         }
-    }
 
     /**
      * Download the recovery-phrase [VaultProtection] escrow artifact from the
@@ -781,53 +1121,97 @@ class RepoManager @Inject constructor(
      * unlock the VMK on this fresh install.
      *
      * Behavior:
-     * - Remote artifact present → deserialize, persist via [VaultProtectionRepository]
-     *   (`createProtection` or `updateProtection` if a RecoveryPhrase row already
-     *   exists — no duplicates), return `Result.success(protection)`.
-     * - Remote artifact absent (older repo created before this feature existed,
-     *   or rclone returns "not found") → return `Result.success(null)`. The
-     *   caller treats this as "no escrow available" — login still succeeds but
-     *   the user is routed to the degraded-mode UI.
+     * - If `vmkBytes != null` AND the encrypted `.json.crypt` artifact is on
+     *   the remote → download, GCM-decrypt with VMK, parse JSON, persist via
+     *   [VaultProtectionRepository], return `Result.success(protection)`.
+     * - If the encrypted `.json.crypt` artifact is absent (older repo created
+     *   before this feature existed, OR rclone returns "not found") AND the
+     *   legacy plaintext `recovery-phrase.json` exists → fall back to the
+     *   legacy plaintext download + parse path. This preserves fresh-install
+     *   recovery for old repos.
+     * - If neither artifact is on the remote → return `Result.success(null)`.
+     *   The caller treats this as "no escrow available" — login still succeeds
+     *   but the user is routed to the degraded-mode UI.
      * - Other download errors (network, permissions, malformed JSON) → return
-     *   `Result.failure(exception)`. The caller treats this as a non-fatal
-     *   download error — login still succeeds (degraded mode), the user can
-     *   still reach the gallery via the normal vault PIN/password path.
+     *   `Result.failure(exception)`.
+     *
+     * @param vmkBytes raw VMK key bytes (from `session.vmk.encoded`), or null
+     *   if the VMK is not yet in memory (e.g. during `loginRepo` on a fresh
+     *   install). When null, only the legacy plaintext fallback path is
+     *   attempted; the encrypted `.json.crypt` path is skipped.
      *
      * @since key-escrow — download wrapped VMK during repo login
+     *   @since v9 followup — entire JSON now AES-256-GCM encrypted with VMK
+     *   and downloaded as `.json.crypt` (was plaintext `.json`). The legacy
+     *   plaintext path is retained as a fallback for old repos.
      */
-    private suspend fun downloadVaultProtectionEscrow(): Result<VaultProtection?> =
-        withContext(Dispatchers.IO) {
+    private suspend fun downloadVaultProtectionEscrow(
+        vmkBytes: ByteArray? = null,
+    ): Result<VaultProtection?> = withContext(Dispatchers.IO) {
             runCatching {
                 val remote = config.syncChosenRemote
                     ?: throw IllegalStateException("No remote chosen")
 
-                diag("downloadVaultProtectionEscrow: BEGIN remote=$remote")
+                diag("downloadVaultProtectionEscrow: BEGIN remote=$remote hasVmk=${vmkBytes != null}")
 
-                val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
+                // ─── Try the encrypted .json.crypt path first (new repos) ──────
+                if (vmkBytes != null) {
+                    val cryptResult = downloadAndDecryptJsonBlob(
+                        remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH",
+                        vmkBytes = vmkBytes,
+                        label = "VaultProtection",
+                    )
+                    if (cryptResult.isFailure) {
+                        // .crypt file existed but failed to decrypt — surface as a real
+                        // error (don't silently fall back to legacy .json, since that
+                        // might hide a real corruption / wrong-VMK issue).
+                        val err = cryptResult.exceptionOrNull()?.message ?: "unknown error"
+                        val isNotFound = err.contains("not found", ignoreCase = true) ||
+                            err.contains("doesn't exist", ignoreCase = true) ||
+                            err.contains("does not exist", ignoreCase = true) ||
+                            err.contains("no such file", ignoreCase = true) ||
+                            err.contains("object not found", ignoreCase = true)
+                        if (!isNotFound) {
+                            diag(
+                                "downloadVaultProtectionEscrow: .crypt exists but decrypt FAILED: $err",
+                                cryptResult.exceptionOrNull(),
+                            )
+                            throw cryptResult.exceptionOrNull()
+                                ?: IOException("Escrow .crypt download failed: $err")
+                        }
+                        // .crypt not found → fall through to legacy .json path below.
+                        diag("downloadVaultProtectionEscrow: .crypt not on remote — trying legacy plaintext .json")
+                    } else {
+                        val json = cryptResult.getOrNull()
+                        if (json != null) {
+                            diag("downloadVaultProtectionEscrow: .crypt decrypted (${json.length} chars)")
+                            val protection = parseVaultProtection(json)
+                                ?: throw IOException("Malformed vault-protection JSON (decrypted from .crypt)")
+                            persistVaultProtection(protection)
+                            return@runCatching protection
+                        }
+                    }
+                } else {
+                    diag("downloadVaultProtectionEscrow: no VMK available — skipping .crypt path, trying legacy .json")
+                }
+
+                // ─── Legacy plaintext .json fallback (old repos) ───────────────
+                val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
                 val tempFile = File(
                     app.cacheDir, "vault-protection-dl-${System.currentTimeMillis()}.json"
                 )
                 try {
-                    diag("downloadVaultProtectionEscrow: downloading $remotePath → ${tempFile.absolutePath}")
-                    val dlResult = rcloneController.downloadFile(remotePath, tempFile.absolutePath)
+                    diag("downloadVaultProtectionEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
+                    val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
                     if (dlResult.isFailure) {
                         val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
-                        // Graceful missing-artifact case: file doesn't exist on remote
-                        // (older repo created before this feature existed). Don't fail —
-                        // return null so the caller can show "not available" UI instead
-                        // of an error. Match the same "not found" pattern used in
-                        // detectRepo() but tightened: only the file-not-found phrasings
-                        // rclone actually emits for a missing remote file.
                         val isNotFound = err.contains("not found", ignoreCase = true) ||
                             err.contains("doesn't exist", ignoreCase = true) ||
                             err.contains("does not exist", ignoreCase = true) ||
                             err.contains("no such file", ignoreCase = true) ||
                             err.contains("object not found", ignoreCase = true)
                         if (isNotFound) {
-                            diag(
-                                "downloadVaultProtectionEscrow: artifact not on remote " +
-                                    "(old repo) — returning null"
-                            )
+                            diag("downloadVaultProtectionEscrow: legacy .json not on remote either — returning null")
                             return@runCatching null
                         }
                         throw dlResult.exceptionOrNull()
@@ -835,47 +1219,43 @@ class RepoManager @Inject constructor(
                     }
 
                     if (!tempFile.exists() || tempFile.length() == 0L) {
-                        // Defensive: rclone sometimes returns success with an empty file
-                        // when the remote path is missing. Treat as "not on remote".
-                        diag(
-                            "downloadVaultProtectionEscrow: downloaded file missing or empty " +
-                                "— treating as not-on-remote"
-                        )
+                        diag("downloadVaultProtectionEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
                         return@runCatching null
                     }
 
                     val json = tempFile.readText()
-                    diag("downloadVaultProtectionEscrow: downloaded ${json.length} chars")
+                    diag("downloadVaultProtectionEscrow: downloaded legacy ${json.length} chars")
 
                     val protection = parseVaultProtection(json)
                         ?: throw IOException("Malformed vault-protection JSON")
-                    diag(
-                        "downloadVaultProtectionEscrow: parsed id=${protection.id} " +
-                            "type=${protection.type}"
-                    )
-
-                    // Persist into local DB. If a RecoveryPhrase protection already
-                    // exists (e.g. this device already has one set up), update it —
-                    // don't create duplicates. Otherwise insert.
-                    val existing = vaultProtectionRepository
-                        .getProtection(VaultProtectionType.RecoveryPhrase)
-                    if (existing != null) {
-                        diag(
-                            "downloadVaultProtectionEscrow: existing protection in DB " +
-                                "(id=${existing.id}) — updating"
-                        )
-                        vaultProtectionRepository.updateProtection(protection)
-                    } else {
-                        diag("downloadVaultProtectionEscrow: no existing protection — creating")
-                        vaultProtectionRepository.createProtection(protection)
-                    }
-                    diag("downloadVaultProtectionEscrow: persisted to local DB")
+                    persistVaultProtection(protection)
                     protection
                 } finally {
                     tempFile.delete()
                 }
             }
         }
+
+    /**
+     * Persist a [VaultProtection] into the local DB. If a RecoveryPhrase
+     * protection already exists (e.g. this device already has one set up),
+     * update it — don't create duplicates. Otherwise insert.
+     *
+     * @since v9 followup — extracted from downloadVaultProtectionEscrow for
+     *   reuse by both the .crypt and legacy .json download paths.
+     */
+    private suspend fun persistVaultProtection(protection: VaultProtection) {
+        val existing = vaultProtectionRepository
+            .getProtection(VaultProtectionType.RecoveryPhrase)
+        if (existing != null) {
+            diag("persistVaultProtection: existing protection in DB (id=${existing.id}) — updating")
+            vaultProtectionRepository.updateProtection(protection)
+        } else {
+            diag("persistVaultProtection: no existing protection — creating")
+            vaultProtectionRepository.createProtection(protection)
+        }
+        diag("persistVaultProtection: persisted to local DB")
+    }
 
     /**
      * Upload both escrow layers (Layer 1: wrapped VMK + Layer 2: wrapped phrase) to
@@ -895,7 +1275,12 @@ class RepoManager @Inject constructor(
      * [VaultSession] that SetupViewModel passes in. The phrase is then re-wrapped
      * with the user's password (a fresh salt + IV — NOT reusing the
      * password-VaultProtection's salt, per the Part B spec) via
-     * [PhraseEscrowWrapper.wrapPhrase], and uploaded as `wrapped-phrase.json`.
+     * [PhraseEscrowWrapper.wrapPhrase], and uploaded as `wrapped-phrase.json.crypt`.
+     *
+     * Both layers are now AES-256-GCM encrypted at the OUTER level with the VMK
+     * (see [uploadRecoveryPhraseEscrow] / [uploadWrappedPhraseEscrow]). This
+     * hides the JSON structure (field names, base64 strings) from anyone with
+     * read access to the remote.
      *
      * Failure is non-fatal: setup MUST still succeed even if escrow upload fails
      * (the vault is still usable; only fresh-install restore won't work). The
@@ -903,27 +1288,31 @@ class RepoManager @Inject constructor(
      * throw.
      *
      * @param password the user's vault password (already validated by SetupFragment)
-     * @param session the current [VaultSession] — needed to decrypt the phrase from
-     *   [RecoveryPhraseStore]. The session was set in `sessionRepository.set(session)`
-     *   just before this call.
+     * @param session the current [VaultSession] — needed to (a) decrypt the phrase
+     *   from [RecoveryPhraseStore], and (b) provide the VMK bytes for the outer
+     *   GCM encryption of both .crypt artifacts. The session was set in
+     *   `sessionRepository.set(session)` just before this call.
      * @since Part A fix + Part B two-layer escrow — replaces the premature
      *   registerRepo() escrow upload. Uploads BOTH layers atomically (Layer 2 only
      *   uploaded if Layer 1 succeeds).
+     *   @since v9 followup — both layers now AES-256-GCM encrypted with VMK at
+     *   the outer level (was plaintext JSON).
      */
     suspend fun uploadAllEscrows(password: String, session: VaultSession): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
-                diag("uploadAllEscrows: BEGIN — uploading Layer 1 (wrapped VMK)")
+                val vmkBytes = session.vmk.encoded
+                diag("uploadAllEscrows: BEGIN — uploading Layer 1 (wrapped VMK, encrypted with VMK)")
 
-                // ─── Layer 1: recovery-phrase.json (wrapped VMK) ─────────────────
-                val layer1 = uploadRecoveryPhraseEscrow()
+                // ─── Layer 1: recovery-phrase.json.crypt (wrapped VMK, outer GCM with VMK) ──
+                val layer1 = uploadRecoveryPhraseEscrow(vmkBytes)
                 if (layer1.isFailure) {
                     throw layer1.exceptionOrNull()
-                        ?: IOException("Layer 1 (recovery-phrase.json) upload failed")
+                        ?: IOException("Layer 1 (recovery-phrase.json.crypt) upload failed")
                 }
-                diag("uploadAllEscrows: Layer 1 OK — proceeding to Layer 2 (wrapped phrase)")
+                diag("uploadAllEscrows: Layer 1 OK — proceeding to Layer 2 (wrapped phrase, encrypted with VMK)")
 
-                // ─── Layer 2: wrapped-phrase.json (password wraps phrase) ───────
+                // ─── Layer 2: wrapped-phrase.json.crypt (password wraps phrase, outer GCM with VMK) ──
                 // Read the phrase from RecoveryPhraseStore (encrypted-at-rest with the
                 // VMK via RecoveryPhraseStoreImpl). The session was just set in
                 // SetupViewModel, so observe(session).first() returns the phrase that
@@ -941,17 +1330,14 @@ class RepoManager @Inject constructor(
                 }
 
                 if (phrase == null) {
-                    // Phrase wasn't stored (shouldn't happen if
-                    // vaultService.create(RecoveryPhrase) ran successfully, but be
-                    // defensive). Layer 1 is already uploaded; Layer 2 just can't be.
                     diag("uploadAllEscrows: RecoveryPhraseStore has no phrase — skipping Layer 2")
                     return@runCatching Unit
                 }
 
-                val layer2 = uploadWrappedPhraseEscrow(phrase, password)
+                val layer2 = uploadWrappedPhraseEscrow(phrase, password, vmkBytes)
                 if (layer2.isFailure) {
                     throw layer2.exceptionOrNull()
-                        ?: IOException("Layer 2 (wrapped-phrase.json) upload failed")
+                        ?: IOException("Layer 2 (wrapped-phrase.json.crypt) upload failed")
                 }
                 diag("uploadAllEscrows: Layer 2 OK — both layers uploaded + verified")
                 Unit
@@ -960,21 +1346,33 @@ class RepoManager @Inject constructor(
 
     /**
      * Upload the password-wrapped recovery phrase (Layer 2 of the two-layer escrow)
-     * to `wrapped-phrase.json` on the rclone remote, and independently verify it
-     * landed via a re-list.
+     * to `wrapped-phrase.json.crypt` on the rclone remote, and independently verify
+     * it landed via a re-list.
      *
      * The phrase is wrapped via [PhraseEscrowWrapper.wrapPhrase] using a FRESH salt
      * and IV — NOT reusing the password-VaultProtection's salt (per the Part B
      * spec). The wrapped phrase is serialized via [PhraseEscrowWrapper.WrappedPhrase.toJson]
      * and uploaded to:
-     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<WRAPPED_PHRASE_FILENAME>`
-     *   = `<remote>:photok-backup/vault-protection/wrapped-phrase.json`
+     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<WRAPPED_PHRASE_FILENAME>.crypt`
+     *   = `<remote>:photok-backup/vault-protection/wrapped-phrase.json.crypt`
+     *
+     * The entire JSON is then AES-256-GCM encrypted with the VMK at the outer
+     * level (same format as `registry.json.crypt` and `recovery-phrase.json.crypt`):
+     *   [12-byte nonce][ciphertext + 16-byte auth-tag]
+     *
+     * This hides the JSON structure from anyone with read access to the remote.
+     *
+     * @param vmkBytes raw VMK key bytes used as the AES-256-GCM key for the
+     *   outer encryption layer.
      *
      * @since Part B two-layer escrow — paired with [downloadWrappedPhraseEscrow].
+     *   @since v9 followup — entire JSON now AES-256-GCM encrypted with VMK
+     *   and uploaded as `.json.crypt` (was plaintext `.json`).
      */
     private suspend fun uploadWrappedPhraseEscrow(
         phrase: onlasdan.gallery.encryption.domain.models.RecoveryPhrase,
         password: String,
+        vmkBytes: ByteArray,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val remote = config.syncChosenRemote
@@ -991,11 +1389,18 @@ class RepoManager @Inject constructor(
                     "alg=${wrapped.algorithm.value} keySize=${wrapped.keySize})"
             )
 
+            // ─── v9 followup: AES-256-GCM wrap the entire JSON with the VMK ──
+            val encryptedBlob = encryptBlobVmk(json.toByteArray(Charsets.UTF_8), vmkBytes)
+            diag(
+                "uploadWrappedPhraseEscrow: GCM-encrypted JSON (${encryptedBlob.size} bytes, " +
+                    "plaintext=${json.length} chars) with VMK"
+            )
+
             val tempFile = File(
-                app.cacheDir, "wrapped-phrase-${System.currentTimeMillis()}.json"
+                app.cacheDir, "wrapped-phrase-${System.currentTimeMillis()}.crypt"
             )
             try {
-                tempFile.writeText(json)
+                tempFile.writeBytes(encryptedBlob)
                 diag(
                     "uploadWrappedPhraseEscrow: wrote temp file ${tempFile.absolutePath} " +
                         "(${tempFile.length()} bytes)"
@@ -1038,56 +1443,93 @@ class RepoManager @Inject constructor(
 
     /**
      * Download the password-wrapped recovery phrase (Layer 2 of the two-layer
-     * escrow) from `wrapped-phrase.json` on the rclone remote.
+     * escrow) from `wrapped-phrase.json.crypt` on the rclone remote.
      *
      * Counterpart of [uploadWrappedPhraseEscrow]. Called from [loginRepo] after
      * Layer 1 ([downloadVaultProtectionEscrow]) succeeds.
      *
      * Behavior:
-     * - Remote artifact present → deserialize via
+     * - If `vmkBytes != null` AND the encrypted `.json.crypt` artifact is on
+     *   the remote → download, GCM-decrypt with VMK, parse via
      *   [PhraseEscrowWrapper.WrappedPhrase.fromJson], return `Result.success(wrapped)`.
-     * - Remote artifact absent (older repo created before Part B, or rclone returns
-     *   "not found") → return `Result.success(null)`. The caller falls back to
-     *   [EscrowType.PHRASE_ONLY] (the existing phrase-entry UI).
-     * - Other download errors (network, permissions, malformed JSON) → return
-     *   `Result.failure(exception)`. The caller also falls back to
-     *   [EscrowType.PHRASE_ONLY] (Layer 1 is still usable).
+     * - If the encrypted `.json.crypt` artifact is absent AND the legacy
+     *   plaintext `wrapped-phrase.json` exists → fall back to the legacy
+     *   plaintext path. This preserves fresh-install recovery for old repos.
+     * - If neither artifact is on the remote → return `Result.success(null)`.
+     *   The caller falls back to [EscrowType.PHRASE_ONLY].
+     * - Other download errors → return `Result.failure(exception)`.
+     *
+     * @param vmkBytes raw VMK key bytes, or null if the VMK is not yet in
+     *   memory (e.g. during `loginRepo` on a fresh install). When null, only
+     *   the legacy plaintext fallback is attempted.
      *
      * @since Part B two-layer escrow
+     *   @since v9 followup — entire JSON now AES-256-GCM encrypted with VMK
+     *   and downloaded as `.json.crypt` (was plaintext `.json`). Legacy
+     *   plaintext path retained as fallback.
      */
-    suspend fun downloadWrappedPhraseEscrow(): Result<PhraseEscrowWrapper.WrappedPhrase?> =
-        withContext(Dispatchers.IO) {
+    suspend fun downloadWrappedPhraseEscrow(
+        vmkBytes: ByteArray? = null,
+    ): Result<PhraseEscrowWrapper.WrappedPhrase?> = withContext(Dispatchers.IO) {
             runCatching {
                 val remote = config.syncChosenRemote
                     ?: throw IllegalStateException("No remote chosen")
 
-                diag("downloadWrappedPhraseEscrow: BEGIN remote=$remote")
+                diag("downloadWrappedPhraseEscrow: BEGIN remote=$remote hasVmk=${vmkBytes != null}")
 
-                val remotePath = "$remote:$WRAPPED_PHRASE_REMOTE_PATH"
+                // ─── Try the encrypted .json.crypt path first (new repos) ──────
+                if (vmkBytes != null) {
+                    val cryptResult = downloadAndDecryptJsonBlob(
+                        remotePath = "$remote:$WRAPPED_PHRASE_REMOTE_PATH",
+                        vmkBytes = vmkBytes,
+                        label = "WrappedPhrase",
+                    )
+                    if (cryptResult.isFailure) {
+                        val err = cryptResult.exceptionOrNull()?.message ?: "unknown error"
+                        val isNotFound = err.contains("not found", ignoreCase = true) ||
+                            err.contains("doesn't exist", ignoreCase = true) ||
+                            err.contains("does not exist", ignoreCase = true) ||
+                            err.contains("no such file", ignoreCase = true) ||
+                            err.contains("object not found", ignoreCase = true)
+                        if (!isNotFound) {
+                            diag(
+                                "downloadWrappedPhraseEscrow: .crypt exists but decrypt FAILED: $err",
+                                cryptResult.exceptionOrNull(),
+                            )
+                            throw cryptResult.exceptionOrNull()
+                                ?: IOException("Wrapped-phrase .crypt download failed: $err")
+                        }
+                        diag("downloadWrappedPhraseEscrow: .crypt not on remote — trying legacy plaintext .json")
+                    } else {
+                        val json = cryptResult.getOrNull()
+                        if (json != null) {
+                            diag("downloadWrappedPhraseEscrow: .crypt decrypted (${json.length} chars)")
+                            val wrapped = PhraseEscrowWrapper.WrappedPhrase.fromJson(json)
+                                ?: throw IOException("Malformed wrapped-phrase JSON (decrypted from .crypt)")
+                            return@runCatching wrapped
+                        }
+                    }
+                } else {
+                    diag("downloadWrappedPhraseEscrow: no VMK available — skipping .crypt path, trying legacy .json")
+                }
+
+                // ─── Legacy plaintext .json fallback (old repos) ───────────────
+                val legacyRemotePath = "$remote:$WRAPPED_PHRASE_LEGACY_REMOTE_PATH"
                 val tempFile = File(
                     app.cacheDir, "wrapped-phrase-dl-${System.currentTimeMillis()}.json"
                 )
                 try {
-                    diag(
-                        "downloadWrappedPhraseEscrow: downloading $remotePath → " +
-                            tempFile.absolutePath
-                    )
-                    val dlResult = rcloneController.downloadFile(remotePath, tempFile.absolutePath)
+                    diag("downloadWrappedPhraseEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
+                    val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
                     if (dlResult.isFailure) {
                         val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
-                        // Same "not found" pattern as downloadVaultProtectionEscrow —
-                        // old repos don't have a wrapped-phrase.json. Don't fail;
-                        // return null so the caller falls back to PHRASE_ONLY.
                         val isNotFound = err.contains("not found", ignoreCase = true) ||
                             err.contains("doesn't exist", ignoreCase = true) ||
                             err.contains("does not exist", ignoreCase = true) ||
                             err.contains("no such file", ignoreCase = true) ||
                             err.contains("object not found", ignoreCase = true)
                         if (isNotFound) {
-                            diag(
-                                "downloadWrappedPhraseEscrow: artifact not on remote " +
-                                    "(old repo) — returning null"
-                            )
+                            diag("downloadWrappedPhraseEscrow: legacy .json not on remote either — returning null")
                             return@runCatching null
                         }
                         throw dlResult.exceptionOrNull()
@@ -1095,15 +1537,12 @@ class RepoManager @Inject constructor(
                     }
 
                     if (!tempFile.exists() || tempFile.length() == 0L) {
-                        diag(
-                            "downloadWrappedPhraseEscrow: downloaded file missing or empty " +
-                                "— treating as not-on-remote"
-                        )
+                        diag("downloadWrappedPhraseEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
                         return@runCatching null
                     }
 
                     val json = tempFile.readText()
-                    diag("downloadWrappedPhraseEscrow: downloaded ${json.length} chars")
+                    diag("downloadWrappedPhraseEscrow: downloaded legacy ${json.length} chars")
 
                     val wrapped = PhraseEscrowWrapper.WrappedPhrase.fromJson(json)
                         ?: throw IOException("Malformed wrapped-phrase JSON")
@@ -1118,6 +1557,88 @@ class RepoManager @Inject constructor(
                 }
             }
         }
+
+    /**
+     * AES-256-GCM encrypt a plaintext blob with the VMK.
+     *
+     * Format (same as the dedup registry `registry.json.crypt`):
+     *   [12-byte nonce][ciphertext + 16-byte auth-tag]
+     *
+     * @since v9 followup — outer-encryption helper for the escrow .crypt files
+     */
+    private fun encryptBlobVmk(plaintext: ByteArray, vmkBytes: ByteArray): ByteArray {
+        val nonce = ByteArray(GCM_NONCE_SIZE).also { SecureRandom().nextBytes(it) }
+        val key = SecretKeySpec(vmkBytes, "AES")
+        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
+        val ciphertext = cipher.doFinal(plaintext)
+        val out = ByteArray(GCM_NONCE_SIZE + ciphertext.size)
+        System.arraycopy(nonce, 0, out, 0, GCM_NONCE_SIZE)
+        System.arraycopy(ciphertext, 0, out, GCM_NONCE_SIZE, ciphertext.size)
+        return out
+    }
+
+    /**
+     * AES-256-GCM decrypt a blob produced by [encryptBlobVmk].
+     *
+     * Returns the plaintext bytes, or throws on auth-tag mismatch / wrong key.
+     *
+     * @since v9 followup — outer-decryption helper for the escrow .crypt files
+     */
+    private fun decryptBlobVmk(blob: ByteArray, vmkBytes: ByteArray): ByteArray {
+        require(blob.size >= GCM_NONCE_SIZE) { "blob too small: ${blob.size} bytes" }
+        val nonce = blob.copyOfRange(0, GCM_NONCE_SIZE)
+        val ciphertext = blob.copyOfRange(GCM_NONCE_SIZE, blob.size)
+        val key = SecretKeySpec(vmkBytes, "AES")
+        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
+        return cipher.doFinal(ciphertext)
+    }
+
+    /**
+     * Download an encrypted `.json.crypt` artifact from the remote, decrypt
+     * it with the VMK, and return the plaintext JSON string.
+     *
+     * Returns `Result.success(jsonString)` on success, or `Result.failure` if
+     * the download or decryption failed. The caller is responsible for
+     * distinguishing "file not on remote" (a normal condition for old repos)
+     * from real errors.
+     *
+     * @param remotePath full rclone remote path (e.g. `remote:photoz-backup/.../file.json.crypt`)
+     * @param vmkBytes raw VMK key bytes for GCM decryption
+     * @param label short human-readable label used in diagnostic logs
+     *
+     * @since v9 followup — shared download+decrypt helper for the two escrow .crypt files
+     */
+    private suspend fun downloadAndDecryptJsonBlob(
+        remotePath: String,
+        vmkBytes: ByteArray,
+        label: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File(
+                app.cacheDir,
+                "${label.lowercase()}-dl-${System.currentTimeMillis()}.crypt",
+            )
+            try {
+                diag("downloadAndDecryptJsonBlob[$label]: downloading $remotePath → ${tempFile.absolutePath}")
+                val dlResult = rcloneController.downloadFile(remotePath, tempFile.absolutePath)
+                if (dlResult.isFailure) {
+                    throw dlResult.exceptionOrNull()
+                        ?: IOException("Download failed for $label")
+                }
+                if (!tempFile.exists() || tempFile.length() == 0L) {
+                    diag("downloadAndDecryptJsonBlob[$label]: downloaded file missing or empty — treating as not-on-remote")
+                    throw IOException("not found: $remotePath")
+                }
+                val blob = tempFile.readBytes()
+                val plaintext = decryptBlobVmk(blob, vmkBytes)
+                String(plaintext, Charsets.UTF_8)
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
 
     /**
      * Minimal hand-rolled JSON parser for the vault-protection escrow artifact.
@@ -1232,21 +1753,49 @@ class RepoManager @Inject constructor(
         // internalThumbnailFileName(uuid) = "${uuid}.$PHOTOK_FILE_EXTENSION.tn"
         private const val THUMBNAIL_SUFFIX = ".$PHOTOK_FILE_EXTENSION.tn"
 
+        // ─── GCM constants (shared with HashRegistry — kept private here since ──
+        // the escrow .crypt files are RepoManager's concern, not HashRegistry's).
+        // @since v9 followup — outer GCM encryption of escrow .crypt files
+        private const val GCM_NONCE_SIZE = 12 // bytes (96 bits, standard for GCM)
+        private const val GCM_TAG_BITS = 128 // bits
+
         // @since key-escrow — location of the recovery-phrase wrapped-VMK artifact
         // (Layer 1 of the two-layer escrow) on the rclone remote. Written by
         // uploadRecoveryPhraseEscrow() (now invoked via uploadAllEscrows() from
         // SetupViewModel, NOT from registerRepo() — see Part A fix); read by
         // downloadVaultProtectionEscrow() during loginRepo().
+        //
+        // @since v9 followup — the artifact is now uploaded as an AES-256-GCM
+        // encrypted binary blob (`.json.crypt`) instead of plaintext `.json`.
+        // The legacy plaintext path is retained as a download fallback for old
+        // repos that still have the plaintext `.json` on the remote.
         const val VAULT_PROTECTION_DIR = "vault-protection"
-        const val VAULT_PROTECTION_FILENAME = "recovery-phrase.json"
+        const val VAULT_PROTECTION_FILENAME = "recovery-phrase.json.crypt"
         const val VAULT_PROTECTION_REMOTE_PATH = "$REPO_DIR/$VAULT_PROTECTION_DIR/$VAULT_PROTECTION_FILENAME"
+
+        /** Legacy plaintext filename (pre-v9-followup repos only). Used as a
+         * download fallback by [downloadVaultProtectionEscrow] when the
+         * encrypted `.json.crypt` is not on the remote. */
+        const val VAULT_PROTECTION_LEGACY_FILENAME = "recovery-phrase.json"
+        const val VAULT_PROTECTION_LEGACY_REMOTE_PATH =
+            "$REPO_DIR/$VAULT_PROTECTION_DIR/$VAULT_PROTECTION_LEGACY_FILENAME"
 
         // @since Part B two-layer escrow — location of the password-wrapped recovery
         // phrase artifact (Layer 2) on the rclone remote. Written by
         // uploadWrappedPhraseEscrow() (invoked via uploadAllEscrows() from
         // SetupViewModel); read by downloadWrappedPhraseEscrow() during loginRepo().
         // Lives in the same VAULT_PROTECTION_DIR directory as Layer 1.
-        const val WRAPPED_PHRASE_FILENAME = "wrapped-phrase.json"
+        //
+        // @since v9 followup — now uploaded as `.json.crypt` (encrypted with VMK,
+        // same GCM format as registry.json.crypt). Legacy plaintext path retained
+        // as download fallback.
+        const val WRAPPED_PHRASE_FILENAME = "wrapped-phrase.json.crypt"
         const val WRAPPED_PHRASE_REMOTE_PATH = "$REPO_DIR/$VAULT_PROTECTION_DIR/$WRAPPED_PHRASE_FILENAME"
+
+        /** Legacy plaintext filename (pre-v9-followup repos only). Used as a
+         * download fallback by [downloadWrappedPhraseEscrow]. */
+        const val WRAPPED_PHRASE_LEGACY_FILENAME = "wrapped-phrase.json"
+        const val WRAPPED_PHRASE_LEGACY_REMOTE_PATH =
+            "$REPO_DIR/$VAULT_PROTECTION_DIR/$WRAPPED_PHRASE_LEGACY_FILENAME"
     }
 }

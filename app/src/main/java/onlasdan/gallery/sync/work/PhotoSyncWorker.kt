@@ -441,8 +441,30 @@ class PhotoSyncWorker @AssistedInject constructor(
                     "Skipping upload; transitioning straight to UPLOADED.")
                 SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED",
                     "dedup: content_hash=$contentHash already on remote as ${existing.uuid}")
+
+                // ─── Bug 1 fix: defensively mark the photo UPLOADED right here ──
+                // The caller (doWorkInternal) already does this via
+                // updateSyncStateReturningRows() on outcome.isSuccess, but marking
+                // it explicitly here makes the dedup path self-contained: even if
+                // the outcome-based flow is refactored later, dedup always lands
+                // the photo in UPLOADED state. Without this, the second copy of a
+                // duplicate import would sit in UPLOAD_PENDING forever (or until
+                // the next worker retry), showing a perpetual "uploading" badge in
+                // the gallery — the "UI duplicate" bug report.
+                //
+                // Failure here is non-fatal — doWorkInternal's outcome.isSuccess
+                // branch will re-attempt the update and handle the 0-rows-affected
+                // case (photo deleted during upload).
+                try {
+                    photoDao.updateSyncState(uuid, SyncState.UPLOADED)
+                    diag("performUpload: DEDUP — explicitly marked $uuid as UPLOADED")
+                } catch (e: Exception) {
+                    diag("performUpload: DEDUP — explicit UPLOADED mark FAILED (non-fatal, doWorkInternal will retry): ${e.message}", e)
+                }
+
                 // No registry entry to add — the canonical entry already covers this hash.
-                // Just bail out; the caller (doWorkInternal) will mark UPLOADED.
+                // Just bail out; the caller (doWorkInternal) will mark UPLOADED (again,
+                // idempotently) and advance the batch tracker.
                 return
             } else {
                 diag("performUpload: dedup miss — contentHash=$contentHash not in registry; uploading normally")
@@ -461,39 +483,38 @@ class PhotoSyncWorker @AssistedInject constructor(
             "${formatBytes(batchState.bytesCompleted)} uploaded so far"
 
         // ─── Upload thumbnail ──────────────────────────────────────────────
-        // Thumbnails are small (a few KB) — fire-and-forget via uploadFile() is
-        // fine. No real progress feedback needed; the notification shows
-        // indeterminate progress while this runs.
+        // @since v9 followup (Bug 4 — packed thumbnails): individual thumbnail
+        // upload is now SKIPPED. The thumbnail stays local (at
+        // `internalThumbnailFileName`) and is collected by
+        // [flushPendingThumbnailPacks] at batch end, concatenated into ≤50 MB
+        // packs at `<remote>:photoz-backup/thumbnails/pack-NNNN.pack`, and the
+        // per-hash `thumbnail_pack` / `thumbnail_offset` / `thumbnail_length`
+        // fields in the registry are filled in. The restore side
+        // ([RepoManager.restoreThumbnailsFromPacks]) downloads packs once and
+        // extracts each thumbnail by offset+length, instead of N round-trips
+        // for N individual thumbnails.
         //
-        // NOTE (v9): thumbnails are still uploaded INDIVIDUALLY (`<uuid>.crypt.tn`).
-        // The future packed-thumbnails optimization (50 MB packs at
-        // `<remote>:photoz-backup/thumbnails/pack-*.pack`, with per-hash
-        // thumbnail_pack / offset / length recorded in the registry) is a
-        // follow-up enhancement — the registry format already supports it, but
-        // the actual pack upload/download logic isn't implemented yet.
+        // The local thumbnail file is NOT deleted here — it must remain on disk
+        // so [flushPendingThumbnailPacks] can read its bytes when forming the
+        // pack. If the device crashes between this upload and the batch-end
+        // pack flush, the next batch's flush will pick up the orphan thumbnail
+        // (the registry entry has `thumbnail_pack = null`, which the packer
+        // treats as "pending pack").
+        //
+        // The local thumbnail file is also still used by the gallery's
+        // [EncryptedImageFetcher] to render the tile — so even before the pack
+        // is uploaded, the user sees the thumbnail locally.
         val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
         if (thumbPath.exists()) {
-            val remoteThumb = "$remote:${SyncConfig.remoteThumbnailsDir}/${thumbPath.name}"
-            diag("performUpload: uploading thumbnail ${thumbPath.absolutePath} (size=${thumbPath.length()}) → $remoteThumb")
-            updateNotification(
-                progress = null,
-                text = collapsedText,
-                bigText = expandedText,
-            )
-            try {
-                rcloneController.uploadFile(thumbPath.absolutePath, remoteThumb).getOrThrow()
-                diag("performUpload: thumbnail upload OK")
-            } catch (e: Exception) {
-                diag("performUpload: thumbnail upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-                reportUploadFailureNotification(photo.fileName, batchState)
-                throw e
-            }
+            diag("performUpload: thumbnail exists locally (${thumbPath.length()} bytes) — deferring to batch-end pack upload (Bug 4)")
         } else {
             diag("performUpload: thumbnail file does not exist, skipping: ${thumbPath.absolutePath}")
         }
 
         // ─── Upload video preview (if video) ───────────────────────────────
         // Same as thumbnail — small file, fire-and-forget.
+        // NOTE: video previews are NOT packed (only thumbnails are). They're
+        // uploaded individually as before.
         if (photo.type.isVideo) {
             val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
             if (vpPath.exists()) {
@@ -715,6 +736,22 @@ class PhotoSyncWorker @AssistedInject constructor(
     private suspend fun onBatchCompleteIfDone() {
         if (!batchTracker.isBatchComplete()) return
         showBatchCompleteNotification()
+        // ─── v9 followup (Bug 4): pack pending thumbnails before flushing ──
+        // Collects all registry entries with `thumbnail_pack = null` whose
+        // local thumbnail file exists, concatenates them into ≤50 MB packs,
+        // uploads each pack, and updates the entries with pack name + offset
+        // + length. The subsequent [flushRegistryToRemote] then serializes
+        // the registry (now carrying pack metadata) and uploads it.
+        //
+        // Non-fatal: if packing fails for any reason, the entries keep
+        // `thumbnail_pack = null` and will be retried in the next batch's
+        // [onBatchCompleteIfDone]. The local thumbnail files are NOT deleted
+        // (they're still needed for a future retry).
+        try {
+            hashRegistry.flushPendingThumbnailPacks()
+        } catch (e: Exception) {
+            diag("onBatchCompleteIfDone: flushPendingThumbnailPacks FAILED (non-fatal — will retry next batch): ${e.javaClass.name}: ${e.message}", e)
+        }
         // ─── v9 dedup: flush the local registry cache to the remote ──────
         // Serializes all current entries, encrypts with the VMK (AES-256-GCM),
         // and uploads as `<remote>:photoz-backup/registry.json.crypt`. Failure

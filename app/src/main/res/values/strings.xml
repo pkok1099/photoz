@@ -119,6 +119,12 @@
     <string name="viewer_pin_confirmation">Pinned at top</string>
     <string name="viewer_unpin_confirmation">Removed from pinned</string>
 
+    <!-- GALLERY OVERFLOW MENU — @since v9 followup (Bug 2): Restore from cloud backup -->
+    <string name="menu_restore_from_backup">Restore from backup</string>
+    <string name="menu_restore_from_backup_toast_started">Restoring thumbnails from cloud backup…</string>
+    <string name="menu_restore_from_backup_toast_success">Restored %1$d thumbnail(s) from cloud backup</string>
+    <string name="menu_restore_from_backup_toast_failed">Restore failed: %1$s</string>
+
     <!-- DELETE -->
     <string name="delete_are_you_sure">Are you sure, you want to <b>delete</b> %1$d file(s)?</string>
     <string name="delete_are_you_sure_this">Are you sure, you want to <b>delete</b> this file?</string>

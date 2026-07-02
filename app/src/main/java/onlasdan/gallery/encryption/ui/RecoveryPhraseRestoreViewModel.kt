@@ -28,6 +28,7 @@ import onlasdan.gallery.encryption.domain.VaultService
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.encryption.domain.models.UnlockRequest
 import onlasdan.gallery.io.IO
+import onlasdan.gallery.sync.rclone.RepoManager
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.seconds
 
@@ -88,6 +90,14 @@ class RecoveryPhraseRestoreViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val vaultService: VaultService,
     private val io: IO,
+    // @since v9 followup — needed to download + cache the dedup registry and
+    // backfill Photo metadata after the user successfully enters their
+    // recovery phrase and the vault is unlocked. The NeedsPhraseEntry login
+    // branch (older repos with only Layer 1 escrow) goes through this VM, so
+    // without this hook the registry would never be downloaded and the
+    // gallery would show placeholder metadata ("metadata hilang saat
+    // reinstall") for users on the phrase-only path.
+    private val repoManager: RepoManager,
 ) : ViewModel() {
 
     private val inputs = MutableStateFlow(RecoveryPhraseRestoreUiState.Inputs())
@@ -122,6 +132,41 @@ class RecoveryPhraseRestoreViewModel @Inject constructor(
                     vaultService.unlock(UnlockRequest.RecoveryPhrase(event.phrase))
                         .onSuccess { session ->
                             sessionRepository.set(session)
+
+                            // ─── v9 followup: download registry + backfill Photo metadata ──
+                            // Mirrors [RepoSetupViewModel.submitPassword]'s post-unlock
+                            // hook. The registry cannot be decrypted until the VMK is in
+                            // memory (just set above), so [RepoManager.loginRepo]'s
+                            // restoreThumbnailsAfterLogin left Photo rows with placeholder
+                            // metadata. Now that the VMK is available, download the
+                            // registry into the local cache and walk the placeholder
+                            // Photo rows to backfill real metadata (filename, size, type,
+                            // albumPath, contentHash) from the matching registry entries.
+                            //
+                            // Also runs the pack-based thumbnail restore (Bug 4): for
+                            // repos created after Bug 4, individual thumbnails are NOT
+                            // uploaded (only packs). restoreThumbnailsFromPacks downloads
+                            // packs and extracts thumbnails by offset+length.
+                            //
+                            // Non-fatal: failure here leaves the placeholder metadata in
+                            // place — the gallery still shows the photos, and the on-demand
+                            // original-fetch path ([SyncRestorer]) will correct the type/
+                            // size when the user opens each photo.
+                            try {
+                                val loaded = repoManager.downloadRegistry(session.vmk.encoded)
+                                android.util.Log.e("RcloneDiag",
+                                    "RecoveryPhraseRestore: downloadRegistry loaded $loaded entries")
+                                val backfilled = repoManager.applyRegistryMetadataToPhotos()
+                                android.util.Log.e("RcloneDiag",
+                                    "RecoveryPhraseRestore: applyRegistryMetadataToPhotos backfilled $backfilled rows")
+                                val packRestored = repoManager.restoreThumbnailsFromPacks()
+                                android.util.Log.e("RcloneDiag",
+                                    "RecoveryPhraseRestore: restoreThumbnailsFromPacks restored $packRestored thumbnails")
+                            } catch (e: Exception) {
+                                android.util.Log.e("RcloneDiag",
+                                    "RecoveryPhraseRestore: registry download/backfill FAILED (non-fatal): ${e.message}", e)
+                                Timber.w(e, "RecoveryPhraseRestore: registry download/backfill failed (non-fatal)")
+                            }
 
                             inputs.update {
                                 it.copy(

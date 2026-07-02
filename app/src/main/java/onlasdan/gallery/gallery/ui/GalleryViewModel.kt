@@ -32,6 +32,7 @@ import onlasdan.gallery.model.repositories.ImportSource
 import onlasdan.gallery.model.repositories.PhotoRepository
 import onlasdan.gallery.sort.domain.SortConfig
 import onlasdan.gallery.sort.domain.SortRepository
+import onlasdan.gallery.sync.rclone.RepoManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +50,14 @@ class GalleryViewModel @Inject constructor(
     photoRepository: PhotoRepository,
     private val galleryUiStateFactory: GalleryUiStateFactory,
     private val sortRepository: SortRepository,
+    // @since v9 followup (Bug 2) — needed by OnRestoreFromBackup to re-download
+    // thumbnails from the cloud backup. The gallery's overflow menu has a new
+    // "Restore from backup" option that calls [RepoManager.restoreThumbnailsFromPacks]
+    // to re-sync thumbnails (and create Photo rows for any registry entries that
+    // don't have one yet). Useful when a prior restore was interrupted, or when
+    // the user has deleted local thumbnails and wants to re-fetch them.
+    private val repoManager: RepoManager,
+    private val resources: Resources,
 ) : ViewModel() {
 
     private val sortFlow = sortRepository.observeSortFor(albumUuid = null, default = SortConfig.Gallery.default)
@@ -84,6 +93,57 @@ class GalleryViewModel @Inject constructor(
             is GalleryUiEvent.OnImportChoice -> onImportChoice(event.choice)
             is GalleryUiEvent.SortChanged -> viewModelScope.launch {
                 sortRepository.updateSortFor(albumUuid = null, sort = event.sort)
+            }
+            // @since v9 followup (Bug 2) — Restore from cloud backup. Re-runs
+            // the pack-based thumbnail restore (downloads packs, extracts
+            // thumbnails by offset+length, creates Photo rows for any registry
+            // entries that don't have one yet). Non-fatal: failures are surfaced
+            // as a toast; the user can retry.
+            GalleryUiEvent.OnRestoreFromBackup -> onRestoreFromBackup()
+        }
+    }
+
+    /**
+     * Triggered by the gallery's overflow-menu "Restore from backup" item.
+     *
+     * Re-runs [RepoManager.restoreThumbnailsFromPacks] — downloads any missing
+     * thumbnails from the cloud (via packs, with legacy individual-thumbnail
+     * fallback for old repos) and creates Photo DB rows for registry entries
+     * that don't have one yet. Idempotent: thumbnails that are already local
+     * are skipped.
+     *
+     * Sends a [GalleryNavigationEvent.ShowToast] with the result so the user
+     * gets feedback (started / success / failed).
+     *
+     * @since v9 followup (Bug 2) — Restore button alongside Export
+     */
+    private fun onRestoreFromBackup() {
+        // Show "started" toast immediately so the user gets feedback before the
+        // (potentially slow) pack downloads complete.
+        eventsChannel.trySend(
+            GalleryNavigationEvent.ShowToast(
+                resources.getString(R.string.menu_restore_from_backup_toast_started),
+            ),
+        )
+        viewModelScope.launch {
+            try {
+                val restored = repoManager.restoreThumbnailsFromPacks()
+                eventsChannel.trySend(
+                    GalleryNavigationEvent.ShowToast(
+                        resources.getString(
+                            R.string.menu_restore_from_backup_toast_success, restored,
+                        ),
+                    ),
+                )
+            } catch (e: Exception) {
+                eventsChannel.trySend(
+                    GalleryNavigationEvent.ShowToast(
+                        resources.getString(
+                            R.string.menu_restore_from_backup_toast_failed,
+                            e.message ?: e.javaClass.simpleName,
+                        ),
+                    ),
+                )
             }
         }
     }

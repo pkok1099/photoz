@@ -1,25 +1,22 @@
-![Photok](fastlane/metadata/android/en-US/images/featureGraphic.jpg)
+![PhotoZ](fastlane/metadata/android/en-US/images/featureGraphic.jpg)
 
-[![GitHub release](https://img.shields.io/github/v/release/leonlatsch/Photok.svg?logo=github&label=GitHub)](https://github.com/leonlatsch/Photok/releases/latest)
-[![Google Play](https://img.shields.io/endpoint?color=green&logo=google-play&logoColor=white&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Ddev.leonlatsch.photok%26l%3DGPlay%26m%3D%24version)](https://play.google.com/store/apps/details?id=dev.leonlatsch.photok)
-[![F-Droid](https://img.shields.io/f-droid/v/dev.leonlatsch.photok.svg?logo=f-droid&label=F-Droid)](https://f-droid.org/packages/dev.leonlatsch.photok/)
-[![IzzyOnDroid](https://img.shields.io/f-droid/v/dev.leonlatsch.photok.svg?logo=f-droid&label=IzzyOnDroid&baseUrl=https%3A%2F%2Fapt.izzysoft.de%2Ffdroid)](https://apt.izzysoft.de/fdroid/index/apk/dev.leonlatsch.photok)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/leonlatsch/Photok/android.yml?branch=develop)
-[![GitHub](https://img.shields.io/github/license/leonlatsch/Photok)](./LICENSE)
-![Maintenance](https://img.shields.io/maintenance/yes/2026)
-![Twitch Status](https://img.shields.io/twitch/status/leonlatsch?style=flat&logo=twitch)
-![Subreddit subscribers](https://img.shields.io/reddit/subreddit-subscribers/photok?style=flat)
+# PhotoZ
 
-Private photo vault to hide photos and videos with strong on-device encryption.
+Private photo vault for Android with strong on-device encryption and optional
+end-to-end encrypted cloud sync via rclone.
 
 ## About
 
-Photok is a secure private photo vault for Android that helps you hide photos and videos using strong AES-256 encryption.
-It protects sensitive media in an encrypted gallery and keeps your private memories safe on your own device.
+PhotoZ is a secure private photo vault for Android that helps you hide photos
+and videos using strong AES-256 encryption. It protects sensitive media in an
+encrypted gallery and keeps your private memories safe on your own device.
 
-All files are encrypted locally and only decrypted in memory while you use the app. No cloud upload is required.
+All files are encrypted locally with AES-256 (CBC for media bodies, GCM for
+metadata) and only decrypted in memory while you use the app. The cloud-sync
+feature (optional) mirrors the encrypted artifacts to **your own** rclone remote
+— PhotoZ never sees your photos, your password, or your recovery phrase.
 
-Photok is open source, ad-free, and built with a privacy-first philosophy. It is developed by me (Leon) and public volunteers.
+PhotoZ is open source, ad-free, and built with a privacy-first philosophy.
 
 <p align="center">
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="24%" />
@@ -30,41 +27,86 @@ Photok is open source, ad-free, and built with a privacy-first philosophy. It is
 
 ## Download
 
-Photok is available on Google Play and F-Droid. Aswell as some alternatives.
+PhotoZ is distributed as APKs from GitHub releases and sideloaded directly.
 
-[<img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png"
-      alt="Download from Google Play"
-      height="80">](https://play.google.com/store/apps/details?id=dev.leonlatsch.photok)
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
-      alt="Get it on F-Droid"
-      height="80">](https://f-droid.org/packages/dev.leonlatsch.photok/)
 [<img src="https://raw.githubusercontent.com/andOTP/andOTP/master/assets/badges/get-it-on-github.png"
       alt="Get it on GitHub"
       height="80">](https://github.com/leonlatsch/Photok/releases/latest)
-[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
-      alt="Get it on IzzyOnDroid"
-      height="80">](https://apt.izzysoft.de/fdroid/index/apk/dev.leonlatsch.photok)
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D1UPJIV)
 
 ## Features
+
+### Core vault
 
 - Import photos and videos from your gallery
 - Organize private media into albums
 - Export files anytime
-- Create and restore encrypted backups
+- Create and restore encrypted local backups (zip)
 - Unlock your vault with fingerprint authentication
 - Share media directly to the vault
-- Option to hide the app icon
+- Option to hide the app icon (stealth dialer)
 - Automatically delete original files after import
 
-## Privacy-Focused Design
+### Cloud sync (optional, rclone-backed)
 
-Photok is designed for people who want real control over their private photos and videos.
-Encryption happens on your device, and imported files are only decrypted in memory while the app is in use.
+PhotoZ can mirror your encrypted photos to **your own** cloud storage via
+[rclone](https://rclone.org). The sync feature is end-to-end encrypted: only
+the encrypted artifacts ever leave your device.
 
-Photok can use minimal privacy-friendly analytics to improve stability and user experience.
-These analytics are never used for advertising or cross-app tracking.
+- **Encrypted artifacts on the remote** — originals (`<uuid>.crypt`), thumbnails
+  (`<uuid>.crypt.tn`), and video previews (`<uuid>.crypt.vp`) are AES-CBC
+  encrypted with the Vault Master Key (VMK) before upload. An attacker with
+  read access to your remote sees only opaque ciphertext.
+- **Content-hash dedup** — every photo's plaintext bytes are SHA-256'd at import
+  time. Before uploading, the worker consults an encrypted dedup registry
+  (`registry.json.crypt`) on the remote; if the same content-hash is already
+  present under a different UUID, the upload is skipped (saving bandwidth and
+  remote storage). The duplicate photo is still marked `UPLOADED` locally so
+  the gallery's sync badge shows the correct state immediately.
+- **Encrypted dedup registry** — one encrypted JSON artifact
+  (`registry.json.crypt`) on the remote, AES-256-GCM encrypted with the VMK.
+  Contains one entry per content-hash: canonical UUID, filename, album path,
+  size, type, and (optionally) packed-thumbnail location.
+- **Packed thumbnails** — at batch end, thumbnails are concatenated into
+  ≤50 MB packs (`thumbnails/pack-*.pack`) and uploaded as a single file per
+  pack, instead of N individual round-trips for N thumbnails. The per-hash
+  `thumbnail_pack` / `thumbnail_offset` / `thumbnail_length` fields in the
+  registry record each thumbnail's location within its pack. On restore, each
+  pack is downloaded once and thumbnails are extracted by offset+length.
+- **Two-layer key escrow** — fresh-install recovery is supported via two
+  encrypted artifacts on the remote:
+  - `vault-protection/recovery-phrase.json.crypt` (Layer 1): the VMK wrapped
+    with a phrase-derived KEK. The entire JSON is additionally AES-256-GCM
+    encrypted with the VMK so the structure (field names, base64 strings) is
+    hidden from anyone with read access to the remote.
+  - `vault-protection/wrapped-phrase.json.crypt` (Layer 2): the recovery
+    phrase wrapped with a password-derived KEK. Same outer GCM encryption
+    with the VMK.
+  - On a fresh install, the user enters their password (Layer 2 is unwrapped
+    to recover the phrase, which then unwraps the VMK from Layer 1) OR their
+    recovery phrase directly (Layer 1 is unwrapped to recover the VMK).
+  - **Backwards compat**: legacy plaintext `recovery-phrase.json` and
+    `wrapped-phrase.json` files from older repos are still readable by the
+    download path as a fallback.
+- **Restore from cloud** — the gallery's overflow menu has a "Restore from
+  backup" option that re-downloads any missing thumbnails from the cloud
+  (via packs, with legacy individual-thumbnail fallback). Useful when a prior
+  restore was interrupted or when local thumbnails were deleted.
+- **Drive-style notifications** — sync runs as a foreground WorkManager job
+  with a persistent notification showing batch-level progress
+  ("Uploading N of M: filename (size)"), a final batch-complete summary
+  ("{N} photos backed up"), and per-photo failure notifications.
+
+### Privacy-focused design
+
+PhotoZ is designed for people who want real control over their private photos
+and videos. Encryption happens on your device, and imported files are only
+decrypted in memory while the app is in use. The cloud sync uses your own
+rclone remote — PhotoZ has no server component and never sees your photos,
+your password, or your recovery phrase.
+
+PhotoZ can use minimal privacy-friendly analytics to improve stability and
+user experience. These analytics are never used for advertising or cross-app
+tracking.
 
 ## Translations
 <!-- BEGIN-TRANSLATIONS -->
@@ -83,11 +125,11 @@ These analytics are never used for advertising or cross-app tracking.
 ![Urdu (India)](https://img.shields.io/badge/Urdu%20(India)-71%25-orange)
 <!-- END-TRANSLATIONS -->
 
-> You want to help translating Photok? See [CONTRIBUTING](CONTRIBUTING.md#Translations)
+> You want to help translating PhotoZ? See [CONTRIBUTING](CONTRIBUTING.md#Translations)
 
 ## Differences Between Play and FOSS
 
-Photok is distributed in two variants: **Google Play** and **FOSS** (F-Droid, GitHub, IzzyOnDroid).
+PhotoZ is distributed in two variants: **Google Play** and **FOSS** (F-Droid, GitHub, IzzyOnDroid).
 The core app is identical, but some features differ due to platform requirements and privacy expectations.
 
 | Feature | Google Play | FOSS |
@@ -98,12 +140,40 @@ The core app is identical, but some features differ due to platform requirements
 
 > **Why is telemetry off by default on FOSS?** F-Droid flags apps that transmit data without explicit opt-in as having the *Tracking* anti-feature. No data is ever transmitted unless the user has actively opted in.
 
+## Build
+
+PhotoZ is a standard Android Gradle project. Build variants:
+
+- `play` — Google Play release (includes TelemetryDeck).
+- `foss` — F-Droid / sideload release (no telemetry).
+
+```bash
+# Debug build (FOSS flavor)
+./gradlew :app:assembleFossDebug
+
+# Release build (Play flavor)
+./gradlew :app:assemblePlayRelease
+```
+
+The cloud-sync feature uses an embedded `rclone` binary (started as an rcd
+child process on first use). The binary is bundled per-ABI; no additional
+setup is required.
+
+### Database
+
+PhotoZ uses a Room database (`photok.db`). The current schema version is 9.
+Schema changes use Room auto-migrations declared in
+`PhotokDatabase.kt`. The v9 followup changes (packed thumbnails, encrypted
+escrow .crypt files, metadata backfill) are format-level only — no schema
+migration was needed (the `hash_registry` table already had
+`thumbnail_pack` / `thumbnail_offset` / `thumbnail_length` columns).
+
 ## Community
 
 ### Contributors
 
 <a href="https://github.com/leonlatsch/Photok/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=leonlatsch/Photok"  alt="Photok Contributors"/>
+  <img src="https://contrib.rocks/image?repo=leonlatsch/Photok"  alt="PhotoZ Contributors"/>
 </a>
 
 ## Related Tools
@@ -113,7 +183,7 @@ The core app is identical, but some features differ due to platform requirements
 LICENSE
 =======
 
-    Copyright 2020-2026 Leon Latsch
+    Copyright 2020-2026 Leon Latsch / PhotoZ contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

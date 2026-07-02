@@ -19,6 +19,7 @@ package onlasdan.gallery.sync.work
 import android.app.Application
 import android.util.Log
 import onlasdan.gallery.encryption.domain.models.Algorithm
+import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.rclone.RcloneController
 import kotlinx.coroutines.Dispatchers
@@ -124,10 +125,44 @@ class HashRegistry @Inject constructor(
     }
 
     /**
+     * Look up a registry entry by the canonical photo UUID. Used by
+     * [onlasdan.gallery.sync.rclone.RepoManager.applyRegistryMetadataToPhotos]
+     * to backfill placeholder Photo rows after a fresh-install login.
+     *
+     * @since v9 followup — backfill Photo metadata from registry after login
+     */
+    suspend fun findByUuid(uuid: String): HashRegistryEntry? = withContext(Dispatchers.IO) {
+        dao.findByUuid(uuid)
+    }
+
+    /**
      * Add a new entry to the local registry cache.
      */
     suspend fun addEntry(entry: HashRegistryEntry) = withContext(Dispatchers.IO) {
         dao.upsert(entry)
+    }
+
+    /**
+     * Update an existing entry in the local registry cache. Used by the
+     * thumbnail-packing flow (see [onlasdan.gallery.sync.work.PhotoSyncWorker]
+     * `flushPendingThumbnailPacks`) to fill in `thumbnailPack` / `thumbnailOffset`
+     * / `thumbnailLength` after a pack has been uploaded.
+     *
+     * @since v9 followup — packed thumbnails
+     */
+    suspend fun updateEntry(entry: HashRegistryEntry) = withContext(Dispatchers.IO) {
+        dao.upsert(entry)
+    }
+
+    /**
+     * Return all live (non-tombstoned) entries in the local cache. Used by
+     * the thumbnail-packing flow at batch end and by the restore flow to
+     * group entries by `thumbnailPack` for pack-based downloads.
+     *
+     * @since v9 followup — packed thumbnails
+     */
+    suspend fun allEntries(): List<HashRegistryEntry> = withContext(Dispatchers.IO) {
+        dao.getAll()
     }
 
     /**
@@ -241,6 +276,176 @@ class HashRegistry @Inject constructor(
         } finally {
             tempFile.delete()
         }
+    }
+
+    /**
+     * Pack pending thumbnails into ≤50 MB packs, upload each pack, and update
+     * the matching registry entries with `thumbnailPack` / `thumbnailOffset`
+     * / `thumbnailLength`.
+     *
+     * Called at batch end (see
+     * [onlasdan.gallery.sync.work.PhotoSyncWorker.onBatchCompleteIfDone]) AFTER
+     * the registry entries have been added (with `thumbnail_pack = null`) but
+     * BEFORE [uploadToRemote] — so the registry flush to the remote already
+     * carries the pack metadata.
+     *
+     * ## Algorithm
+     *
+     *  1. Read all live registry entries with `thumbnail_pack = null` whose
+     *     local thumbnail file (`<filesDir>/<uuid>.<ext>.tn`) exists.
+     *  2. Walk the entries in order, accumulating their thumbnail bytes into a
+     *     pack buffer. When the buffer would exceed
+     *     [SyncConfig.THUMBNAIL_PACK_SIZE_BYTES], flush it as a pack
+     *     (`pack-NNNN.pack`) and start a new one.
+     *  3. For each pack: upload via [RcloneController.uploadFile], then update
+     *     each entry in the pack with `thumbnail_pack = pack-NNNN`,
+     *     `thumbnail_offset = <byte offset within pack>`, `thumbnail_length =
+     *     <byte length>`.
+     *  4. After all packs are uploaded, the caller ([PhotoSyncWorker]) calls
+     *     [uploadToRemote] to flush the registry (now carrying pack metadata)
+     *     to the remote.
+     *
+     * ## Failure handling
+     *
+     * Non-fatal. If a pack upload fails, the entries in that pack keep
+     * `thumbnail_pack = null` and will be retried in the next batch's
+     * [flushPendingThumbnailPacks] call. The local thumbnail files are NOT
+     * deleted (they're still needed for a future retry).
+     *
+     * ## Restore-side counterpart
+     *
+     * [onlasdan.gallery.sync.rclone.RepoManager.restoreThumbnailsFromPacks]
+     * downloads each pack once and extracts thumbnails by offset+length,
+     * instead of N round-trips for N individual thumbnails.
+     *
+     * @since v9 followup — packed thumbnails (Bug 4)
+     */
+    suspend fun flushPendingThumbnailPacks() = withContext(Dispatchers.IO) {
+        val remote = try {
+            val config = app.getSharedPreferences(
+                "onlasdan.gallery_preferences",
+                android.content.Context.MODE_PRIVATE,
+            )
+            config.getString("sync^chosenRemote", null)
+        } catch (e: Exception) {
+            null
+        } ?: run {
+            diag("flushPendingThumbnailPacks: no remote chosen — skipping")
+            return@withContext
+        }
+
+        // Read all entries with thumbnail_pack = null. These are the "pending
+        // pack" entries — added by PhotoSyncWorker.performUpload after a
+        // successful original upload, but not yet assigned to a pack.
+        val pendingEntries = dao.getAll().filter { it.thumbnailPack == null }
+        if (pendingEntries.isEmpty()) {
+            diag("flushPendingThumbnailPacks: no pending entries — nothing to pack")
+            return@withContext
+        }
+        diag("flushPendingThumbnailPacks: ${pendingEntries.size} pending entries to pack")
+
+        // Resolve each entry to (entry, thumbnailBytes). Skip entries whose
+        // local thumbnail file doesn't exist (e.g. imported before v9, or the
+        // thumbnail file was deleted out-of-band).
+        data class PendingThumb(
+            val entry: HashRegistryEntry,
+            val bytes: ByteArray,
+        )
+        val pendingThumbs = mutableListOf<PendingThumb>()
+        for (entry in pendingEntries) {
+            val thumbFile = File(app.filesDir, "${entry.uuid}.$PHOTOK_FILE_EXTENSION.tn")
+            if (!thumbFile.exists() || thumbFile.length() == 0L) {
+                diag("flushPendingThumbnailPacks: skipping ${entry.uuid} — local thumbnail missing (${thumbFile.absolutePath})")
+                continue
+            }
+            try {
+                val bytes = thumbFile.readBytes()
+                pendingThumbs.add(PendingThumb(entry, bytes))
+            } catch (e: Exception) {
+                diag("flushPendingThumbnailPacks: FAILED to read thumbnail for ${entry.uuid}: ${e.message}", e)
+            }
+        }
+        if (pendingThumbs.isEmpty()) {
+            diag("flushPendingThumbnailPacks: no readable local thumbnails — nothing to pack")
+            return@withContext
+        }
+        diag("flushPendingThumbnailPacks: ${pendingThumbs.size} readable thumbnails to pack")
+
+        // Walk the pending thumbnails in order, packing them into ≤50 MB packs.
+        // Each pack gets a sequential name (pack-0001, pack-0002, ...). The
+        // pack counter starts at the current max pack number on the remote + 1,
+        // so we don't overwrite existing packs. For simplicity (and because
+        // the registry is the source of truth), we use a random 4-digit suffix
+        // derived from the current time — collisions are astronomically
+        // unlikely and would just cause a redundant re-upload.
+        var packIndex = 0
+        var currentPackBytes = ByteArray(0)
+        val currentPackEntries = mutableListOf<PendingThumb>()
+
+        suspend fun uploadCurrentPack() {
+            if (currentPackEntries.isEmpty()) return
+            val packName = "pack-${System.currentTimeMillis()}-${packIndex.toString().padStart(4, '0')}"
+            val packFile = File(app.cacheDir, "$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+            try {
+                packFile.writeBytes(currentPackBytes)
+                val remotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+                diag("flushPendingThumbnailPacks: uploading pack $packName (${currentPackBytes.size} bytes, ${currentPackEntries.size} thumbnails) → $remotePath")
+                rcloneController.uploadFile(packFile.absolutePath, remotePath).getOrThrow()
+                diag("flushPendingThumbnailPacks: pack $packName upload OK")
+
+                // Update each entry in this pack with pack name + offset + length.
+                var offset = 0L
+                for (pt in currentPackEntries) {
+                    val updated = pt.entry.copy(
+                        thumbnailPack = packName,
+                        thumbnailOffset = offset,
+                        thumbnailLength = pt.bytes.size.toLong(),
+                    )
+                    try {
+                        dao.upsert(updated)
+                    } catch (e: Exception) {
+                        diag("flushPendingThumbnailPacks: FAILED to update entry for ${pt.entry.uuid}: ${e.message}", e)
+                    }
+                    offset += pt.bytes.size
+                }
+            } catch (e: Exception) {
+                diag("flushPendingThumbnailPacks: pack $packName upload FAILED (non-fatal — entries keep thumbnail_pack=null, will retry next batch): ${e.message}", e)
+                // Don't rethrow — leave entries with thumbnail_pack=null so the
+                // next batch's flushPendingThumbnailPacks retries them.
+            } finally {
+                packFile.delete()
+            }
+            packIndex++
+            currentPackBytes = ByteArray(0)
+            currentPackEntries.clear()
+        }
+
+        val maxSize = SyncConfig.THUMBNAIL_PACK_SIZE_BYTES
+        for (pt in pendingThumbs) {
+            // If adding this thumbnail would exceed the max pack size AND the
+            // current pack is non-empty, flush the current pack first.
+            if (currentPackBytes.isNotEmpty() &&
+                (currentPackBytes.size + pt.bytes.size) > maxSize
+            ) {
+                uploadCurrentPack()
+            }
+            // Append this thumbnail to the current pack.
+            val newPack = ByteArray(currentPackBytes.size + pt.bytes.size)
+            System.arraycopy(currentPackBytes, 0, newPack, 0, currentPackBytes.size)
+            System.arraycopy(pt.bytes, 0, newPack, currentPackBytes.size, pt.bytes.size)
+            currentPackBytes = newPack
+            currentPackEntries.add(pt)
+
+            // Edge case: if a SINGLE thumbnail exceeds the max pack size, flush
+            // it as its own (oversized) pack. This is rare (thumbnails are
+            // typically a few KB) but handles the case gracefully.
+            if (currentPackBytes.size >= maxSize) {
+                uploadCurrentPack()
+            }
+        }
+        // Flush the final partial pack.
+        uploadCurrentPack()
+        diag("flushPendingThumbnailPacks: DONE — packed ${pendingThumbs.size} thumbnails into $packIndex pack(s)")
     }
 
     /**

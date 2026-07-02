@@ -41,6 +41,20 @@ interface HashRegistryDao {
     @Query("SELECT * FROM hash_registry WHERE deleted = 0")
     suspend fun getAll(): List<HashRegistryEntry>
 
+    /**
+     * Look up a registry entry by the canonical photo UUID.
+     *
+     * Used by [onlasdan.gallery.sync.rclone.RepoManager.applyRegistryMetadataToPhotos]
+     * after a fresh-install login: the registry is downloaded + decrypted with the
+     * VMK, and each entry's UUID is matched against existing Photo rows (created
+     * earlier in the login flow with placeholder metadata) to backfill the real
+     * filename / size / type / albumPath / contentHash.
+     *
+     * @since v9 followup — backfill Photo metadata from registry after login
+     */
+    @Query("SELECT * FROM hash_registry WHERE uuid = :uuid AND deleted = 0 LIMIT 1")
+    suspend fun findByUuid(uuid: String): HashRegistryEntry?
+
     @Upsert
     suspend fun upsert(entry: HashRegistryEntry)
 

@@ -67,6 +67,21 @@ enum class PhotoType(
             HEIC.mimeType -> HEIC
             else -> UNDEFINED
         }
+
+        /**
+         * Parse a [PhotoType] from its name (e.g. `"JPEG"`, `"MP4"`), as
+         * stored in the dedup registry's per-hash `type` field. Falls back
+         * to [JPEG] for unknown values — the registry is hand-rolled and
+         * older entries may use slightly different naming, but JPEG is by
+         * far the most common photo type so it's a safe default for the
+         * gallery's "show me something" path.
+         *
+         * @since v9 followup — backfill Photo metadata from registry
+         */
+        fun fromName(name: String?): PhotoType {
+            if (name.isNullOrBlank()) return JPEG
+            return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: JPEG
+        }
     }
 
 }

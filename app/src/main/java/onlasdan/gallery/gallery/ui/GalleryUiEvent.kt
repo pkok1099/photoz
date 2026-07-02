@@ -29,4 +29,16 @@ sealed interface GalleryUiEvent {
     data object CancelAlbumSelection : GalleryUiEvent
     data class OnImportChoice(val choice: ImportChoice) : GalleryUiEvent
     data class SortChanged(val sort: Sort) : GalleryUiEvent
+
+    /**
+     * User tapped "Restore from backup" in the gallery's overflow menu.
+     *
+     * Triggers a re-download of thumbnails from the cloud backup (via
+     * [onlasdan.gallery.sync.rclone.RepoManager.restoreThumbnailsFromPacks]).
+     * Useful when the user has deleted local thumbnails, or when a prior
+     * restore was interrupted and they want to re-sync without re-logging-in.
+     *
+     * @since v9 followup (Bug 2) — Restore button alongside Export
+     */
+    data object OnRestoreFromBackup : GalleryUiEvent
 }

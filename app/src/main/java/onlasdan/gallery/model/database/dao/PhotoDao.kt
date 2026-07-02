@@ -122,5 +122,55 @@ interface PhotoDao {
     @Query("UPDATE photo SET content_hash = :hash WHERE photo_uuid = :uuid")
     suspend fun updateContentHash(uuid: String, hash: String)
 
+    /**
+     * Backfill a Photo row's placeholder metadata (filename, size, type,
+     * relativePath, albumPath, contentHash) from the dedup registry, after a
+     * fresh-install login has downloaded + decrypted the registry.
+     *
+     * [onlasdan.gallery.sync.rclone.RepoManager.restoreThumbnailsAfterLogin]
+     * creates Photo rows with placeholder metadata (type=JPEG, size=0,
+     * relativePath=null) because the registry cannot be decrypted until the
+     * vault is unlocked. Once the vault is unlocked and the registry is
+     * cached, [RepoManager.applyRegistryMetadataToPhotos] iterates the
+     * registry entries and calls this method to backfill the real metadata
+     * for each row.
+     *
+     * Only updates rows whose `size = 0` (the placeholder sentinel), so
+     * re-running this on an already-populated DB is a no-op.
+     *
+     * @since v9 followup — backfill Photo metadata from registry after login
+     */
+    @Query(
+        "UPDATE photo SET " +
+            "fileName = :filename, " +
+            "size = :size, " +
+            "type = :type, " +
+            "relativePath = :relativePath, " +
+            "album_path = :albumPath, " +
+            "content_hash = :contentHash " +
+            "WHERE photo_uuid = :uuid AND size = 0"
+    )
+    suspend fun backfillMetadataFromRegistry(
+        uuid: String,
+        filename: String,
+        size: Long,
+        type: Int,
+        relativePath: String?,
+        albumPath: String?,
+        contentHash: String,
+    ): Int
+
+    /**
+     * Return all Photo rows whose metadata is still the placeholder
+     * (size = 0) — i.e. created by restoreThumbnailsAfterLogin and not yet
+     * backfilled from the registry. Used by
+     * [onlasdan.gallery.sync.rclone.RepoManager.applyRegistryMetadataToPhotos]
+     * to know which rows need updating.
+     *
+     * @since v9 followup — backfill Photo metadata from registry after login
+     */
+    @Query("SELECT * FROM photo WHERE size = 0")
+    suspend fun findPhotosWithPlaceholderMetadata(): List<Photo>
+
     // endregion
 }

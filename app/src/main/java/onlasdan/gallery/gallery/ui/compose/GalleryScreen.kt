@@ -24,8 +24,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -101,6 +104,40 @@ fun GalleryScreen(
                                     viewModel.handleUiEvent(GalleryUiEvent.SortChanged(sort))
                                 }
                             )
+
+                            // ─── v9 followup (Bug 2): overflow menu with Restore ──
+                            // Houses the "Restore from backup" action that re-downloads
+                            // thumbnails from the cloud. Placed AFTER the sort menu so
+                            // the sort icon stays in its familiar spot; the 3-dot
+                            // overflow is the rightmost action, matching Material
+                            // guidance.
+                            var showOverflowMenu by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = { showOverflowMenu = true },
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_more_vert),
+                                    contentDescription = stringResource(R.string.common_more),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_restore),
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    text = { Text(stringResource(R.string.menu_restore_from_backup)) },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        viewModel.handleUiEvent(GalleryUiEvent.OnRestoreFromBackup)
+                                    },
+                                )
+                            }
                         }
                     }
                 )
