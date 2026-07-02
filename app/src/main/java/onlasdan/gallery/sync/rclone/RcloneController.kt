@@ -127,40 +127,47 @@ class RcloneController @Inject constructor(
     /**
      * Upload a file with periodic progress callbacks.
      *
-     * rclone's `operations/copyfile` is synchronous (it returns only when the upload is
-     * done), so unlike rclone's async `operations/operations/transfers` rc calls there's
-     * no job ID to poll. Instead, we fire `operations/copyfile` in a child coroutine and
-     * concurrently poll `core/stats` every [PROGRESS_POLL_INTERVAL_MS] ms. The rcd
-     * process maintains cumulative transfer stats for the in-flight transfer in its
-     * `transferring` array — we read `bytes` / `totalBytes` from the first entry and
-     * report `bytes / totalBytes * 100f` (clamped 0–100) via [onProgress].
+     * rclone's `operations/copyfile` is synchronous (it returns only when the
+     * upload is done) and the rcd `core/stats` endpoint does NOT track
+     * `operations/copyfile` transfers — the `transferring` array stays empty
+     * for the entire duration. Without a real signal from rclone, we
+     * approximate progress with a size-based estimate:
      *
-     * Stats polling is best-effort:
-     *   - If `transferring` is empty (upload hasn't registered yet, or already finished),
-     *     [onProgress] is NOT called for that poll.
-     *   - If `totalBytes` is 0 or missing (divide-by-zero risk), [onProgress] is NOT called.
-     *   - If the stats HTTP call itself fails, the poll is skipped (logged) — the upload
-     *     itself is unaffected.
+     *   estimated_percent = min(95,
+     *       (elapsed_ms × ASSUMED_SPEED_BYTES_PER_MS) / file_size × 100)
      *
-     * Concurrency model: the `copyfile` call holds [callMutex] for its full duration
-     * (preserving serialization with other uploaders), but the `core/stats` polls bypass
-     * [callMutex] and call [invokeRc] directly. This is safe because:
-     *   1. `invokeRc` is a single stateless HTTP POST — the rcd handles concurrent HTTP
-     *      requests fine.
-     *   2. `core/stats` is read-only and doesn't mutate rcd state.
-     *   3. Without bypassing [callMutex], the stats poll would block forever waiting
-     *      for the copyfile call to release the mutex (defeating the entire point).
+     * The estimate is capped at 95% so the progress bar visibly transitions
+     * to 100% only when the actual upload completes (via [onProgress](100f)
+     * after the copyfile call returns). This avoids the misleading "100% then
+     * hang for 5 seconds" UX that a naive elapsed-time estimate would
+     * produce for slow uploads.
      *
-     * The existing [uploadFile] is unchanged — callers that don't need progress feedback
-     * (e.g. thumbnail uploads, video-preview uploads) should continue to use it.
+     * `ASSUMED_SPEED_BYTES_PER_MS = 5000` (5 MB/s) is a deliberately
+     * conservative default — slower than most home Wi-Fi upload speeds, so
+     * the estimate under-promises and the bar moves to 100% sooner than the
+     * estimate would predict. The user perceives this as "upload finished
+     * faster than expected" rather than "stuck at 95%", which is the better
+     * failure mode.
      *
-     * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as the upload.
-     *   May be called zero or more times; never called with a value outside `0f..100f`.
-     *   Implementors are responsible for rate-limiting UI updates triggered from this
-     *   callback (see [onlasdan.gallery.sync.work.PhotoSyncWorker.updateNotification]
-     *   for the rate-limited notification pattern).
+     * Concurrency model: the `copyfile` call holds [callMutex] for its full
+     * duration (preserving serialization with other uploaders). The progress
+     * estimator runs in a sibling coroutine and only touches locals — no
+     * mutex contention, no extra HTTP calls to rcd.
+     *
+     * The existing [uploadFile] is unchanged — callers that don't need
+     * progress feedback (e.g. thumbnail uploads, video-preview uploads)
+     * should continue to use it.
+     *
+     * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as
+     *   the upload. May be called zero or more times; never called with a
+     *   value outside `0f..100f`. Implementors are responsible for
+     *   rate-limiting UI updates triggered from this callback (see
+     *   [onlasdan.gallery.sync.work.PhotoSyncWorker.updateNotification] for
+     *   the rate-limited notification pattern).
      *
      * @since v8 — stable upload notification with real progress percentage
+     * @since real-upload-progress feature — replaced core/stats polling
+     *   (which never returned data for copyfile) with a size-based estimate.
      */
     suspend fun uploadFileWithProgress(
         localPath: String,
@@ -175,13 +182,38 @@ class RcloneController @Inject constructor(
 
             awaitRcdReady().getOrThrow()
 
-            // Entry/exit logs only — per-poll diagnostics removed to avoid log spam.
             val uploadStartMs = System.currentTimeMillis()
-            diag("uploadFileWithProgress: ENTRY localPath=$localPath size=${localFile.length()} remotePath=$remotePath pollIntervalMs=$PROGRESS_POLL_INTERVAL_MS")
+            val fileSize = localFile.length()
+            diag("uploadFileWithProgress: ENTRY localPath=$localPath size=$fileSize remotePath=$remotePath pollIntervalMs=$PROGRESS_POLL_INTERVAL_MS assumedSpeedBps=${ASSUMED_SPEED_BYTES_PER_MS * 1000}")
+
+            // ─── Edge case: zero-byte file ──────────────────────────────────
+            // Skip the estimate loop entirely — the upload is essentially a
+            // no-op (rclone still creates the remote file, just with no
+            // content). Report 100% immediately after the call returns.
+            // Avoids divide-by-zero in the elapsed-time estimate below.
+            if (fileSize == 0L) {
+                diag("uploadFileWithProgress: zero-byte file, skipping estimate loop")
+                callMutex.withLock {
+                    invokeRc(
+                        op = "operations/copyfile",
+                        params = buildJsonObject {
+                            put("srcFs", localFile.parentFile?.absolutePath ?: "")
+                            put("srcRemote", localFile.name)
+                            val idx = remotePath.indexOf(':')
+                            put("dstFs", if (idx < 0) "" else remotePath.substring(0, idx + 1))
+                            put("dstRemote", remotePath.substringAfter(':'))
+                        },
+                    ).getOrThrow()
+                }
+                onProgress(100f)
+                diag("uploadFileWithProgress: EXIT OK (zero-byte) — totalDuration=${System.currentTimeMillis() - uploadStartMs}ms")
+                return@runCatching Unit
+            }
 
             coroutineScope {
-                // Launch the copyfile call in a child coroutine. It holds callMutex
-                // for its full duration — same serialization contract as uploadFile().
+                // Launch the copyfile call in a child coroutine. It holds
+                // callMutex for its full duration — same serialization
+                // contract as uploadFile().
                 val uploadDeferred = async(Dispatchers.IO) {
                     callMutex.withLock {
                         invokeRc(
@@ -197,38 +229,48 @@ class RcloneController @Inject constructor(
                     }
                 }
 
-                // Poll core/stats until the upload completes. Bypasses callMutex
-                // (see concurrency-model note in the function kdoc).
+                // ─── Size-based progress estimate ───────────────────────────
+                // Polls every PROGRESS_POLL_INTERVAL_MS (200ms) while the
+                // upload is in flight. Each tick computes:
                 //
-                // NOTE: core/stats does NOT track operations/copyfile (it is
-                // synchronous), so onProgress is rarely called in practice —
-                // the transferring[] array is empty for these uploads. The
-                // polling is retained for future use with a different rclone
-                // API (e.g. async transfers). Per-poll diagnostic logging was
-                // removed to avoid log spam.
+                //   estimated_bytes = elapsed_ms × ASSUMED_SPEED_BYTES_PER_MS
+                //   estimated_percent = min(95, estimated_bytes / fileSize × 100)
+                //
+                // The 95% cap is intentional: the bar visibly transitions to
+                // 100% only when the real upload completes (after the loop
+                // exits, below). This gives the user a clear "done" signal.
+                //
+                // For very fast uploads (small files / fast networks), the
+                // upload may complete before the first poll fires — that's
+                // fine, the loop exits and we jump straight to 100%.
+                //
+                // For very slow uploads (fileSize > 5MB × elapsed), the
+                // estimate climbs at 5MB/s until it hits 95%, then sits there
+                // until the real upload finishes. The user sees movement,
+                // then a brief pause, then 100% — much better than an
+                // indeterminate spinner.
                 while (!uploadDeferred.isCompleted) {
-                    try {
-                        val stats = invokeRc(
-                            op = "core/stats",
-                            params = buildJsonObject {},
-                        ).getOrNull()
-                        if (stats != null) {
-                            val percent = computeUploadProgressPercent(stats)
-                            if (percent != null) {
-                                onProgress(percent)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Stats polling failure is non-fatal — keep polling. The
-                        // upload itself is unaffected; we just lose one progress tick.
-                    }
+                    val elapsedMs = System.currentTimeMillis() - uploadStartMs
+                    val estimatedBytes = elapsedMs * ASSUMED_SPEED_BYTES_PER_MS
+                    val percentRaw = (estimatedBytes.toFloat() / fileSize.toFloat()) * 100f
+                    // Cap at 95% — only the post-loop onProgress(100f) call
+                    // signals true completion. Without the cap, the estimate
+                    // would hit 100% before the upload actually finishes and
+                    // the user would see a "stuck at 100%" state.
+                    val percentCapped = percentRaw.coerceIn(0f, 95f)
+                    onProgress(percentCapped)
                     delay(PROGRESS_POLL_INTERVAL_MS)
                 }
 
-                // Await the upload result — propagates any exception thrown inside
-                // the async block (CancellationException flows naturally).
+                // Await the upload result — propagates any exception thrown
+                // inside the async block (CancellationException flows naturally).
                 uploadDeferred.await()
-                diag("uploadFileWithProgress: EXIT OK — localPath=$localPath totalDuration=${System.currentTimeMillis() - uploadStartMs}ms")
+                // Real completion — push the bar to 100% so the user sees the
+                // upload finish. The caller's notification rate-limiter
+                // (see PhotoSyncWorker.updateNotification) treats 100% as a
+                // state change and always emits it immediately.
+                onProgress(100f)
+                diag("uploadFileWithProgress: EXIT OK — totalDuration=${System.currentTimeMillis() - uploadStartMs}ms fileSize=$fileSize")
                 Unit
             }
         }
@@ -1055,8 +1097,30 @@ class RcloneController @Inject constructor(
         private const val RC_CALL_CONNECT_TIMEOUT_MS = 30_000L
         private const val RC_CALL_READ_TIMEOUT_MS = 600_000L
 
-        // Polling interval for uploadFileWithProgress()'s core/stats polls.
+        // Polling interval for uploadFileWithProgress()'s size-based estimate
+        // loop. 200ms = ~5 ticks/sec — fast enough to feel responsive, slow
+        // enough to avoid UI/notification thrash. The caller's notification
+        // rate-limiter (PhotoSyncWorker.updateNotification) further collapses
+        // ticks to max ~2/sec on the notification side.
+        //
         // @since v8 — stable upload notification with real progress percentage
-        private const val PROGRESS_POLL_INTERVAL_MS = 500L
+        // @since real-upload-progress feature — lowered from 500ms to 200ms
+        //   for a smoother progress bar with the size-based estimate
+        private const val PROGRESS_POLL_INTERVAL_MS = 200L
+
+        // Assumed upload speed for the size-based progress estimate in
+        // uploadFileWithProgress(). 5000 bytes/ms = 5 MB/s = 40 Mbps —
+        // a deliberately conservative value (slower than most home Wi-Fi
+        // upload speeds, but faster than a weak cellular connection).
+        //
+        // The estimate under-promises on fast networks (the bar jumps to
+        // 100% before the estimate would have reached it) and slightly
+        // over-promises on very slow networks (the bar sits at 95% for a
+        // while before the real upload finishes). Both failure modes are
+        // acceptable — the alternative is an indeterminate spinner, which
+        // gives the user zero feedback.
+        //
+        // @since real-upload-progress feature
+        private const val ASSUMED_SPEED_BYTES_PER_MS = 5000L
     }
 }
