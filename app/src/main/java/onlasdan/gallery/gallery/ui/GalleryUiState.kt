@@ -22,14 +22,22 @@ import onlasdan.gallery.gallery.components.PhotoTile
 
 /**
  * Filter applied to the gallery's photo list. The user picks between
- * "Photos" (images + videos) and "Files" (DOCUMENT / ARCHIVE / AUDIO) via
- * the FilterChip row at the top of the gallery.
+ * "All" (everything), "Photos" (images only), "Videos", and "Files"
+ * (DOCUMENT / ARCHIVE / AUDIO) via the FilterChip row at the top of the
+ * gallery.
  *
- * @since file-upload feature
+ * @since file-upload feature — originally just PHOTOS / FILES
+ * @since search-filter feature — added ALL + VIDEOS for finer-grained chips
  */
 enum class GalleryFilter {
-    /** Show photo/video types only (JPEG, PNG, GIF, HEIC, MP4, WEBP, etc.). */
+    /** Show every photo type (image, video, file). */
+    ALL,
+
+    /** Show image types only (JPEG, PNG, GIF, HEIC, WEBP). */
     PHOTOS,
+
+    /** Show video types only (MP4, MPEG, WEBM, MOV, MKV). */
+    VIDEOS,
 
     /** Show file types only (DOCUMENT, ARCHIVE, AUDIO). */
     FILES,
@@ -47,11 +55,25 @@ sealed interface GalleryUiState {
         // sync status indicator in the gallery top bar.
         val pendingSyncCount: Int = 0,
         /**
-         * Current gallery filter (Photos vs Files). Drives the FilterChip row
-         * selection and the client-side filter applied to the photo list.
+         * Current gallery filter (All / Photos / Videos / Files). Drives the
+         * FilterChip row selection and the client-side filter applied to the
+         * photo list.
          *
          * @since file-upload feature
+         * @since search-filter feature — added ALL + VIDEOS
          */
-        val filter: GalleryFilter = GalleryFilter.PHOTOS,
+        val filter: GalleryFilter = GalleryFilter.ALL,
+        /**
+         * Current search query entered in the gallery search bar. Empty string
+         * means "no filter" — show every photo that matches [filter]. Non-empty
+         * means "show only photos whose filename contains this string
+         * (case-insensitive)".
+         *
+         * Drives the client-side filter applied in
+         * [onlasdan.gallery.gallery.ui.GalleryUiStateFactory.create].
+         *
+         * @since search-filter feature — filename search
+         */
+        val searchQuery: String = "",
     ) : GalleryUiState
 }

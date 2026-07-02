@@ -28,29 +28,45 @@ class GalleryUiStateFactory @Inject constructor() {
         photos: List<Photo>,
         showAlbumSelectionDialog: Boolean,
         sort: Sort,
-        filter: GalleryFilter = GalleryFilter.PHOTOS,
+        filter: GalleryFilter = GalleryFilter.ALL,
+        searchQuery: String = "",
     ): GalleryUiState {
         return if (photos.isEmpty()) {
             GalleryUiState.Empty
         } else {
             // @since file-upload feature — split photos vs files for the
-            // gallery filter chip. "Photos" = image + video types; "Files" =
-            // DOCUMENT / ARCHIVE / AUDIO. The split is on `PhotoType.isFile`
-            // so adding a new photo/video type automatically shows up under
-            // "Photos" without touching this factory.
-            val (filteredPhotos, filteredPending) = when (filter) {
-                GalleryFilter.PHOTOS -> {
-                    val matched = photos.filter { !it.type.isFile }
-                    matched to matched.count { it.syncState == SyncState.UPLOAD_PENDING }
-                }
-                GalleryFilter.FILES -> {
-                    val matched = photos.filter { it.type.isFile }
-                    matched to matched.count { it.syncState == SyncState.UPLOAD_PENDING }
-                }
+            // gallery filter chip. "Photos" = image types only; "Videos" =
+            // video types; "Files" = DOCUMENT / ARCHIVE / AUDIO; "All" = no
+            // type filter. The split uses PhotoType's isVideo / isFile flags
+            // so adding a new photo/video/file type automatically shows up
+            // under the right chip without touching this factory.
+            //
+            // @since search-filter feature — extended with ALL + VIDEOS chips
+            //   and the searchQuery filename filter (case-insensitive
+            //   contains on Photo.fileName).
+            val typeFiltered = when (filter) {
+                GalleryFilter.ALL -> photos
+                GalleryFilter.PHOTOS -> photos.filter { !it.type.isVideo && !it.type.isFile }
+                GalleryFilter.VIDEOS -> photos.filter { it.type.isVideo }
+                GalleryFilter.FILES -> photos.filter { it.type.isFile }
             }
-            // If the selected filter has zero matches, show Empty so the
-            // gallery placeholder appears (e.g. user has only photos, picks
-            // the "Files" filter — show the empty state with the FAB).
+
+            // @since search-filter feature — filename contains, case-insensitive.
+            // Empty query means "no text filter" — show everything that survived
+            // the type filter.
+            val textFiltered = if (searchQuery.isBlank()) {
+                typeFiltered
+            } else {
+                val needle = searchQuery.trim().lowercase()
+                typeFiltered.filter { it.fileName.lowercase().contains(needle) }
+            }
+
+            val filteredPhotos = textFiltered
+            val filteredPending = filteredPhotos.count { it.syncState == SyncState.UPLOAD_PENDING }
+
+            // If the selected filter + search yield zero matches, show Empty
+            // so the gallery placeholder appears (e.g. user has only photos,
+            // picks the "Files" filter — show the empty state with the FAB).
             if (filteredPhotos.isEmpty()) {
                 GalleryUiState.Empty
             } else {
@@ -68,6 +84,7 @@ class GalleryUiStateFactory @Inject constructor() {
                     sort = sort,
                     pendingSyncCount = filteredPending,
                     filter = filter,
+                    searchQuery = searchQuery,
                 )
             }
         }

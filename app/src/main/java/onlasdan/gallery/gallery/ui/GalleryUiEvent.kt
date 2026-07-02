@@ -31,11 +31,21 @@ sealed interface GalleryUiEvent {
     data class SortChanged(val sort: Sort) : GalleryUiEvent
 
     /**
-     * User changed the Photos/Files filter chip in the gallery header.
+     * User changed the All/Photos/Videos/Files filter chip in the gallery header.
      *
      * @since file-upload feature
+     * @since search-filter feature — added ALL + VIDEOS chips
      */
     data class FilterChanged(val filter: GalleryFilter) : GalleryUiEvent
+
+    /**
+     * User typed in the gallery search bar. The text is a case-insensitive
+     * "filename contains" filter applied on top of the current [FilterChanged]
+     * type filter. Empty string means "no text filter".
+     *
+     * @since search-filter feature — filename search
+     */
+    data class SearchQueryChanged(val query: String) : GalleryUiEvent
 
     /**
      * User tapped "Restore from backup" in the gallery's overflow menu.

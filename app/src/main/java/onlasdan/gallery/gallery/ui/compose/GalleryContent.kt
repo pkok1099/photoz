@@ -26,9 +26,13 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -54,10 +58,20 @@ fun GalleryContent(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        // ─── Photos / Files filter chip row (file-upload feature) ────────────
-        // Sits above the photo grid. The actual filtering happens in
-        // [onlasdan.gallery.gallery.ui.GalleryUiStateFactory.create] —
-        // this row only toggles the filterFlow selection on the ViewModel.
+        // ─── Search bar + All/Photos/Videos/Files filter chip row ──────────
+        // Sits above the photo grid. The search bar drives the
+        // [GalleryUiEvent.SearchQueryChanged] event (filename contains,
+        // case-insensitive); the chips drive [GalleryUiEvent.FilterChanged].
+        // Both filters compose in [GalleryUiStateFactory.create].
+        //
+        // @since file-upload feature — original Photos/Files chip row.
+        // @since search-filter feature — added the search bar + the All and
+        //   Videos chips, and split Photos to be images-only (videos moved to
+        //   their own chip).
+        GallerySearchBar(
+            query = uiState.searchQuery,
+            onQueryChange = { handleUiEvent(GalleryUiEvent.SearchQueryChanged(it)) },
+        )
         GalleryFilterRow(
             selected = uiState.filter,
             onSelect = { handleUiEvent(GalleryUiEvent.FilterChanged(it)) },
@@ -107,11 +121,56 @@ fun GalleryContent(
 }
 
 /**
- * Photos/Files filter row at the top of the gallery. Two FilterChips in a
- * horizontally-spaced row — "Photos" (default) shows image+video tiles,
+ * Search bar at the top of the gallery. Filters the photo list by filename
+ * (case-insensitive contains). The trailing clear button (X) empties the
+ * query — easier than long-press + delete on a soft keyboard.
+ *
+ * @since search-filter feature — filename search
+ */
+@Composable
+private fun GallerySearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text(stringResource(R.string.gallery_search_placeholder)) },
+        leadingIcon = {
+            Icon(
+                painter = painterResource(R.drawable.ic_image),
+                contentDescription = null,
+            )
+        },
+        trailingIcon = if (query.isNotEmpty()) {
+            {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = stringResource(R.string.gallery_search_clear),
+                    )
+                }
+            }
+        } else null,
+        singleLine = true,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+/**
+ * All/Photos/Videos/Files filter row at the top of the gallery. Four
+ * FilterChips in a horizontally-spaced row. "All" (default) shows every tile,
+ * "Photos" shows image types only, "Videos" shows video types only, and
  * "Files" shows DOCUMENT/ARCHIVE/AUDIO tiles.
  *
- * @since file-upload feature
+ * @since file-upload feature — originally just Photos / Files
+ * @since search-filter feature — added All + Videos
  */
 @Composable
 private fun GalleryFilterRow(
@@ -125,9 +184,19 @@ private fun GalleryFilterRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         FilterChip(
+            selected = selected == GalleryFilter.ALL,
+            onClick = { onSelect(GalleryFilter.ALL) },
+            label = { Text(stringResource(R.string.gallery_filter_all)) },
+        )
+        FilterChip(
             selected = selected == GalleryFilter.PHOTOS,
             onClick = { onSelect(GalleryFilter.PHOTOS) },
             label = { Text(stringResource(R.string.gallery_filter_photos)) },
+        )
+        FilterChip(
+            selected = selected == GalleryFilter.VIDEOS,
+            onClick = { onSelect(GalleryFilter.VIDEOS) },
+            label = { Text(stringResource(R.string.gallery_filter_videos)) },
         )
         FilterChip(
             selected = selected == GalleryFilter.FILES,

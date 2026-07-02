@@ -457,10 +457,16 @@
     <string name="gallery_sync_status_all_synced">All synced</string>
 
     <!-- Gallery Photos/Files filter — @since file-upload feature -->
+    <string name="gallery_filter_all">All</string>
     <string name="gallery_filter_photos">Photos</string>
+    <string name="gallery_filter_videos">Videos</string>
     <string name="gallery_filter_files">Files</string>
     <string name="gallery_open_file_not_found">File no longer exists</string>
     <string name="gallery_open_file_failed">Couldn\'t open file — no app available, or vault is locked</string>
+
+    <!-- Gallery search bar — @since search-filter feature -->
+    <string name="gallery_search_placeholder">Search by filename</string>
+    <string name="gallery_search_clear">Clear search</string>
 
     <!-- Repo setup: restore-after-login — @since PR4 sync — restore thumbnails on login -->
     <string name="repo_setup_restoring_backup">Restoring thumbnails from backup…</string>

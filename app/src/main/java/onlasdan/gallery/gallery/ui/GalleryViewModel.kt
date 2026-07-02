@@ -72,18 +72,29 @@ class GalleryViewModel @Inject constructor(
 
     private val showAlbumSelectionDialog = MutableStateFlow(false)
 
-    // @since file-upload feature — current Photos/Files filter selection.
-    //  Drives the client-side filter in [galleryUiStateFactory.create] and
-    //  the FilterChip selection in the gallery header.
-    private val filterFlow = MutableStateFlow(GalleryFilter.PHOTOS)
+    // @since file-upload feature — current All/Photos/Videos/Files filter
+    //  selection. Drives the client-side type filter in
+    //  [galleryUiStateFactory.create] and the FilterChip selection in the
+    //  gallery header. Default is ALL so the gallery shows everything on
+    //  first open (matches user expectation: "show me my library").
+    //
+    // @since search-filter feature — default changed from PHOTOS → ALL.
+    private val filterFlow = MutableStateFlow(GalleryFilter.ALL)
+
+    // @since search-filter feature — current search query entered in the
+    //  gallery search bar. Empty string means "no text filter". Drives the
+    //  client-side filename-contains filter (case-insensitive) in
+    //  [galleryUiStateFactory.create].
+    private val searchQueryFlow = MutableStateFlow("")
 
     val uiState: StateFlow<GalleryUiState> = combine(
         photosFlow,
         showAlbumSelectionDialog,
         sortFlow,
         filterFlow,
-    ) { photos, showAlbumSelection, sort, filter ->
-        galleryUiStateFactory.create(photos, showAlbumSelection, sort, filter)
+        searchQueryFlow,
+    ) { photos, showAlbumSelection, sort, filter, searchQuery ->
+        galleryUiStateFactory.create(photos, showAlbumSelection, sort, filter, searchQuery)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), GalleryUiState.Empty)
 
     private val eventsChannel = Channel<GalleryNavigationEvent>()
@@ -104,7 +115,11 @@ class GalleryViewModel @Inject constructor(
                 sortRepository.updateSortFor(albumUuid = null, sort = event.sort)
             }
             // @since file-upload feature — Photos/Files filter chip toggle.
+            // @since search-filter feature — extended to ALL/PHOTOS/VIDEOS/FILES.
             is GalleryUiEvent.FilterChanged -> filterFlow.value = event.filter
+            // @since search-filter feature — typing in the gallery search bar
+            //   updates the filename-contains filter (case-insensitive).
+            is GalleryUiEvent.SearchQueryChanged -> searchQueryFlow.value = event.query
             // @since v9 followup (Bug 2) — Restore from cloud backup. Re-runs
             // the pack-based thumbnail restore (downloads packs, extracts
             // thumbnails by offset+length, creates Photo rows for any registry
