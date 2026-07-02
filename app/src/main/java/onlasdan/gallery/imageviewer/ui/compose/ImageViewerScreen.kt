@@ -118,6 +118,12 @@ fun ImageViewerScreen(
         LaunchedEffect(pagerState.settledPage, uiState.items) {
             val item = currentItem
             if (item is ImageViewerItem.Video) {
+                // @since video-loading-indicator feature — kick off (or look
+                //   up) the on-demand download BEFORE handing off to ExoPlayer.
+                //   The viewer's shutter shows a determinate "Downloading
+                //   video…" progress bar while the download is in flight; once
+                //   it completes, ExoPlayer opens the local file normally.
+                viewModel.maybeStartVideoDownload(item.photo)
                 player.apply {
                     setMediaItem(item.mediaItem)
                     prepare()
@@ -264,6 +270,12 @@ fun ImageViewerScreen(
                         player = player,
                         uiState = uiState,
                         handleUiEvent = handleUiEvent,
+                        // @since video-loading-indicator feature — pass the
+                        //   per-UUID download state so the shutter can swap
+                        //   the indeterminate spinner for a determinate bar
+                        //   + "Downloading video…" label while the file is
+                        //   being fetched from the cloud.
+                        downloadState = uiState.videoDownloads[item.photo.uuid],
                     )
                 }
             }

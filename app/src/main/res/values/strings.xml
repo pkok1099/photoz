@@ -481,4 +481,8 @@
     <string name="repo_setup_password_entry_subtitle">Enter your vault password to restore your backup</string>
     <string name="repo_setup_password_entry_error">Incorrect password</string>
     <string name="repo_setup_password_entry_submit">Restore</string>
+
+    <!-- Video viewer loading indicator — @since video-loading-indicator feature -->
+    <string name="video_downloading">Downloading video…</string>
+    <string name="video_download_failed">Couldn\'t download video</string>
 </resources>

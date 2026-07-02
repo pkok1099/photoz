@@ -68,6 +68,38 @@ sealed interface ImageViewerUiEvent {
     data class UpdateCurrentDialog(val newValue: ImageViewerUiState.Dialog?) : ImageViewerUiEvent
 }
 
+/**
+ * State of an on-demand video download (remote-only video being fetched back
+ * to local storage so ExoPlayer can play it).
+ *
+ * The viewer's shutter shows a determinate progress bar while the download is
+ * in flight, then hands off to ExoPlayer once the file is local.
+ *
+ * @since video-loading-indicator feature — on-demand video download with
+ *   visible progress
+ */
+sealed interface VideoDownloadState {
+    /** No download needed (the local file is already present). */
+    data object Idle : VideoDownloadState
+
+    /**
+     * Download is in flight. [progress] is 0f..100f (size-based estimate).
+     * [lastUpdateMs] is the system time of the last progress update — used
+     * by the rate-limiter in [ImageViewerViewModel.maybeStartVideoDownload]
+     * to cap UI refreshes at ~5/sec.
+     */
+    data class Downloading(
+        val progress: Float,
+        val lastUpdateMs: Long = System.currentTimeMillis(),
+    ) : VideoDownloadState
+
+    /** Download completed successfully — ExoPlayer can now open the file. */
+    data object Done : VideoDownloadState
+
+    /** Download failed (network blip, vault locked, remote missing, etc.). */
+    data class Failed(val message: String) : VideoDownloadState
+}
+
 data class ImageViewerUiState(
     val items: List<ImageViewerItem> = emptyList(),
     val albumUuid: String? = null,
@@ -76,6 +108,14 @@ data class ImageViewerUiState(
     val muteVideoPlayer: Boolean = false,
     val videoPlaybackSpeed: Float = 1f,
     val inputs: Inputs = Inputs(),
+    /**
+     * Per-UUID on-demand video download state. Drives the "Downloading video…"
+     * progress indicator in the viewer's shutter while a remote-only video is
+     * being fetched back to local storage.
+     *
+     * @since video-loading-indicator feature
+     */
+    val videoDownloads: Map<String, VideoDownloadState> = emptyMap(),
 ) {
     data class Inputs(
         val showControls: Boolean = false,
@@ -108,23 +148,40 @@ class ImageViewerViewModel @AssistedInject constructor(
 
     private val inputs = MutableStateFlow(ImageViewerUiState.Inputs())
 
+    // @since video-loading-indicator feature — per-UUID on-demand video
+    //  download state. Drives the "Downloading video…" progress bar in the
+    //  viewer's shutter while a remote-only video is being fetched back to
+    //  local storage before ExoPlayer can play it.
+    private val videoDownloadsFlow = MutableStateFlow<Map<String, VideoDownloadState>>(emptyMap())
+
+    // Track which UUIDs we've already kicked off a download for, so we don't
+    // re-launch the download coroutine on every flow emission (the photos
+    // flow re-emits on any DB change, but we only want ONE download per UUID
+    // per viewer session).
+    private val inflightDownloads = mutableSetOf<String>()
+
     val uiState = combine(
         createPhotosFlow(),
         createPinnedPhotoIdsFlow(),
         config.valuesFlow,
         inputs,
-    ) { photos, pinnedPhotoIds, configValues, inputs ->
+        videoDownloadsFlow,
+    ) { photos, pinnedPhotoIds, configValues, inputs, videoDownloads ->
         ImageViewerUiState(
             items = photos.map { photo ->
                 if (photo.type.isVideo) {
                     // For video originals, trigger an async restore BEFORE ExoPlayer tries to
                     // open the local file. ExoPlayer will see the file once download completes;
                     // until then, the player shows a loading state. (PR1 on-demand restore.)
-                    if (photo.syncState == onlasdan.gallery.sync.domain.SyncState.UPLOADED) {
-                        viewModelScope.launch {
-                            runCatching { syncRestorer.ensureLocalOriginal(photo.uuid) }
-                        }
-                    }
+                    //
+                    // @since video-loading-indicator feature — track per-UUID
+                    //   download state so the viewer's shutter shows a
+                    //   determinate "Downloading video…" progress bar instead
+                    //   of just an indeterminate spinner. The download itself
+                    //   is fired from [maybeStartVideoDownload] (below) which
+                    //   is called from [handleUiEvent] when the user opens a
+                    //   video, NOT from this flow — this flow only LOOKS UP
+                    //   the current state for each video UUID.
                     ImageViewerItem.Video(
                         photo = photo,
                         mediaItem = createMediaItem(photo)
@@ -141,8 +198,76 @@ class ImageViewerViewModel @AssistedInject constructor(
             muteVideoPlayer = configValues.getOrDefault(Config.IMAGE_VIEWER_MUTE_VIDEO_PLAYER, false) as Boolean,
             videoPlaybackSpeed = configValues.getOrDefault(Config.IMAGE_VIEWER_PLAYBACK_SPEED, 1f) as Float,
             inputs = inputs,
+            videoDownloads = videoDownloads,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), ImageViewerUiState())
+
+    /**
+     * Kick off (or look up) the on-demand download for a remote-only video so
+     * ExoPlayer can play it. Called from the viewer's pager settle effect when
+     * the user swipes to a video page.
+     *
+     * Idempotent: if a download is already in flight or has completed for this
+     * UUID, the call is a no-op. Progress is published to [videoDownloadsFlow]
+     * which the viewer's shutter observes.
+     *
+     * @since video-loading-indicator feature
+     */
+    fun maybeStartVideoDownload(photo: Photo) {
+        if (!photo.type.isVideo) return
+        val uuid = photo.uuid
+        synchronized(inflightDownloads) {
+            if (uuid in inflightDownloads) return
+            inflightDownloads.add(uuid)
+        }
+        // If the local file already exists, mark Done immediately — no
+        // network round-trip needed.
+        val localFile = app.getFileStreamPath(photo.internalFileName)
+        if (localFile.exists() && localFile.length() > 0) {
+            videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
+            return
+        }
+        if (photo.syncState != onlasdan.gallery.sync.domain.SyncState.UPLOADED) {
+            // Not uploaded — can't restore from remote. Mark Failed so the
+            // UI shows an error instead of an infinite spinner.
+            videoDownloadsFlow.update {
+                it + (uuid to VideoDownloadState.Failed("Video not uploaded — cannot restore from cloud"))
+            }
+            return
+        }
+        // Mark Downloading at 0% immediately so the spinner swaps to a
+        // determinate bar without delay.
+        videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(0f)) }
+        viewModelScope.launch {
+            val result = runCatching {
+                syncRestorer.ensureLocalOriginalWithProgress(uuid) { progress ->
+                    // Rate-limit updates to ~5/sec (every 200ms) — the same
+                    // cadence uploadFileWithProgress uses. State-change to 100%
+                    // always goes through.
+                    val current = videoDownloadsFlow.value[uuid]
+                    if (current is VideoDownloadState.Downloading) {
+                        val now = System.currentTimeMillis()
+                        if (progress >= 100f || now - current.lastUpdateMs >= 200L) {
+                            videoDownloadsFlow.update {
+                                it + (uuid to VideoDownloadState.Downloading(progress, now))
+                            }
+                        }
+                    } else if (current == null) {
+                        // First update — always emit.
+                        videoDownloadsFlow.update {
+                            it + (uuid to VideoDownloadState.Downloading(progress))
+                        }
+                    }
+                }
+            }
+            if (result.isSuccess) {
+                videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
+            } else {
+                val msg = result.exceptionOrNull()?.message ?: "Download failed"
+                videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
+            }
+        }
+    }
 
     fun handleUiEvent(event: ImageViewerUiEvent) {
         when (event) {

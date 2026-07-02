@@ -327,6 +327,89 @@ class RcloneController @Inject constructor(
         }
 
     /**
+     * Download a file with periodic progress callbacks.
+     *
+     * rclone's `operations/copyfile` is synchronous and `core/stats` doesn't
+     * track it — see [uploadFileWithProgress] for the full rationale. The
+     * same size-based estimate approach is reused here:
+     *
+     *   estimated_percent = min(95,
+     *       (elapsed_ms × ASSUMED_SPEED_BYTES_PER_MS) / file_size × 100)
+     *
+     * [expectedSize] is the photo's stored `size` column. If unknown (≤ 0),
+     * the call degrades to indeterminate — `onProgress` is invoked once with
+     * `0f` at the start and once with `100f` at the end. Otherwise, the bar
+     * climbs at the assumed speed until 95%, then jumps to 100% when the real
+     * download completes.
+     *
+     * @since video-loading-indicator feature — on-demand video download with
+     *   visible progress
+     */
+    suspend fun downloadFileWithProgress(
+        remotePath: String,
+        localPath: String,
+        expectedSize: Long?,
+        onProgress: (Float) -> Unit,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val localFile = File(localPath)
+            localFile.parentFile?.mkdirs()
+
+            awaitRcdReady().getOrThrow()
+
+            val downloadStartMs = System.currentTimeMillis()
+            val fileSize = expectedSize ?: 0L
+            diag("downloadFileWithProgress: ENTRY remotePath=$remotePath localPath=$localPath expectedSize=$fileSize")
+
+            // Build the rc params once — same as downloadFile.
+            val params = buildJsonObject {
+                val remoteName = remotePath.substringBefore(':')
+                val remoteRelPath = remotePath.substringAfter(':')
+                put("srcFs", "$remoteName:")
+                put("srcRemote", remoteRelPath.removePrefix("/"))
+                put("dstFs", localFile.parentFile?.absolutePath ?: "")
+                put("dstRemote", localFile.name)
+            }
+
+            // Edge case: zero-byte file OR unknown size — skip the estimate
+            // loop, just invoke the download and emit 0% → 100%.
+            if (fileSize <= 0L) {
+                diag("downloadFileWithProgress: unknown/zero size, skipping estimate loop")
+                onProgress(0f)
+                callMutex.withLock {
+                    invokeRc(op = "operations/copyfile", params = params).getOrThrow()
+                }
+                onProgress(100f)
+                diag("downloadFileWithProgress: EXIT OK (no-estimate) — totalDuration=${System.currentTimeMillis() - downloadStartMs}ms")
+                return@runCatching Unit
+            }
+
+            coroutineScope {
+                val downloadDeferred = async(Dispatchers.IO) {
+                    callMutex.withLock {
+                        invokeRc(op = "operations/copyfile", params = params).getOrThrow()
+                    }
+                }
+
+                // Size-based estimate loop — same shape as uploadFileWithProgress.
+                while (!downloadDeferred.isCompleted) {
+                    val elapsedMs = System.currentTimeMillis() - downloadStartMs
+                    val estimatedBytes = elapsedMs * ASSUMED_SPEED_BYTES_PER_MS
+                    val percentRaw = (estimatedBytes.toFloat() / fileSize.toFloat()) * 100f
+                    val percentCapped = percentRaw.coerceIn(0f, 95f)
+                    onProgress(percentCapped)
+                    delay(PROGRESS_POLL_INTERVAL_MS)
+                }
+
+                downloadDeferred.await()
+                onProgress(100f)
+                diag("downloadFileWithProgress: EXIT OK — totalDuration=${System.currentTimeMillis() - downloadStartMs}ms fileSize=$fileSize")
+                Unit
+            }
+        }
+    }
+
+    /**
      * Independent verification that a file exists on the remote at [remotePath], with the
      * expected [expectedSize] in bytes.
      */

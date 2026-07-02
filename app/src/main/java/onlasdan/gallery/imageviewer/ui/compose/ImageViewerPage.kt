@@ -43,9 +43,11 @@ import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -77,6 +79,7 @@ import onlasdan.gallery.R
 import onlasdan.gallery.imageviewer.ui.ImageViewerItem
 import onlasdan.gallery.imageviewer.ui.ImageViewerUiEvent
 import onlasdan.gallery.imageviewer.ui.ImageViewerUiState
+import onlasdan.gallery.imageviewer.ui.VideoDownloadState
 import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
 import onlasdan.gallery.transcoding.compose.rememberEncryptedImagePainter
 import me.saket.telephoto.zoomable.EnabledZoomGestures
@@ -143,6 +146,15 @@ fun BoxScope.ImageViewerVideoPage(
     uiState: ImageViewerUiState,
     handleUiEvent: (ImageViewerUiEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * State of the on-demand download for this video, if it was remote-only
+     * when the user opened it. `null` means "no download needed" (the local
+     * file was already present).
+     *
+     * @since video-loading-indicator feature — on-demand video download with
+     *   visible progress
+     */
+    downloadState: VideoDownloadState? = null,
 ) {
     ContentFrame(
         player = if (isCurrentItem) player else null,
@@ -173,9 +185,79 @@ fun BoxScope.ImageViewerVideoPage(
                     modifier = modifier.fillMaxSize()
                 )
 
-                CircularProgressIndicator(
-                    color = LocalContentColor.current,
-                )
+                // ─── Video loading indicator ───────────────────────────────────
+                // @since video-loading-indicator feature — replace the bare
+                //   CircularProgressIndicator with a contextual download
+                //   progress UI. Three branches:
+                //     (a) DownloadState.Downloading → "Downloading video…"
+                //       with a determinate LinearProgressIndicator (or
+                //       indeterminate if the size estimate is 0%).
+                //     (b) DownloadState.Failed → "Couldn't download video"
+                //       with the error message — no spinner.
+                //     (c) null / Idle / Done → fall back to the original
+                //       CircularProgressIndicator (ExoPlayer is buffering).
+                when (downloadState) {
+                    is VideoDownloadState.Downloading -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier
+                                .padding(24.dp)
+                                .background(Color.Black.copy(alpha = 0.6f)),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.video_downloading),
+                                color = Color.White,
+                            )
+                            // width clamps the progress bar to a sensible size
+                            // instead of stretching across the full screen.
+                            val pct = downloadState.progress.toInt().coerceIn(0, 100)
+                            if (pct <= 0) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.width(180.dp),
+                                    color = Color.White,
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    progress = { downloadState.progress / 100f },
+                                    modifier = Modifier.width(180.dp),
+                                    color = Color.White,
+                                )
+                            }
+                            Text(
+                                text = "$pct%",
+                                color = Color.White,
+                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                    is VideoDownloadState.Failed -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .padding(24.dp)
+                                .background(Color.Black.copy(alpha = 0.6f)),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.video_download_failed),
+                                color = Color.White,
+                            )
+                            Text(
+                                text = downloadState.message,
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                    else -> {
+                        // null, Idle, or Done — ExoPlayer is buffering the
+                        // local file. Show the original spinner.
+                        CircularProgressIndicator(
+                            color = LocalContentColor.current,
+                        )
+                    }
+                }
             }
         },
         modifier = modifier

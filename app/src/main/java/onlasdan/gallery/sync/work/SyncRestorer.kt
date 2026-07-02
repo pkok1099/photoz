@@ -80,6 +80,83 @@ class SyncRestorer @Inject constructor(
     }
 
     /**
+     * On-demand restore of an encrypted original from the remote, with
+     * periodic progress callbacks.
+     *
+     * Same as [ensureLocalOriginal] but emits download-progress estimates to
+     * [onProgress] while the rclone `operations/copyfile` call is in flight.
+     * The progress is a size-based estimate (same approach as
+     * [onlasdan.gallery.sync.rclone.RcloneController.uploadFileWithProgress])
+     * because rclone's `core/stats` doesn't track `operations/copyfile`
+     * transfers — the estimate under-promises on fast networks (the bar
+     * jumps to 100% before the estimate would have reached it) and slightly
+     * over-promises on very slow networks (the bar sits at 95% for a while
+     * before the real download finishes). Both failure modes are acceptable —
+     * the alternative is an indeterminate spinner, which gives the user zero
+     * feedback.
+     *
+     * Used by the video viewer path
+     * ([onlasdan.gallery.imageviewer.ui.ImageViewerViewModel]) so the user
+     * sees a determinate "Downloading video…" progress bar instead of an
+     * indeterminate spinner while a remote-only video is fetched back to
+     * local storage before ExoPlayer can play it.
+     *
+     * @param uuid the photo UUID to restore
+     * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as
+     *   the download. May be called zero or more times; never called with a
+     *   value outside `0f..100f`. The final call (after the download
+     *   completes) is always `100f`. Callers are responsible for
+     *   rate-limiting UI updates triggered from this callback.
+     *
+     * @since video-loading-indicator feature — on-demand video download with
+     *   visible progress
+     */
+    suspend fun ensureLocalOriginalWithProgress(
+        uuid: String,
+        onProgress: (Float) -> Unit,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val localFile = File(app.filesDir, internalFileName(uuid))
+            if (localFile.exists() && localFile.length() > 0) {
+                onProgress(100f)
+                return@runCatching
+            }
+
+            val photo = try {
+                photoDao.get(uuid)
+            } catch (e: Exception) {
+                Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+                return@runCatching
+            }
+
+            if (photo.syncState != SyncState.UPLOADED) {
+                Timber.d(
+                    "SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
+                    uuid,
+                    photo.syncState,
+                )
+                return@runCatching
+            }
+
+            val remote = config.syncChosenRemote
+            if (remote == null) {
+                Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
+                return@runCatching
+            }
+
+            val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+            Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
+            rcloneController.downloadFileWithProgress(
+                remotePath = remoteOrig,
+                localPath = localFile.absolutePath,
+                expectedSize = photo.size.takeIf { it > 0 },
+                onProgress = onProgress,
+            ).getOrThrow()
+            onProgress(100f)
+        }
+    }
+
+    /**
      * Restore ALL uploaded photos from the remote back to local storage.
      *
      * Downloads every photo whose syncState is UPLOADED but whose local original
