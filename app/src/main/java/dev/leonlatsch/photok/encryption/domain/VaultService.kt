@@ -103,8 +103,15 @@ class VaultService @Inject constructor(
     }
 
     suspend fun canUnlock(): Boolean {
-        val protectionsAreSetup = isSetup(VaultProtectionType.Password) || isSetup(VaultProtectionType.Biometric)
+        val passwordSetup = isSetup(VaultProtectionType.Password)
+        val biometricSetup = isSetup(VaultProtectionType.Biometric)
+        val protectionsAreSetup = passwordSetup || biometricSetup
         val canMigrate = passwordProtectionHandler.canMigrate() || biometricProtectionHandler.canMigrate()
+
+        android.util.Log.e("RcloneDiag",
+            "VaultService.canUnlock: passwordSetup=$passwordSetup biometricSetup=$biometricSetup " +
+                "protectionsAreSetup=$protectionsAreSetup canMigrate=$canMigrate → " +
+                "result=${protectionsAreSetup || canMigrate}")
 
         return protectionsAreSetup || canMigrate
     }

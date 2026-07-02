@@ -79,6 +79,12 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
     override fun onCreate() {
         super<Application>.onCreate()
 
+        // ─── DIAGNOSTIC: process lifecycle logging (data-loss bug investigation) ──
+        android.util.Log.e("RcloneDiag",
+            "BaseApplication.onCreate: process starting fresh " +
+                "(pid=${android.os.Process.myPid()}, systemFirstStart=${config.systemFirstStart}, " +
+                "repoConfirmed=${config.repoConfirmed})")
+
         // ─── CRASH LOGGER — install FIRST, before anything else can crash ───────
         // Captures full stack traces (including `Caused by` chain) to
         // <filesDir>/crash_log.txt so they survive process death. Readable via:

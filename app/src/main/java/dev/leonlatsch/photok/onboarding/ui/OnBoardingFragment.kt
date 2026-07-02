@@ -130,8 +130,13 @@ class OnBoardingFragment :
      * action_repoSetupFragment_to_setupFragment.
      */
     fun finish() {
-        findNavController().navigate(R.id.action_onBoardingFragment_to_repoSetupFragment)
+        android.util.Log.e("RcloneDiag",
+            "OnBoardingFragment.finish: setting systemFirstStart=false (was=${config.systemFirstStart})")
         config.systemFirstStart = false
+        android.util.Log.e("RcloneDiag",
+            "OnBoardingFragment.finish: systemFirstStart is now ${config.systemFirstStart} " +
+                "(verify it persisted — if this reads true, the write failed)")
+        findNavController().navigate(R.id.action_onBoardingFragment_to_repoSetupFragment)
     }
 
     override fun bind(binding: FragmentOnboardingBinding) {
