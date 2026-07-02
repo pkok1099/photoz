@@ -407,6 +407,31 @@ class RepoSetupViewModel @Inject constructor(
             vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))
                 .onSuccess { session ->
                     sessionRepository.set(session)
+
+                    // ─── DATA-LOSS FIX: persist local VaultProtection(Password) ────
+                    // After a login-branch unlock, the local Room DB has
+                    // VaultProtection(RecoveryPhrase) (downloaded from escrow) but
+                    // NO VaultProtection(Password). On the next app open, canUnlock()
+                    // would return false (no Password row) → app thinks it's a fresh
+                    // install → SetupFragment → new password → NEW VMK → all previously
+                    // encrypted photos become undecryptable (red thumbnails).
+                    //
+                    // Fix: wrap the recovered VMK with the user's password and persist
+                    // it locally. On subsequent opens, canUnlock() finds the Password
+                    // row → returns true → LOCKED → UnlockFragment → user enters
+                    // password → same VMK → photos decrypt correctly.
+                    try {
+                        vaultService.createPasswordProtectionFromSession(password, session)
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: created local VaultProtection(Password) — " +
+                                "canUnlock will return true on next open")
+                    } catch (e: Exception) {
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: FAILED to create local VaultProtection(Password) — " +
+                                "next open may re-trigger setup (data-loss risk!): ${e.message}", e)
+                        Timber.e(e, "submitPassword: createPasswordProtectionFromSession failed")
+                    }
+
                     _state.value = RepoSetupState.Unlocked
                 }
                 .onFailure { e ->

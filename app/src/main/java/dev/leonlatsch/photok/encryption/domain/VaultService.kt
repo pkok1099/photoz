@@ -17,18 +17,34 @@
 package dev.leonlatsch.photok.encryption.domain
 
 import dev.leonlatsch.photok.encryption.domain.handlers.VaultProtectionHandler
+import dev.leonlatsch.photok.encryption.domain.models.Algorithm
 import dev.leonlatsch.photok.encryption.domain.models.CreateRequest
+import dev.leonlatsch.photok.encryption.domain.models.Kdf
 import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtection
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionParams
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionType
+import dev.leonlatsch.photok.encryption.domain.crypto.KeyGen
+import dev.leonlatsch.photok.encryption.domain.crypto.IV_SIZE
+import dev.leonlatsch.photok.encryption.domain.crypto.SALT_SIZE
 import dev.leonlatsch.photok.encryption.domain.models.VaultSession
 import dev.leonlatsch.photok.settings.data.Config
+import java.security.SecureRandom
+import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
 import javax.inject.Inject
+import kotlin.io.encoding.Base64
+
+private const val KEK_SIZE = 256
+private const val KEK_ITERATIONS = 100_000
 
 class VaultService @Inject constructor(
     private val vaultProtectionRepository: VaultProtectionRepository,
     private val passwordProtectionHandler: VaultProtectionHandler<UnlockRequest.Password, CreateRequest.Password>,
     private val biometricProtectionHandler: VaultProtectionHandler<UnlockRequest.Biometric, CreateRequest.Biometric>,
     private val recoveryPhraseProtectionHandler: VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase>,
+    private val keyGen: KeyGen,
     private val config: Config,
 ) {
     suspend fun unlock(request: UnlockRequest): Result<VaultSession> {
@@ -79,6 +95,59 @@ class VaultService @Inject constructor(
         vaultProtectionRepository.createProtection(protection)
     }
 
+    /**
+     * Create a local [VaultProtection] of type [VaultProtectionType.Password] that wraps
+     * an EXISTING VMK (from [session]) with the given [password]. Used after a login-branch
+     * unlock to persist a local Password protection so [canUnlock] returns true on subsequent
+     * app opens.
+     *
+     * This is distinct from [create]([CreateRequest.Password]) which generates a NEW VMK —
+     * that would be wrong here because the VMK must match the one that encrypted the
+     * already-uploaded photos.
+     *
+     * @since data-loss fix — login branch must persist local Password protection
+     */
+    suspend fun createPasswordProtectionFromSession(password: String, session: VaultSession) {
+        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+        val kdf = Kdf.PBKDF2WithHmacSHA256
+        val algorithm = Algorithm.AesCbcPkcs7Padding
+
+        val params = VaultProtectionParams(
+            salt = Base64.encode(salt),
+            iv = Base64.encode(iv),
+            kdf = kdf,
+            kdfIterations = KEK_ITERATIONS,
+            algorithm = algorithm,
+            keySize = KEK_SIZE,
+        )
+
+        val kek = keyGen.derivePasswordKeyEncryptionKey(
+            password = password,
+            salt = salt,
+            kdf = kdf,
+            kdfIterations = KEK_ITERATIONS,
+            keySize = KEK_SIZE,
+        )
+
+        val cipher = Cipher.getInstance(algorithm.value).apply {
+            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+        }
+
+        val wrappedVmk = cipher.doFinal(session.vmk.encoded)
+
+        val protection = VaultProtection(
+            id = UUID.randomUUID().toString(),
+            type = VaultProtectionType.Password,
+            wrappedVMK = wrappedVmk,
+            params = params,
+        )
+        vaultProtectionRepository.createProtection(protection)
+        android.util.Log.e("RcloneDiag",
+            "VaultService.createPasswordProtectionFromSession: created local VaultProtection(Password) " +
+                "wrapping existing VMK (id=${protection.id}) — canUnlock will now return true on next open")
+    }
+
     suspend fun reset(type: VaultProtectionType) {
         vaultProtectionRepository.removeProtection(type)
 
@@ -105,11 +174,13 @@ class VaultService @Inject constructor(
     suspend fun canUnlock(): Boolean {
         val passwordSetup = isSetup(VaultProtectionType.Password)
         val biometricSetup = isSetup(VaultProtectionType.Biometric)
-        val protectionsAreSetup = passwordSetup || biometricSetup
+        val recoveryPhraseSetup = isSetup(VaultProtectionType.RecoveryPhrase)
+        val protectionsAreSetup = passwordSetup || biometricSetup || recoveryPhraseSetup
         val canMigrate = passwordProtectionHandler.canMigrate() || biometricProtectionHandler.canMigrate()
 
         android.util.Log.e("RcloneDiag",
             "VaultService.canUnlock: passwordSetup=$passwordSetup biometricSetup=$biometricSetup " +
+                "recoveryPhraseSetup=$recoveryPhraseSetup " +
                 "protectionsAreSetup=$protectionsAreSetup canMigrate=$canMigrate → " +
                 "result=${protectionsAreSetup || canMigrate}")
 

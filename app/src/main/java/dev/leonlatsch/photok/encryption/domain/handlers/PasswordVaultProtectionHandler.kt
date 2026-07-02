@@ -25,6 +25,7 @@ import dev.leonlatsch.photok.encryption.domain.models.Kdf
 import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtection
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionParams
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionType
 import dev.leonlatsch.photok.settings.data.Config
 import org.mindrot.jbcrypt.BCrypt
 import java.security.SecureRandom
@@ -109,6 +110,51 @@ class PasswordVaultProtectionHandler @Inject constructor(
         return VaultProtection(
             id = UUID.randomUUID().toString(),
             type = request.protectionType,
+            wrappedVMK = wrappedVmk,
+            params = params,
+        )
+    }
+
+    /**
+     * Wrap an EXISTING VMK (from a recovered session) with the given password.
+     * Used after login-branch unlock to persist a local Password protection
+     * so [VaultService.canUnlock] returns true on subsequent app opens.
+     *
+     * Unlike [create] which generates a new VMK, this wraps the provided [vmk].
+     *
+     * @since data-loss fix — login branch must persist local Password protection
+     */
+    fun wrapExistingVmk(password: String, vmk: javax.crypto.SecretKey): VaultProtection {
+        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+        val kdf = Kdf.PBKDF2WithHmacSHA256
+
+        val params = VaultProtectionParams(
+            salt = Base64.encode(salt),
+            iv = Base64.encode(iv),
+            kdf = kdf,
+            kdfIterations = KEK_ITERATIONS,
+            algorithm = Algorithm.AesCbcPkcs7Padding,
+            keySize = KEK_SIZE,
+        )
+
+        val kek = keyGen.derivePasswordKeyEncryptionKey(
+            password = password,
+            salt = salt,
+            kdf = kdf,
+            kdfIterations = KEK_ITERATIONS,
+            keySize = params.keySize,
+        )
+
+        val cipher = Cipher.getInstance(params.algorithm.value).apply {
+            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+        }
+
+        val wrappedVmk = cipher.doFinal(vmk.encoded)
+
+        return VaultProtection(
+            id = UUID.randomUUID().toString(),
+            type = VaultProtectionType.Password,
             wrappedVMK = wrappedVmk,
             params = params,
         )
