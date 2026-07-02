@@ -16,6 +16,9 @@
 
 package dev.leonlatsch.photok.reposetup.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -68,6 +72,7 @@ import dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreScreen
 import dev.leonlatsch.photok.gallery.ui.navigation.NavigateToGallery
 import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.ui.theme.AppTheme
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -92,6 +97,30 @@ class RepoSetupFragment : Fragment() {
         return ComposeView(requireContext()).apply {
             setContent {
                 AppTheme {
+                    // ─── Item 2 fix: POST_NOTIFICATIONS permission launcher (login branch) ──
+                    // The login branch (onUnlocked) goes directly to the gallery WITHOUT
+                    // passing through RecoveryPhraseSetupFragment, so the permission request
+                    // that lives in RecoveryPhraseSetupFragment never fires for login users.
+                    // This was the root cause of "notifications never appear for users who
+                    // log in with their recovery phrase".
+                    //
+                    // Fix: register the same kind of launcher here at the RepoSetupScreen
+                    // composable level (rememberLauncherForActivityResult must be called
+                    // from a @Composable context). The onUnlocked lambda below checks the
+                    // permission; if not granted (and SDK >= 33), it launches the system
+                    // dialog. The result callback navigates to the gallery regardless of
+                    // granted/denied — uploads work either way (notification is UX-only).
+                    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        android.util.Log.e("RcloneDiag",
+                            "POST_NOTIFICATIONS: result callback fired — granted=$granted (login branch, RepoSetupFragment)")
+                        Timber.i("POST_NOTIFICATIONS permission granted=$granted (login branch)")
+                        // Navigate to gallery regardless of granted/denied — uploads work
+                        // either way (notification is UX-only, not a functional dependency).
+                        navigateToGallery(findNavController())
+                    }
+
                     RepoSetupScreen(
                         viewModel = viewModel,
                         onCompleted = {
@@ -109,8 +138,36 @@ class RepoSetupFragment : Fragment() {
                         // RecoveryPhraseRestoreScreen, the VMK is in memory via
                         // SessionRepository — skip SetupFragment (no PIN/password
                         // needed) and go straight to the gallery.
+                        //
+                        // @since Item 2 fix — request POST_NOTIFICATIONS before
+                        // navigating to gallery. The login branch never reaches
+                        // RecoveryPhraseSetupFragment (where the permission request
+                        // lives for the register branch), so without this the
+                        // notification permission would never be requested for
+                        // login users.
                         onUnlocked = {
-                            navigateToGallery(findNavController())
+                            // Check + request POST_NOTIFICATIONS before navigating to gallery.
+                            // Same pattern as RecoveryPhraseSetupFragment's onContinue —
+                            // see that file for the full rationale.
+                            val needsRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                ContextCompat.checkSelfPermission(
+                                    requireContext(),
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            } else {
+                                false
+                            }
+                            if (needsRequest) {
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: launching permission request (login branch, onUnlocked)")
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: launch() returned (login branch, onUnlocked) — awaiting result callback")
+                            } else {
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: already granted or not needed (SDK < 33) — navigating to gallery (login branch, onUnlocked)")
+                                navigateToGallery(findNavController())
+                            }
                         },
                         onBack = {
                             findNavController().navigateUp()

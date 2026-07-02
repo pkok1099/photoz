@@ -25,7 +25,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -67,40 +66,45 @@ class RecoveryPhraseSetupFragment : Fragment() {
                     //    an upload, so the notification will work from the very first sync.
                     // 3. Denial is non-blocking — uploads still work via WorkManager, just
                     //    without visible progress. We don't gate the gallery on this.
+                    //
+                    // ─── Item 2 fix: removed LaunchedEffect(Unit) ────────────────────
+                    // The previous implementation fired the permission request from a
+                    // `LaunchedEffect(Unit)` at fragment creation — BEFORE the user had a
+                    // chance to read their recovery phrase. If permission was already granted,
+                    // `navigateToGalleryOrPop()` fired immediately and the user never saw
+                    // their phrase at all. If not granted, the system dialog appeared over
+                    // an unread screen.
+                    //
+                    // Now: the permission request is fired ONLY when the user taps "Continue"
+                    // (the `onContinue` callback below). The user sees their phrase first,
+                    // taps Continue, then the permission dialog appears. After the result
+                    // (granted or denied), we navigate to the gallery — uploads work either
+                    // way (notification is UX-only, not a functional dependency).
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission()
                     ) { granted ->
+                        // RcloneDiag logging (Item 2) — confirms the result callback fires
+                        // and tells us whether the user granted or denied, so we can
+                        // distinguish "permission dialog never shown" from "user denied".
+                        android.util.Log.e("RcloneDiag",
+                            "POST_NOTIFICATIONS: result callback fired — granted=$granted (register branch, RecoveryPhraseSetupFragment)")
                         Timber.i("POST_NOTIFICATIONS permission granted=$granted")
                         // Regardless of granted/denied, proceed to gallery — uploads work
                         // either way (notification is UX-only, not a functional dependency).
                         navigateToGalleryOrPop()
                     }
 
-                    // Check if permission is already granted (or not needed on old Android).
-                    // If already granted, skip the system dialog and go straight to gallery.
-                    // If not granted, launch the system permission request.
-                    LaunchedEffect(Unit) {
-                        val needsRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            ContextCompat.checkSelfPermission(
-                                requireContext(),
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) != PackageManager.PERMISSION_GRANTED
-                        } else {
-                            false // API < 33: no runtime permission needed
-                        }
-                        if (needsRequest) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            navigateToGalleryOrPop()
-                        }
-                    }
-
                     // While the permission dialog is showing, render the recovery phrase screen
                     // underneath (the dialog is system-level, overlaying whatever we draw).
-                    // The LaunchedEffect above handles navigation after the permission result.
-                    // The onContinue callback is a fallback for manual continue.
+                    // The onContinue callback handles the permission request + navigation
+                    // after the user has had a chance to read & save their phrase.
                     RecoveryPhraseSetupScreen(
                         onContinue = {
+                            // Item 2: fire the permission request HERE (on user tap), not
+                            // in a LaunchedEffect at fragment creation. This guarantees the
+                            // user has seen their recovery phrase before any system dialog
+                            // appears, and that we don't navigate away before they've had a
+                            // chance to read it.
                             val needsRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 ContextCompat.checkSelfPermission(
                                     requireContext(),
@@ -110,8 +114,19 @@ class RecoveryPhraseSetupFragment : Fragment() {
                                 false
                             }
                             if (needsRequest) {
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: launching permission request (register branch, onContinue) — user tapped Continue")
+                                // RcloneDiag logging BEFORE launch — confirms we reached
+                                // this point and the launcher is about to fire.
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                // RcloneDiag logging AFTER launch — confirms launch() returned
+                                // without throwing. (The result callback fires asynchronously
+                                // later, with its own log line above.)
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: launch() returned (register branch, onContinue) — awaiting result callback")
                             } else {
+                                android.util.Log.e("RcloneDiag",
+                                    "POST_NOTIFICATIONS: already granted or not needed (SDK < 33) — navigating to gallery (register branch, onContinue)")
                                 navigateToGalleryOrPop()
                             }
                         }

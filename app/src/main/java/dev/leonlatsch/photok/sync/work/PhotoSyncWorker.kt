@@ -70,6 +70,13 @@ class PhotoSyncWorker @AssistedInject constructor(
     private val photoDao: PhotoDao,
     private val rcloneController: RcloneController,
     private val config: Config,
+    // @since Item 1 (Drive-style notification content) — persists batch-level
+    // counters (total / completed / failed / bytesCompleted) across worker
+    // instances via SharedPreferences. Each worker handles ONE photo; a batch
+    // is a sequence of workers. The tracker survives process death so a batch
+    // started before the app was killed still produces a correct final summary
+    // when WorkManager resumes the queued workers.
+    private val batchTracker: SyncBatchTracker,
 ) : CoroutineWorker(appContext, params) {
 
     // ─── Notification update rate-limiting state (v8) ───────────────────────
@@ -112,9 +119,20 @@ class PhotoSyncWorker @AssistedInject constructor(
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
         ensureChannel()
+        // @since Item 1 — use batch state for the foreground notification text
+        // (matches what updateNotification() will show once the worker starts
+        // posting progress). If batch state is empty (total=0 — e.g. system
+        // called getForegroundInfo() before doWorkInternal populated the
+        // tracker), fall back to the generic string resource.
+        val state = batchTracker.getBatchState()
+        val text = if (state.total > 0) {
+            "Uploading ${state.current} of ${state.total}"
+        } else {
+            appContext.getString(R.string.sync_notification_text)
+        }
         return ForegroundInfo(
             NOTIFICATION_ID,
-            buildNotification(appContext.getString(R.string.sync_notification_text)),
+            buildNotification(text),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
     }
@@ -181,6 +199,25 @@ class PhotoSyncWorker @AssistedInject constructor(
             return Result.failure()
         }
 
+        // ─── Batch tracking (Item 1 — Drive-style notification content) ────────
+        // Increment the planned-batch-size counter at worker start. Ideally this
+        // would be called from the static enqueue() method, but accessing the
+        // @Singleton SyncBatchTracker from a companion-object method requires a
+        // Hilt EntryPoint — instead we increment here as the worker starts.
+        // Gated by `runAttemptCount == 0` so a retried worker doesn't double-count
+        // the same photo in `total`.
+        //
+        // The captured [batchState] snapshot drives the notification content
+        // ("Uploading N of M: foo.jpg") for this worker's lifetime. Subsequent
+        // workers in the same batch will see updated `completed`/`failed` counts
+        // via their own `onWorkerStart` call.
+        if (runAttemptCount == 0) {
+            batchTracker.onPhotoEnqueued()
+        }
+        val batchState = batchTracker.onWorkerStart(uuid)
+        diag("doWorkInternal: batchState current=${batchState.current} total=${batchState.total} " +
+            "completed=${batchState.completed} failed=${batchState.failed} attempt=${runAttemptCount + 1}")
+
         // ─── Foreground notification (v8 Part 1 + notification-fix round) ──────
         // setForeground() promotes this worker to a foreground service with a
         // persistent notification. On Android 12+ this can throw
@@ -210,11 +247,26 @@ class PhotoSyncWorker @AssistedInject constructor(
             photoDao.get(uuid)
         } catch (e: Exception) {
             Timber.w(e, "PhotoSyncWorker: photo %s not found in DB (deleted by user?)", uuid)
+            // Photo was deleted between enqueue and execution. Still advance the
+            // batch counters so the tracker doesn't get stuck waiting for a
+            // worker that will never produce a result.
+            batchTracker.onWorkerSuccess(0L)
+            if (batchTracker.isBatchComplete()) {
+                showBatchCompleteNotification()
+                batchTracker.reset()
+            }
             return Result.success()
         }
 
         if (photo.syncState == SyncState.UPLOADED) {
             Timber.d("PhotoSyncWorker: %s already UPLOADED — skipping", uuid)
+            // Already uploaded — advance the batch counters (no bytes added since
+            // we don't actually re-upload) so the tracker stays consistent.
+            batchTracker.onWorkerSuccess(0L)
+            if (batchTracker.isBatchComplete()) {
+                showBatchCompleteNotification()
+                batchTracker.reset()
+            }
             return Result.success()
         }
         // ─── UUID-based no-overwrite design (v8 Part 2b-2) ──────────────────────
@@ -238,7 +290,7 @@ class PhotoSyncWorker @AssistedInject constructor(
             return Result.failure()
         }
 
-        val outcome = runCatching { performUpload(photo) }
+        val outcome = runCatching { performUpload(photo, batchState) }
 
         return when {
             outcome.isSuccess -> {
@@ -246,12 +298,31 @@ class PhotoSyncWorker @AssistedInject constructor(
                     val affected = photoDao.updateSyncStateReturningRows(uuid, SyncState.UPLOADED)
                     if (affected == 0) {
                         Timber.i("PhotoSyncWorker: %s was deleted during upload; skipping commit", uuid)
+                        // Photo deleted during upload — still advance the batch
+                        // counters so the tracker doesn't get stuck.
+                        batchTracker.onWorkerSuccess(0L)
+                        if (batchTracker.isBatchComplete()) {
+                            showBatchCompleteNotification()
+                            batchTracker.reset()
+                        }
                         return Result.success()
                     }
                     SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "upload + verify succeeded")
                 } catch (e: Exception) {
                     Timber.e(e, "PhotoSyncWorker: failed to commit UPLOADED for %s", uuid)
                     return Result.failure()
+                }
+                // ─── Batch success accounting (Item 1) ────────────────────────
+                // Accumulate this photo's size into bytesCompleted and increment
+                // the completed counter. If this was the last photo in the batch,
+                // post the final summary notification (separate ID so it stays
+                // visible after WorkManager cancels the foreground notification).
+                batchTracker.onWorkerSuccess(photo.size)
+                diag("doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
+                    "total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}")
+                if (batchTracker.isBatchComplete()) {
+                    showBatchCompleteNotification()
+                    batchTracker.reset()
                 }
                 if (SyncConfig.deleteLocalAfterUpload) {
                     deleteLocalOriginalAfterUpload(photo)
@@ -267,6 +338,15 @@ class PhotoSyncWorker @AssistedInject constructor(
                         "fatal: ${outcome.exceptionOrNull()?.message}")
                 } catch (e: Exception) {
                     Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
+                }
+                // ─── Batch failure accounting (Item 1) ────────────────────────
+                // Permanent failure — increment the failed counter. The per-photo
+                // failure notification (with batch-failed count) was already shown
+                // inside performUpload() before the exception propagated.
+                batchTracker.onWorkerFailure()
+                if (batchTracker.isBatchComplete()) {
+                    showBatchCompleteNotification()
+                    batchTracker.reset()
                 }
                 Result.failure()
             }
@@ -286,6 +366,14 @@ class PhotoSyncWorker @AssistedInject constructor(
                     } catch (e: Exception) {
                         Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
                     }
+                    // ─── Batch failure accounting (Item 1 — max attempts) ──────
+                    // Same as the fatal-failure branch: increment failed counter,
+                    // show batch summary if this was the last worker.
+                    batchTracker.onWorkerFailure()
+                    if (batchTracker.isBatchComplete()) {
+                        showBatchCompleteNotification()
+                        batchTracker.reset()
+                    }
                     Result.failure()
                 } else {
                     Timber.i(
@@ -294,20 +382,39 @@ class PhotoSyncWorker @AssistedInject constructor(
                         uuid,
                         runAttemptCount + 1,
                     )
+                    // NOTE: deliberately DO NOT call onWorkerFailure() here —
+                    // the worker will run again and the counters will be updated
+                    // when the retry eventually succeeds or fails permanently.
+                    // The per-photo failure notification shown inside
+                    // performUpload() will be re-shown on the next attempt with
+                    // the same `failed + 1` count (still accurate since we
+                    // haven't committed the failure yet).
                     Result.retry()
                 }
             }
         }
     }
 
-    private suspend fun performUpload(photo: Photo) {
+    private suspend fun performUpload(
+        photo: Photo,
+        batchState: SyncBatchTracker.BatchState,
+    ) {
         val remote = config.syncChosenRemote
             ?: throw FatalSyncException(
                 "No rclone remote chosen. Open Settings → Cloud Sync → Backup configuration " +
                     "and pick a remote from the imported config."
             )
         val uuid = photo.uuid
-        diag("performUpload: BEGIN uuid=$uuid remote=$remote photoType=${photo.type} syncState=${photo.syncState}")
+        diag("performUpload: BEGIN uuid=$uuid remote=$remote photoType=${photo.type} syncState=${photo.syncState} " +
+            "batchCurrent=${batchState.current} batchTotal=${batchState.total}")
+
+        // ─── Item 1: precompute batch-style notification text ───────────────
+        // Collapsed (single line): "Uploading N of M: filename"
+        // Expanded (BigTextStyle): "Uploading N of M photos\nfilename\nZ uploaded so far"
+        // Z = bytesCompleted accumulated from prior successful uploads in this batch.
+        val collapsedText = "Uploading ${batchState.current} of ${batchState.total}: ${photo.fileName}"
+        val expandedText = "Uploading ${batchState.current} of ${batchState.total} photos\n${photo.fileName}\n" +
+            "${formatBytes(batchState.bytesCompleted)} uploaded so far"
 
         // ─── Upload thumbnail ──────────────────────────────────────────────
         // Thumbnails are small (a few KB) — fire-and-forget via uploadFile() is
@@ -319,14 +426,15 @@ class PhotoSyncWorker @AssistedInject constructor(
             diag("performUpload: uploading thumbnail ${thumbPath.absolutePath} (size=${thumbPath.length()}) → $remoteThumb")
             updateNotification(
                 progress = null,
-                text = "Uploading: ${photo.fileName}",
+                text = collapsedText,
+                bigText = expandedText,
             )
             try {
                 rcloneController.uploadFile(thumbPath.absolutePath, remoteThumb).getOrThrow()
                 diag("performUpload: thumbnail upload OK")
             } catch (e: Exception) {
                 diag("performUpload: thumbnail upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-                reportUploadFailureNotification(photo.fileName)
+                reportUploadFailureNotification(photo.fileName, batchState)
                 throw e
             }
         } else {
@@ -342,14 +450,15 @@ class PhotoSyncWorker @AssistedInject constructor(
                 diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
                 updateNotification(
                     progress = null,
-                    text = "Uploading: ${photo.fileName}",
+                    text = collapsedText,
+                    bigText = expandedText,
                 )
                 try {
                     rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
                     diag("performUpload: video preview upload OK")
                 } catch (e: Exception) {
                     diag("performUpload: video preview upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-                    reportUploadFailureNotification(photo.fileName)
+                    reportUploadFailureNotification(photo.fileName, batchState)
                     throw e
                 }
             }
@@ -364,7 +473,7 @@ class PhotoSyncWorker @AssistedInject constructor(
         val origPath = appContext.getFileStreamPath(photo.internalFileName)
         if (!origPath.exists()) {
             diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
-            reportUploadFailureNotification(photo.fileName)
+            reportUploadFailureNotification(photo.fileName, batchState)
             throw FatalSyncException(
                 "Local original file missing for $uuid before upload. " +
                     "Photo may have been deleted out-of-band."
@@ -375,7 +484,8 @@ class PhotoSyncWorker @AssistedInject constructor(
         // Pre-upload state: indeterminate progress while rclone spins up the transfer.
         updateNotification(
             progress = null,
-            text = "Uploading: ${photo.fileName}",
+            text = collapsedText,
+            bigText = expandedText,
         )
         try {
             rcloneController.uploadFileWithProgress(
@@ -387,13 +497,14 @@ class PhotoSyncWorker @AssistedInject constructor(
                 // even though this fires every ~500ms.
                 updateNotification(
                     progress = percent,
-                    text = "Uploading: ${photo.fileName}",
+                    text = collapsedText,
+                    bigText = expandedText,
                 )
             }.getOrThrow()
             diag("performUpload: original upload OK")
         } catch (e: Exception) {
             diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-            reportUploadFailureNotification(photo.fileName)
+            reportUploadFailureNotification(photo.fileName, batchState)
             throw e
         }
 
@@ -405,7 +516,7 @@ class PhotoSyncWorker @AssistedInject constructor(
             diag("performUpload: verifyFileExists OK")
         } catch (e: Exception) {
             diag("performUpload: verifyFileExists FAILED: ${e.javaClass.name}: ${e.message}", e)
-            reportUploadFailureNotification(photo.fileName)
+            reportUploadFailureNotification(photo.fileName, batchState)
             throw e
         }
 
@@ -422,7 +533,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                 "hash skipped (unsupported), size verified OK")
         } catch (e: Exception) {
             diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
-            reportUploadFailureNotification(photo.fileName)
+            reportUploadFailureNotification(photo.fileName, batchState)
             throw e
         }
 
@@ -447,9 +558,18 @@ class PhotoSyncWorker @AssistedInject constructor(
         // after this, WorkManager cancels the foreground notification, and
         // the user sees the notification disappear (or transition to whatever
         // the next queued worker shows).
+        //
+        // Item 1: show batch-style success text ("Uploaded N of M: filename")
+        // so the user sees batch progress in the brief moment between this
+        // worker finishing and the next one starting (or the batch-complete
+        // summary if this was the last photo).
+        val doneCollapsed = "Uploaded ${batchState.current} of ${batchState.total}: ${photo.fileName}"
+        val doneExpanded = "Uploaded ${batchState.current} of ${batchState.total} photos\n${photo.fileName}\n" +
+            "${formatBytes(batchState.bytesCompleted + photo.size)} uploaded so far"
         updateNotification(
             progress = 100f,
-            text = "Uploaded: ${photo.fileName}",
+            text = doneCollapsed,
+            bigText = doneExpanded,
         )
 
         diag("performUpload: DONE — all uploads + verifications succeeded for $uuid")
@@ -538,25 +658,31 @@ class PhotoSyncWorker @AssistedInject constructor(
     }
 
     private fun buildNotification(text: String): Notification =
-        buildNotificationInternal(text = text, progress = null, ongoing = true)
+        buildNotificationInternal(text = text, progress = null, ongoing = true, bigText = null)
 
     /**
      * Build a notification with configurable progress + ongoing flag.
      *
-     * @param text content text
+     * @param text content text (shown in collapsed view)
      * @param progress 0f..100f for a determinate progress bar, or `null` for an
      *   indeterminate (spinning) progress bar. At 100f the bar shows full.
      * @param ongoing `true` for a foreground-service-style notification that
      *   disappears when the worker ends; `false` for a "left-behind" notification
      *   that stays visible after the worker ends (used for the upload-failed
      *   state so the user can see something went wrong).
+     * @param bigText optional expanded text for [NotificationCompat.BigTextStyle].
+     *   When non-null, the notification uses BigTextStyle so the user can pull
+     *   down the shade to see multi-line detail (filename + bytes-uploaded so
+     *   far, etc.). When null, the collapsed text is shown in both views.
      *
      * @since v8 — stable upload notification with real progress percentage
+     * @since Item 1 — added [bigText] for Drive-style expanded content
      */
     private fun buildNotificationInternal(
         text: String,
         progress: Float?,
         ongoing: Boolean,
+        bigText: String? = null,
     ): Notification {
         val launchIntent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
         val pi = launchIntent?.let {
@@ -590,6 +716,14 @@ class PhotoSyncWorker @AssistedInject constructor(
             builder.setProgress(0, 0, true)
         }
 
+        // Item 1: BigTextStyle for the expanded shade view. When bigText is
+        // non-null, the user can pull down the notification shade to see the
+        // full multi-line content (filename + bytes-uploaded + batch context).
+        // When null, the system shows the collapsed contentText in both views.
+        if (bigText != null) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+        }
+
         return builder.build()
     }
 
@@ -617,6 +751,7 @@ class PhotoSyncWorker @AssistedInject constructor(
         progress: Float?,
         text: String,
         ongoing: Boolean = true,
+        bigText: String? = null,
     ) {
         val now = System.currentTimeMillis()
         val isStateChange = text != lastNotificationText
@@ -652,13 +787,13 @@ class PhotoSyncWorker @AssistedInject constructor(
         }
 
         try {
-            val notification = buildNotificationInternal(text, progress, ongoing)
+            val notification = buildNotificationInternal(text, progress, ongoing, bigText)
             nm.notify(NOTIFICATION_ID, notification)
             // Only log the first notification post + state changes (avoids log spam
             // from progress ticks). The rate-limiter above already collapses most
             // redundant calls.
             if (isStateChange || isComplete) {
-                diag("updateNotification: posted id=$NOTIFICATION_ID text=\"$text\" progress=$progress ongoing=$ongoing appEnabled=$appEnabled channelImportance=${channel?.importance}")
+                diag("updateNotification: posted id=$NOTIFICATION_ID text=\"$text\" progress=$progress ongoing=$ongoing bigText=${bigText != null} appEnabled=$appEnabled channelImportance=${channel?.importance}")
             }
         } catch (e: Exception) {
             diag("updateNotification: nm.notify() THREW ${e.javaClass.name}: ${e.message}", e)
@@ -666,18 +801,113 @@ class PhotoSyncWorker @AssistedInject constructor(
     }
 
     /**
-     * Show the "Upload failed: <filename>" notification as NON-ongoing so it
-     * stays visible in the system tray after the worker ends (the user can
-     * dismiss it manually). Used at every error-exit point in [performUpload].
+     * Show the "Upload failed: <filename> (<F> failed in batch)" notification as
+     * NON-ongoing so it stays visible in the system tray after the worker ends
+     * (the user can dismiss it manually). Used at every error-exit point in
+     * [performUpload].
+     *
+     * The batch failed-count shown here is `batchState.failed + 1` — i.e. the
+     * count AFTER this failure is committed. The actual counter increment happens
+     * later in [doWorkInternal]'s failure branch via [SyncBatchTracker.onWorkerFailure].
+     * For retryable failures (which don't increment the counter), the displayed
+     * count is still accurate on the next attempt because the counter hasn't
+     * changed.
      *
      * @since v8 — stable upload notification with real progress percentage
+     * @since Item 1 — added [batchState] for the "F failed in batch" suffix + BigTextStyle
      */
-    private fun reportUploadFailureNotification(fileName: String) {
+    private fun reportUploadFailureNotification(
+        fileName: String,
+        batchState: SyncBatchTracker.BatchState,
+    ) {
+        // batchState.failed is the count BEFORE this failure; +1 to reflect this one.
+        val failedInBatch = batchState.failed + 1
+        val collapsed = "Upload failed: $fileName ($failedInBatch failed in batch)"
+        val expanded = "Upload failed: $fileName\n$failedInBatch failed in batch so far " +
+            "(of ${batchState.total} planned)"
         updateNotification(
             progress = null,
-            text = "Upload failed: $fileName",
+            text = collapsed,
             ongoing = false,
+            bigText = expanded,
         )
+    }
+
+    /**
+     * Show the final batch-complete summary notification as NON-ongoing so it
+     * stays visible in the system tray after the worker ends.
+     *
+     * Uses a SEPARATE notification ID ([BATCH_COMPLETE_NOTIFICATION_ID]) from the
+     * per-worker foreground notification ([NOTIFICATION_ID]) — WorkManager cancels
+     * the foreground notification when the worker returns, so if we used the same
+     * ID, the summary would be canceled along with it. The separate ID guarantees
+     * the summary stays visible regardless of whether `setForeground()` succeeded.
+     *
+     * Content (Drive-style):
+     *   - Collapsed (all success): "{total} photos backed up"
+     *   - Collapsed (with failures): "{completed} of {total} backed up — {failed} failed"
+     *   - Expanded: "Sync complete\n{completed} uploaded, {failed} failed\n{bytesCompleted} total"
+     *     (with the ", {failed} failed" segment omitted when failed == 0)
+     *
+     * @since Item 1 — Drive-style batch-complete summary
+     */
+    private fun showBatchCompleteNotification() {
+        val state = batchTracker.getBatchState()
+        val completed = state.completed
+        val failed = state.failed
+        val total = state.total
+        val bytesTotal = state.bytesCompleted
+
+        // Collapsed (single line). Drive-style.
+        val collapsed = if (failed == 0) {
+            "$total photos backed up"
+        } else {
+            "$completed of $total backed up — $failed failed"
+        }
+
+        // Expanded (BigTextStyle, multi-line). Drive-style.
+        val uploadedLine = if (failed == 0) {
+            "$completed uploaded"
+        } else {
+            "$completed uploaded, $failed failed"
+        }
+        val expanded = "Sync complete\n$uploadedLine\n${formatBytes(bytesTotal)} total"
+
+        ensureChannel()
+        val nm = appContext.getSystemService(NotificationManager::class.java)
+        if (nm == null) {
+            diag("showBatchCompleteNotification: NotificationManager unavailable — cannot post summary")
+            return
+        }
+        try {
+            val notification = buildNotificationInternal(
+                text = collapsed,
+                progress = null,
+                ongoing = false,  // NON-ongoing — stays visible after worker ends
+                bigText = expanded,
+            )
+            nm.notify(BATCH_COMPLETE_NOTIFICATION_ID, notification)
+            diag("showBatchCompleteNotification: posted id=$BATCH_COMPLETE_NOTIFICATION_ID " +
+                "collapsed=\"$collapsed\" completed=$completed failed=$failed total=$total bytesTotal=$bytesTotal")
+        } catch (e: Exception) {
+            diag("showBatchCompleteNotification: nm.notify() THREW ${e.javaClass.name}: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Human-readable byte formatter for notification text. Chooses MB / KB / B
+     * based on magnitude so small batches don't show "0.0 MB".
+     *
+     * @since Item 1 — Drive-style expanded notification content
+     */
+    private fun formatBytes(bytes: Long): String {
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        val kb = bytes.toDouble() / 1024.0
+        return when {
+            mb >= 1.0 -> String.format("%.1f MB", mb)
+            kb >= 1.0 -> String.format("%.1f KB", kb)
+            else -> "$bytes B"
+        }
     }
 
     private fun isFatalFailure(t: Throwable?): Boolean = when (t) {
@@ -732,6 +962,15 @@ class PhotoSyncWorker @AssistedInject constructor(
         // enough to avoid notification-manager thrash / flicker. State changes
         // and 100%-complete updates bypass this limit (see updateNotification).
         private const val NOTIFICATION_UPDATE_MIN_INTERVAL_MS = 500L
+
+        // ─── Batch-complete summary notification ID (Item 1) ──────────────────
+        // SEPARATE from [NOTIFICATION_ID] — WorkManager cancels the foreground
+        // notification (NOTIFICATION_ID) when the worker returns, so if we used
+        // the same ID for the batch-complete summary, it would be canceled along
+        // with the foreground notification. Using a distinct ID guarantees the
+        // summary stays visible in the tray after the last worker in the batch
+        // ends, regardless of whether `setForeground()` succeeded for that worker.
+        private const val BATCH_COMPLETE_NOTIFICATION_ID = 4243
 
         fun enqueue(context: Context, photo: Photo) {
             val uniqueWorkName = UNIQUE_WORK_PREFIX + photo.uuid
