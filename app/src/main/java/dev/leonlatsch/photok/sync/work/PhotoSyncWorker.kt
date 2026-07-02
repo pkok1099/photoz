@@ -465,12 +465,12 @@ class PhotoSyncWorker @AssistedInject constructor(
             }
         }
 
-        // ─── Upload original (with real progress feedback) ────────────────
-        // The original is the largest artifact — use uploadFileWithProgress()
-        // so the foreground notification shows a real 0–100% progress bar
-        // driven by rclone's core/stats. Thumbnails / video previews above
-        // use plain uploadFile() because they're small and progress would
-        // just flicker.
+        // ─── Upload original ───────────────────────────────────────────────
+        // The original is the largest artifact. rclone's core/stats doesn't
+        // track operations/copyfile (synchronous), so real byte-level progress
+        // isn't available — use plain uploadFile() (same as thumbnails / video
+        // previews) with an indeterminate progress bar. The notification text
+        // already includes batch counts + filename + size — informative enough.
         val origPath = appContext.getFileStreamPath(photo.internalFileName)
         if (!origPath.exists()) {
             diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
@@ -482,26 +482,14 @@ class PhotoSyncWorker @AssistedInject constructor(
         }
         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
         diag("performUpload: uploading original ${origPath.absolutePath} (size=${origPath.length()}) → $remoteOrig")
-        // Pre-upload state: indeterminate progress while rclone spins up the transfer.
+        // Pre-upload state: indeterminate progress while the upload runs.
         updateNotification(
             progress = null,
             text = collapsedText,
             bigText = expandedText,
         )
         try {
-            rcloneController.uploadFileWithProgress(
-                localPath = origPath.absolutePath,
-                remotePath = remoteOrig,
-            ) { percent ->
-                // Real progress tick from rclone's core/stats. updateNotification
-                // is internally rate-limited to 2/sec — safe to call from here
-                // even though this fires every ~500ms.
-                updateNotification(
-                    progress = percent,
-                    text = collapsedText,
-                    bigText = expandedText,
-                )
-            }.getOrThrow()
+            rcloneController.uploadFile(origPath.absolutePath, remoteOrig).getOrThrow()
             diag("performUpload: original upload OK")
         } catch (e: Exception) {
             diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)

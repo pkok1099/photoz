@@ -25,7 +25,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,16 +33,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -275,39 +276,57 @@ private fun NeedsConfigContent(viewModel: RepoSetupViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NeedsRemoteChoiceContent(
     remotes: List<RcloneConfigManager.RemoteInfo>,
     viewModel: RepoSetupViewModel,
 ) {
     var selected by remember { mutableStateOf<String?>(null) }
+    var expanded by remember { mutableStateOf(false) }
+
+    val selectedRemote = remotes.find { it.name == selected }
+    val displayText = selectedRemote?.let {
+        it.name + (it.type?.let { " ($it)" } ?: "")
+    } ?: ""
 
     Text(
         text = stringResource(R.string.repo_setup_pick_remote),
         style = MaterialTheme.typography.titleLarge,
     )
-    LazyColumn(
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
         modifier = Modifier.padding(top = 16.dp),
     ) {
-        items(remotes) { remote ->
-            val typeSuffix = remote.type?.let { " ($it)" } ?: ""
-            androidx.compose.foundation.layout.Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clickable { selected = remote.name }
-                    .padding(vertical = 4.dp)
-            ) {
-                RadioButton(
-                    selected = selected == remote.name,
-                    onClick = { selected = remote.name },
-                )
-                Text(
-                    text = remote.name + typeSuffix,
-                    style = MaterialTheme.typography.bodyLarge,
+        OutlinedTextField(
+            value = displayText,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Remote") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            remotes.forEach { remote ->
+                val typeSuffix = remote.type?.let { " ($it)" } ?: ""
+                DropdownMenuItem(
+                    text = { Text(remote.name + typeSuffix) },
+                    onClick = {
+                        selected = remote.name
+                        expanded = false
+                    },
                 )
             }
         }
     }
+
     Button(
         onClick = { selected?.let { viewModel.chooseRemote(it) } },
         enabled = selected != null,
