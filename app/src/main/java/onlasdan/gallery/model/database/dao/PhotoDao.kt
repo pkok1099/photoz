@@ -123,6 +123,16 @@ interface PhotoDao {
     suspend fun updateContentHash(uuid: String, hash: String)
 
     /**
+     * Find a Photo with the given content_hash, excluding a specific UUID.
+     * Used for dedup at import time — if another photo with the same content
+     * already exists, the just-imported duplicate is deleted.
+     *
+     * @since Bug 1 fix — dedup at import time
+     */
+    @Query("SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid LIMIT 1")
+    suspend fun findByContentHash(hash: String, excludeUuid: String): Photo?
+
+    /**
      * Backfill a Photo row's placeholder metadata (filename, size, type,
      * relativePath, albumPath, contentHash) from the dedup registry, after a
      * fresh-install login has downloaded + decrypted the registry.

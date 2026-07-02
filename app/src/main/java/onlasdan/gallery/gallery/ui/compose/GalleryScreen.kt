@@ -104,40 +104,38 @@ fun GalleryScreen(
                                     viewModel.handleUiEvent(GalleryUiEvent.SortChanged(sort))
                                 }
                             )
+                        }
 
-                            // ─── v9 followup (Bug 2): overflow menu with Restore ──
-                            // Houses the "Restore from backup" action that re-downloads
-                            // thumbnails from the cloud. Placed AFTER the sort menu so
-                            // the sort icon stays in its familiar spot; the 3-dot
-                            // overflow is the rightmost action, matching Material
-                            // guidance.
-                            var showOverflowMenu by remember { mutableStateOf(false) }
-                            IconButton(
-                                onClick = { showOverflowMenu = true },
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_more_vert),
-                                    contentDescription = stringResource(R.string.common_more),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showOverflowMenu,
-                                onDismissRequest = { showOverflowMenu = false },
-                            ) {
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_restore),
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    text = { Text(stringResource(R.string.menu_restore_from_backup)) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.handleUiEvent(GalleryUiEvent.OnRestoreFromBackup)
-                                    },
-                                )
-                            }
+                        // ─── v9 followup (Bug 2): overflow menu with Restore ──
+                        // ALWAYS visible (even when gallery is empty) so the user
+                        // can restore from backup on a fresh install without needing
+                        // to have any local photos first.
+                        var showOverflowMenu by remember { mutableStateOf(false) }
+                        IconButton(
+                            onClick = { showOverflowMenu = true },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_more_vert),
+                                contentDescription = stringResource(R.string.common_more),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_restore),
+                                        contentDescription = null,
+                                    )
+                                },
+                                text = { Text(stringResource(R.string.menu_restore_from_backup)) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    viewModel.handleUiEvent(GalleryUiEvent.OnRestoreFromBackup)
+                                },
+                            )
                         }
                     }
                 )

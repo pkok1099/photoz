@@ -46,6 +46,7 @@ data class FileMetaData(
     val mimeType: String?,
     val size: Long?,
     val lastModified: Long?,
+    val relativePath: String? = null,
 )
 
 fun ContentResolver.getMetadataFor(uri: Uri): FileMetaData {
@@ -54,6 +55,7 @@ fun ContentResolver.getMetadataFor(uri: Uri): FileMetaData {
     var fileName: String? = null
     var size: Long? = null
     var lastModified: Long? = null
+    var relativePath: String? = null
 
     val cursor = try {
         query(uri, null, null, null, null)
@@ -67,12 +69,16 @@ fun ContentResolver.getMetadataFor(uri: Uri): FileMetaData {
             val fileNameColIndex = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
             val sizeColIndex = it.getColumnIndex(MediaStore.MediaColumns.SIZE)
             val dateModifiedColIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            // RELATIVE_PATH is available on MediaStore URIs (API 29+).
+            // For SAF URIs it may not exist — that's fine, relativePath stays null.
+            val relativePathColIndex = it.getColumnIndex("relative_path")
 
             if (!it.moveToFirst()) return@use
 
             if (fileNameColIndex != -1) fileName = it.getString(fileNameColIndex)
             if (sizeColIndex != -1) size = it.getLong(sizeColIndex)
             if (dateModifiedColIndex != -1) lastModified = it.getLong(dateModifiedColIndex)
+            if (relativePathColIndex != -1) relativePath = it.getString(relativePathColIndex)
         } catch (e: Exception) {
             Timber.e("Could not get metadata for $uri $e")
         }
@@ -88,6 +94,7 @@ fun ContentResolver.getMetadataFor(uri: Uri): FileMetaData {
         mimeType = mimeType,
         size = size,
         lastModified = lastModified,
+        relativePath = relativePath,
     )
 }
 

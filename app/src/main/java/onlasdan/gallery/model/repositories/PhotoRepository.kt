@@ -146,14 +146,12 @@ class PhotoRepository @Inject constructor(
             //   read `RELATIVE_PATH`. Until that's extended, the filename itself
             //   is the most meaningful provenance we have.
             //   See onlasdan.gallery.other.getMetadataFor.
-            relativePath = metaData.fileName,
-            // ─── v9 dedup: album-path key (currently same as relativePath) ─────
-            // Distinct from `relativePath` because the registry's per-hash entry
-            // needs a stable album grouping key for the future packed-thumbnails
-            // optimization (50 MB packs per album). Until the `FileMetaData`
-            // model is extended to expose MediaStore `RELATIVE_PATH`, this is
-            // the same value as `relativePath` (the filename).
-            albumPath = metaData.fileName,
+            relativePath = metaData.relativePath ?: metaData.fileName,
+            // ─── v9 dedup: album-path from MediaStore RELATIVE_PATH ──────────
+            // metaData.relativePath captures the folder structure (e.g. "Download",
+            // "DCIM/Camera") from MediaStore. Falls back to filename if not available
+            // (SAF URIs from file pickers may not expose RELATIVE_PATH).
+            albumPath = metaData.relativePath ?: metaData.fileName,
         )
 
         val created = safeCreatePhoto(photo, inputStream, sourceUri, sha256)
@@ -169,8 +167,21 @@ class PhotoRepository @Inject constructor(
             val hashHex = sha256.digest().joinToString("") { "%02x".format(it) }
             try {
                 photoDao.updateContentHash(photo.uuid, hashHex)
+
+                // ─── Bug 1 fix: dedup at import time — don't create a duplicate ──
+                // If another Photo row with the same content_hash already exists,
+                // delete the just-imported duplicate (local file + DB row) so the
+                // gallery doesn't show two entries for the same file.
+                val existing = photoDao.findByContentHash(hashHex, excludeUuid = photo.uuid)
+                if (existing != null) {
+                    Timber.i("Dedup at import: content_hash=%s already exists as uuid=%s — deleting duplicate %s",
+                        hashHex, existing.uuid, photo.uuid)
+                    deleteInternalPhotoData(photo)
+                    photoDao.delete(photo)
+                    return String.empty // signal: import was a duplicate, not created
+                }
             } catch (e: Exception) {
-                Timber.w(e, "Failed to persist contentHash for %s", photo.uuid)
+                Timber.w(e, "Failed to persist contentHash or dedup check for %s", photo.uuid)
             }
         }
 
