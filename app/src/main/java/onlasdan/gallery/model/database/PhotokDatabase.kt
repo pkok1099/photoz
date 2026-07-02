@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ const val DATABASE_NAME = "photok.db"
  * Abstract Room Database.
  *
  * @since 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 @Database(
     entities = [
@@ -90,7 +90,7 @@ const val DATABASE_NAME = "photok.db"
     ]
 )
 @TypeConverters(Converters::class)
-abstract class PhotokDatabase : RoomDatabase() {
+abstract class PhotoZDatabase : RoomDatabase() {
 
     /**
      * Get the data access object for [Photo]

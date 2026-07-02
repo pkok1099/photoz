@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 Leon Latsch
+ *   Copyright 2020-2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class CryptoEnginesTest {
         val session = legacyEncryption.obtainSession("test-password-123")
 
         for (plaintext in listOf(
-            "Hello, Photok! 1.x.x GCM file.".toByteArray(),
+            "Hello, PhotoZ! 1.x.x GCM file.".toByteArray(),
             ByteArray(1_500_000) { (it % 256).toByte() },
         )) {
             val ciphertext = gcmEncrypt(plaintext, session)
@@ -102,7 +102,7 @@ class CryptoEnginesTest {
     @Test
     fun `CBC engine encrypts files with random IV and decrypts V2-format content`() {
         val session = VaultSession(keyGen.generateVaultMasterKey())
-        val plaintext = "Hello, Photok! 3.x.x CBC file.".toByteArray()
+        val plaintext = "Hello, PhotoZ! 3.x.x CBC file.".toByteArray()
 
         val ct1 = cbcEncrypt(plaintext, session)
         val ct2 = cbcEncrypt(plaintext, session)

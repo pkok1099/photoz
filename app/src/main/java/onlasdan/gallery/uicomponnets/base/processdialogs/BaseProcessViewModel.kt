@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
  * @param T Type of elements to be processed
  *
  * @sine 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 abstract class BaseProcessViewModel<T>(app: Application) : ObservableViewModel(app) {
 

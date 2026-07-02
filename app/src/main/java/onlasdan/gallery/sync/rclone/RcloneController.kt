@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ import javax.inject.Singleton
 /**
  * Wraps a bundled rclone binary running in `rcd` (remote control daemon) mode as a localhost
  * subprocess, and exposes suspend-friendly operations to upload / download / verify encrypted
- * Photok artifacts against a remote configured via `rclone.conf`.
+ * PhotoZ artifacts against a remote configured via `rclone.conf`.
  */
 @Singleton
 class RcloneController @Inject constructor(

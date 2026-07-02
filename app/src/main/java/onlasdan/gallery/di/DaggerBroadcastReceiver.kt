@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import android.content.Intent
  * More information: https://github.com/google/dagger/issues/1918#issuecomment-644057247
  *
  * @since 1.2.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 abstract class DaggerBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {}

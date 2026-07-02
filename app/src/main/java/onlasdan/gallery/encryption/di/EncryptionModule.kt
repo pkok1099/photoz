@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 Leon Latsch
+ *   Copyright 2020-2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import onlasdan.gallery.encryption.domain.handlers.RecoveryPhraseVaultProtection
 import onlasdan.gallery.encryption.domain.handlers.VaultProtectionHandler
 import onlasdan.gallery.encryption.domain.models.CreateRequest
 import onlasdan.gallery.encryption.domain.models.UnlockRequest
-import onlasdan.gallery.model.database.PhotokDatabase
+import onlasdan.gallery.model.database.PhotoZDatabase
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -68,5 +68,5 @@ interface EncryptionBindingModule {
 class EncryptionModule {
 
     @Provides
-    fun provideVaultProtectionDao(database: PhotokDatabase) = database.getVaultProtectionDao()
+    fun provideVaultProtectionDao(database: PhotoZDatabase) = database.getVaultProtectionDao()
 }

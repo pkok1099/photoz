@@ -1,6 +1,6 @@
 <resources>
     <!-- COMMON -->
-    <string name="common_copyright_notice">Copyright \u00A9 2020-2026 Leon Latsch</string>
+    <string name="common_copyright_notice">Copyright \u00A9 2020-2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -24,7 +24,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">Bestand(en) importeren</string>
-    <string name="import_permission_rationale">Photok heeft toegang nodig tot uw opslag om bestanden te importeren.</string>
+    <string name="import_permission_rationale">PhotoZ heeft toegang nodig tot uw opslag om bestanden te importeren.</string>
     <string name="import_sharted_question">Wilt u %1$d bestand(en) importeren?</string>
 
     <!-- SETUP -->
@@ -63,7 +63,7 @@
     <string name="import_menu_new_files_title">Import new files</string> <!-- TODO -->
     <string name="import_menu_new_files_description">Import photos and videos from your gallery.</string> <!-- TODO -->
     <string name="import_menu_restore_title">Restore a backup</string> <!-- TODO -->
-    <string name="import_menu_restore_description">Restore a Photok backup. Files will be added to your current files.</string> <!-- TODO -->
+    <string name="import_menu_restore_description">Restore a PhotoZ backup. Files will be added to your current files.</string> <!-- TODO -->
     <string name="import_menu_delete_warning">Imported files will be deleted</string> <!-- TODO -->
     <string name="import_menu_album_tooltip">Files will be added to \"%s\" after importing</string> <!-- TODO -->
 
@@ -114,17 +114,17 @@
     <string name="export_and_delete_are_you_sure_this">Are you sure, you want to <b>export</b> this file to your gallery and delete it?</string> <!-- TODO -->
     <string name="export_and_delete_finished">Exported and deleted</string> <!-- TODO -->
     <string name="export_exporting">Bestand(en) exporteren…</string>
-    <string name="export_permission_rationale">Photok heeft toegang nodig tot je opslag om bestanden te exporteren.</string>
+    <string name="export_permission_rationale">PhotoZ heeft toegang nodig tot je opslag om bestanden te exporteren.</string>
     <string name="export_finished">Geëxporteerd</string>
 
     <!-- ABOUT -->
     <string name="about_version">Versie:</string>
     <string name="about_developed_by">Ontwikkeld door:</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">Derde partij software</string>
     <string name="about_privacy_policy">Privacybeleid</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">Nieuws</string>
 
     <!-- SETTINGS -->
@@ -143,7 +143,7 @@
     <string name="settings_security_change_password_title">Wijzig Wachtwoord</string>
     <string name="settings_security_change_password_summary">Wijzig je wachtwoord</string>
     <string name="settings_security_biometric_title">Biometric Unlock</string> <!-- TODO -->
-    <string name="settings_security_biometric_summary">Unlock Photok with biometric authentication.</string> <!-- TODO -->
+    <string name="settings_security_biometric_summary">Unlock PhotoZ with biometric authentication.</string> <!-- TODO -->
     <string name="settings_security_biometric_not_available">Biometric Unlock is not available</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string> <!-- TODO -->
@@ -156,8 +156,8 @@
     <string name="settings_security_timeout_ten_minute">10 Minuten</string>
     <string name="settings_security_timeout_never">Nooit</string>
     <string name="settings_security_launch_code_title">Geheime lanceringscode</string>
-    <string name="settings_security_launch_code_summary">Geheime code om Photok te starten vanaf de telefoonkiezer.</string>
-    <string name="settings_security_launch_code_message">Toets *#*#[uw code]#*#* in telefoonkiezer om Photok te starten</string>
+    <string name="settings_security_launch_code_summary">Geheime code om PhotoZ te starten vanaf de telefoonkiezer.</string>
+    <string name="settings_security_launch_code_message">Toets *#*#[uw code]#*#* in telefoonkiezer om PhotoZ te starten</string>
     <string name="settings_security_launch_code_prefix">*#*#</string>
     <string name="settings_security_launch_code_suffix">#*#*</string>
     <string name="settings_security_hide_app_title">Verberg App</string>
@@ -178,25 +178,25 @@
     <string name="settings_other_title">Andere</string>
     <string name="settings_other_feedback_title">Feedback</string>
     <string name="settings_other_feedback_summary">Stuur me een e-mail met feedback</string>
-    <string name="settings_other_feedback_mail_subject">Feedback naar Photok</string>
-    <string name="settings_other_feedback_mail_body">Schrijf feedback over Photok :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">Feedback naar PhotoZ</string>
+    <string name="settings_other_feedback_mail_body">Schrijf feedback over PhotoZ :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">Donate</string> <!-- TODO -->
-    <string name="settings_other_donate_summary">Support the development of Photok</string> <!-- TODO -->
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_summary">Support the development of PhotoZ</string> <!-- TODO -->
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">Broncode</string>
-    <string name="settings_other_sourcecode_summary">Bijdragen aan Photok</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_summary">Bijdragen aan PhotoZ</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">Credits</string>
     <string name="settings_other_credits_summary">Bijdragers en credits</string>
     <string name="settings_other_telemetry_title">Data collection</string> <!-- TODO -->
     <string name="settings_other_telemetry_summary">Manage collection of usage data</string> <!-- TODO -->
     <string name="settings_other_about_title">Over</string>
-    <string name="settings_other_about_summary">Informatie over Photok</string>
+    <string name="settings_other_about_summary">Informatie over PhotoZ</string>
 
     <!-- CREDITS -->
     <string name="credits_contributors_title">Bijdragers</string>
-    <string name="credits_contributors_hint">Bezoek Photok op GitHub om alle bijdragers te zien</string>
+    <string name="credits_contributors_hint">Bezoek PhotoZ op GitHub om alle bijdragers te zien</string>
     <string name="credits_icons_title">Icons</string>
 
     <!-- CHANGE PASSWORD -->
@@ -216,15 +216,15 @@
     <string name="settings_security_check_password_title">Verify Password</string> <!-- TODO -->
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">Verberg Photok</string>
-    <string name="hide_app_title_show">Toon Photok</string>
-    <string name="hide_app_status_label">Photok is momenteel:</string>
+    <string name="hide_app_title_hide">Verberg PhotoZ</string>
+    <string name="hide_app_title_show">Toon PhotoZ</string>
+    <string name="hide_app_status_label">PhotoZ is momenteel:</string>
     <string name="hide_app_status_visible">ZICHTBAAR</string>
     <string name="hide_app_status_hidden">VERBORGEN</string>
     <string name="hide_app_app_name_stealth">Telefoon</string>
-    <string name="hide_app_confirm_hide">Wil je echt Photok verbergen?</string>
-    <string name="hide_app_confirm_show">Wil je Photok nog eens laten zien?</string>
-    <string name="hide_app_hint">Eenmaal verborgen, kan Photok alleen worden gestart vanaf het toetsenblok van de telefoon, met je geheime startcode.</string>
+    <string name="hide_app_confirm_hide">Wil je echt PhotoZ verbergen?</string>
+    <string name="hide_app_confirm_show">Wil je PhotoZ nog eens laten zien?</string>
+    <string name="hide_app_hint">Eenmaal verborgen, kan PhotoZ alleen worden gestart vanaf het toetsenblok van de telefoon, met je geheime startcode.</string>
     <string name="hide_app_hint_current_code">Huidige startcode:</string>
 
     <!-- ON BOARDING -->
@@ -256,17 +256,17 @@
     <!-- NEWS -->
     <string name="news_new_in_title">Nieuw in</string>
     <string name="news_view_changelog">Bekijk changelog</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">Herstelmenu</string>
-    <string name="recovery_menu_item_open_photok">Open Photok</string>
+    <string name="recovery_menu_item_open_photok">Open PhotoZ</string>
     <string name="recovery_subtitle_reset_hide_app">App verbergen Instellingen resetten</string>
 
 
     <!-- Migration -->
     <string name="migration_initial_title_welcome">Welcome to</string> <!-- TODO -->
-    <string name="migration_initial_explaination">This version of Photok introduces a new encryption method. In order to continue to your gallery, there is a migration required.</string> <!-- TODO -->
+    <string name="migration_initial_explaination">This version of PhotoZ introduces a new encryption method. In order to continue to your gallery, there is a migration required.</string> <!-- TODO -->
     <string name="migration_initial_button">Get started</string> <!-- TODO -->
 
     <string name="migration_initial_stage_backup_checklist">Backup your data</string> <!-- TODO -->
@@ -297,13 +297,13 @@
 
 
     <!-- Biometric -->
-    <string name="biometric_unlock_title">Unlock Photok</string> <!-- TODO -->
+    <string name="biometric_unlock_title">Unlock PhotoZ</string> <!-- TODO -->
     <string name="biometric_unlock_subtitle">Verify your identity to unlock</string> <!-- TODO -->
-    <string name="biometric_unlock_cancel">Use Photok password</string> <!-- TODO -->
+    <string name="biometric_unlock_cancel">Use PhotoZ password</string> <!-- TODO -->
 
     <string name="biometric_unlock_setup_title">Enable biometric unlock</string> <!-- TODO -->
     <string name="biometric_unlock_setup_subtitle">To enable biometric unlock, confirm your identity</string> <!-- TODO -->
-    <string name="biometric_unlock_error">Biometric unlock failed. Use your Photok password.</string> <!-- TODO -->
+    <string name="biometric_unlock_error">Biometric unlock failed. Use your PhotoZ password.</string> <!-- TODO -->
     <string name="biometric_unlock_hint_button">Unlock with biometrics</string> <!-- TODO -->
 
     <!-- Sorting -->
@@ -327,8 +327,8 @@
     <string name="video_player_unmute">Unmute</string> <!-- TODO -->
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">Help improve Photok</string> <!-- TODO -->
-    <string name="telemetry_sheet_paragraph_1">Photok can optionally send anonymous usage statistics to help improve the app.</string> <!-- TODO -->
+    <string name="telemetry_sheet_title">Help improve PhotoZ</string> <!-- TODO -->
+    <string name="telemetry_sheet_paragraph_1">PhotoZ can optionally send anonymous usage statistics to help improve the app.</string> <!-- TODO -->
     <string name="telemetry_sheet_paragraph_2">The data processed is completely anonymized and does not allow any conclusions to be drawn about personal information.</string> <!-- TODO -->
     <string name="telemetry_sheet_paragraph_3">Sending anonymous usage data is optional and can be turned off at any time in the settings.</string> <!-- TODO -->
     <string name="telemetry_learn_more">Learn more</string> <!-- TODO -->

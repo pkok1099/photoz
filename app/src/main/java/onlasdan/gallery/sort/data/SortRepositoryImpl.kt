@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package onlasdan.gallery.sort.data
 
 import androidx.room.withTransaction
-import onlasdan.gallery.model.database.PhotokDatabase
+import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.sort.data.db.SortDao
 import onlasdan.gallery.sort.domain.Sort
 import onlasdan.gallery.sort.domain.SortRepository
@@ -29,7 +29,7 @@ import javax.inject.Inject
 
 class SortRepositoryImpl @Inject constructor(
     private val sortDao: SortDao,
-    private val database: PhotokDatabase,
+    private val database: PhotoZDatabase,
 ) : SortRepository {
 
     override fun observeSortFor(albumUuid: String?, default: Sort): Flow<Sort> {

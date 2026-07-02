@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import onlasdan.gallery.sort.data.SortRepositoryImpl
 import onlasdan.gallery.sort.domain.SortRepository
-import onlasdan.gallery.model.database.PhotokDatabase
+import onlasdan.gallery.model.database.PhotoZDatabase
 
 @Module
 @InstallIn(SingletonComponent::class)
 class SortModule {
 
     @Provides
-    fun provideSortDao(database: PhotokDatabase) = database.getSortDao()
+    fun provideSortDao(database: PhotoZDatabase) = database.getSortDao()
 }
 
 @Module

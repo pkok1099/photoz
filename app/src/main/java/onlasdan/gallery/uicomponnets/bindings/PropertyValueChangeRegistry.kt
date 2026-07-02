@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ package onlasdan.gallery.uicomponnets.bindings
  * Listener Registry for [PropertyChangedValueCallback]
  *
  * @since 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 class PropertyValueChangeRegistry {
 

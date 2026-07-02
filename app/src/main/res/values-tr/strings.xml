@@ -1,6 +1,6 @@
 <resources>
     <!-- COMMON -->
-    <string name="common_copyright_notice">Telif Hakkı \u00A9 2020–2026 Leon Latsch</string>
+    <string name="common_copyright_notice">Telif Hakkı \u00A9 2020–2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -24,7 +24,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">Dosya(lar) İçe Aktarılıyor</string>
-    <string name="import_permission_rationale">Photok\'un dosyalarınızı içe aktarmak için depolama alanınıza erişmesi gerekiyor.</string>
+    <string name="import_permission_rationale">PhotoZ\'un dosyalarınızı içe aktarmak için depolama alanınıza erişmesi gerekiyor.</string>
     <string name="import_sharted_question">%1$d dosya(ları) içe aktarmak istiyor musunuz?</string>
 
     <!-- SETUP -->
@@ -63,7 +63,7 @@
     <string name="import_menu_new_files_title">Yeni dosyaları içe aktar</string>
     <string name="import_menu_new_files_description">Galeri\'nizden fotoğraf ve videoları içe aktarın.</string>
     <string name="import_menu_restore_title">Yedeklemeyi geri yükle</string>
-    <string name="import_menu_restore_description">Photok yedeklemesini geri yükleyin. Dosyalar mevcut dosyalarınıza eklenecektir.</string>
+    <string name="import_menu_restore_description">PhotoZ yedeklemesini geri yükleyin. Dosyalar mevcut dosyalarınıza eklenecektir.</string>
     <string name="import_menu_delete_warning">İçe aktarılan dosyalar silinecektir</string>
     <string name="import_menu_album_tooltip"> Dosyalar içe aktarıldıktan sonra \"%s\" konumuna eklenecektir.</string>
 
@@ -112,18 +112,18 @@
     <string name="export_are_you_sure_this">Emin misiniz, bu <b>dosyayı</b> galerinizde dışa aktarmak istiyor musunuz?</string>
     <string name="export_and_delete_are_you_sure_this">Emin misiniz, bu <b>dosyayı</b> galerinizde dışa aktarmak ve silmek istiyor musunuz?</string>
     <string name="export_exporting">Dosya(lar) dışa aktarılıyor…</string>
-    <string name="export_permission_rationale">Photok\'un dosyalarınızı dışa aktarmak için depolama alanınıza erişmesi gerekiyor.</string>
+    <string name="export_permission_rationale">PhotoZ\'un dosyalarınızı dışa aktarmak için depolama alanınıza erişmesi gerekiyor.</string>
     <string name="export_finished">Dışa aktarıldı</string>
     <string name="export_and_delete_finished">Dışa aktarıldı ve silindi</string>
 
     <!-- ABOUT -->
     <string name="about_version">Sürüm:</string>
     <string name="about_developed_by">Geliştirici:</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">Üçüncü Parti Yazılımlar</string>
     <string name="about_privacy_policy">Gizlilik Politikası</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">Haberler</string>
 
     <!-- SETTINGS -->
@@ -142,7 +142,7 @@
     <string name="settings_security_change_password_title">Şifreyi Değiştir</string>
     <string name="settings_security_change_password_summary">Şifrenizi değiştirin</string>
     <string name="settings_security_biometric_title">Biyometrik Kilit Açma</string>
-    <string name="settings_security_biometric_summary">Biyometrik kimlik doğrulama ile Photok\'un kilidini açın.</string>
+    <string name="settings_security_biometric_summary">Biyometrik kimlik doğrulama ile PhotoZ\'un kilidini açın.</string>
     <string name="settings_security_biometric_not_available">Biyometrik Kilit Açma özelliği mevcut değildir.</string>
     <string name="settings_security_recovery_phrase_title">Kurtarma Kelimeleri</string>
     <string name="settings_security_recovery_phrase_summary">Kurtalma kelimelerini yönetin.</string>
@@ -155,8 +155,8 @@
     <string name="settings_security_timeout_ten_minute">10 Dakika</string>
     <string name="settings_security_timeout_never">Asla</string>
     <string name="settings_security_launch_code_title">Gizli Başlatma Kodu</string>
-    <string name="settings_security_launch_code_summary">Photok\'u telefon çeviricisinden başlatmak için gizli kod.</string>
-    <string name="settings_security_launch_code_message">Photok\'u başlatmak için telefon çeviricisinde *#*#[kodu girin]#*#* yazın.</string>
+    <string name="settings_security_launch_code_summary">PhotoZ\'u telefon çeviricisinden başlatmak için gizli kod.</string>
+    <string name="settings_security_launch_code_message">PhotoZ\'u başlatmak için telefon çeviricisinde *#*#[kodu girin]#*#* yazın.</string>
     <string name="settings_security_launch_code_prefix">*#*#</string>
     <string name="settings_security_launch_code_suffix">#*#*</string>
     <string name="settings_security_hide_app_title">Uygulamayı Gizle</string>
@@ -177,25 +177,25 @@
     <string name="settings_other_title">Diğer</string>
     <string name="settings_other_feedback_title">Geri Bildirim</string>
     <string name="settings_other_feedback_summary">Geri bildirim içeren bir e-posta gönder</string>
-    <string name="settings_other_feedback_mail_subject">Photok Hakkında Geri Bildirim</string>
-    <string name="settings_other_feedback_mail_body">Photok hakkında geri bildiriminizi yazın :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">PhotoZ Hakkında Geri Bildirim</string>
+    <string name="settings_other_feedback_mail_body">PhotoZ hakkında geri bildiriminizi yazın :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">Bağış Yap</string>
-    <string name="settings_other_donate_summary">Photok\'un geliştirilmesine destek olun</string>
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_summary">PhotoZ\'un geliştirilmesine destek olun</string>
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">Kaynak Kod</string>
-    <string name="settings_other_sourcecode_summary">Photok\'a katkıda bulunun</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_summary">PhotoZ\'a katkıda bulunun</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">Katkıda Bulunanlar</string>
     <string name="settings_other_credits_summary">Katkıda bulunanlar ve teşekkürler</string>
     <string name="settings_other_telemetry_title">Veri toplama</string>
     <string name="settings_other_telemetry_summary">Kullanım verilerinin toplanmasını yönet</string>
     <string name="settings_other_about_title">Hakkında</string>
-    <string name="settings_other_about_summary">Photok hakkında bilgi</string>
+    <string name="settings_other_about_summary">PhotoZ hakkında bilgi</string>
 
     <!-- CREDITS -->
     <string name="credits_contributors_title">Katkıda Bulunanlar</string>
-    <string name="credits_contributors_hint">Tüm katkıda bulunanları görmek için GitHub\'da Photok\'u ziyaret edin</string>
+    <string name="credits_contributors_hint">Tüm katkıda bulunanları görmek için GitHub\'da PhotoZ\'u ziyaret edin</string>
     <string name="credits_icons_title">Simgeler</string>
 
     <!-- CHANGE PASSWORD -->
@@ -215,15 +215,15 @@
     <string name="settings_security_check_password_title">Şifreyi Doğrula</string>
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">Photok\'u Gizle</string>
-    <string name="hide_app_title_show">Photok\'u Göster</string>
-    <string name="hide_app_status_label">Photok şu anda:</string>
+    <string name="hide_app_title_hide">PhotoZ\'u Gizle</string>
+    <string name="hide_app_title_show">PhotoZ\'u Göster</string>
+    <string name="hide_app_status_label">PhotoZ şu anda:</string>
     <string name="hide_app_status_visible">GÖRÜNÜR</string>
     <string name="hide_app_status_hidden">GİZLİ</string>
     <string name="hide_app_app_name_stealth">Telefon</string>
-    <string name="hide_app_confirm_hide">Photok\'u gerçekten gizlemek istiyor musunuz?</string>
-    <string name="hide_app_confirm_show">Photok\'u tekrar göstermek istiyor musunuz?</string>
-    <string name="hide_app_hint">Gizlendikten sonra, Photok yalnızca telefon çeviricisinden gizli başlatma kodunuz ile açılabilir.</string>
+    <string name="hide_app_confirm_hide">PhotoZ\'u gerçekten gizlemek istiyor musunuz?</string>
+    <string name="hide_app_confirm_show">PhotoZ\'u tekrar göstermek istiyor musunuz?</string>
+    <string name="hide_app_hint">Gizlendikten sonra, PhotoZ yalnızca telefon çeviricisinden gizli başlatma kodunuz ile açılabilir.</string>
     <string name="hide_app_hint_current_code">Mevcut başlatma kodu:</string>
 
     <!-- ON BOARDING -->
@@ -255,17 +255,17 @@
     <!-- NEWS -->
     <string name="news_new_in_title">Yenilikler</string>
     <string name="news_view_changelog">Değişiklik Günlüğünü Görüntüle</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">Kurtarma Menüsü</string>
-    <string name="recovery_menu_item_open_photok">Photok\'u Aç</string>
+    <string name="recovery_menu_item_open_photok">PhotoZ\'u Aç</string>
     <string name="recovery_subtitle_reset_hide_app">Uygulamayı Gizleme Ayarını Sıfırla</string>
 
 
     <!-- Migration -->
     <string name="migration_initial_title_welcome">Hoşgeldiniz</string>
-    <string name="migration_initial_explaination">Bu Photok sürümü yeni bir şifreleme yöntemi sunmaktadır. Galerinize devam etmek için bir geçiş işlemi gereklidir.</string>
+    <string name="migration_initial_explaination">Bu PhotoZ sürümü yeni bir şifreleme yöntemi sunmaktadır. Galerinize devam etmek için bir geçiş işlemi gereklidir.</string>
     <string name="migration_initial_button">Başlayın</string>
 
     <string name="migration_initial_stage_backup_checklist">Verilerinizi yedekleyin</string>
@@ -297,13 +297,13 @@
 
 
 
-    <string name="biometric_unlock_title">Photok Kilidini Aç</string>
+    <string name="biometric_unlock_title">PhotoZ Kilidini Aç</string>
     <string name="biometric_unlock_subtitle">Kilidi açmak için kimliğini doğrula</string>
-    <string name="biometric_unlock_cancel">Photok şifresini kullan</string>
+    <string name="biometric_unlock_cancel">PhotoZ şifresini kullan</string>
 
     <string name="biometric_unlock_setup_title">Biyometrik kilidi etkinleştir</string>
     <string name="biometric_unlock_setup_subtitle">Biyometrik kilidi etkinleştirmek için kimliğini onayla</string>
-    <string name="biometric_unlock_error">Biyometrik kilit başarısız. Photok şifreni kullan.</string>
+    <string name="biometric_unlock_error">Biyometrik kilit başarısız. PhotoZ şifreni kullan.</string>
     <string name="biometric_unlock_hint_button">Biyometri ile kilidi aç</string>
 
 
@@ -328,8 +328,8 @@
     <string name="video_player_unmute">Sesi aç</string>
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">Photok\'un gelişmesine destek ol</string>
-    <string name="telemetry_sheet_paragraph_1">Photok, isteğe bağlı olarak anonim şekilde kullanım istatisliklerini uygulamayı geliştirmek için toplar.</string>
+    <string name="telemetry_sheet_title">PhotoZ\'un gelişmesine destek ol</string>
+    <string name="telemetry_sheet_paragraph_1">PhotoZ, isteğe bağlı olarak anonim şekilde kullanım istatisliklerini uygulamayı geliştirmek için toplar.</string>
     <string name="telemetry_sheet_paragraph_2">İşlenen veriler tamamen anonimleştirilmiştir ve kişisel bilgiler hakkında herhangi bir sonuca varılmasına izin vermez.</string>
     <string name="telemetry_sheet_paragraph_3">Anonim kullanım verilerinin gönderilmesi isteğe bağlıdır ve ayarlardan istediğiniz zaman kapatılabilir.</string>
     <string name="telemetry_learn_more">Daha fazla bilgi</string>

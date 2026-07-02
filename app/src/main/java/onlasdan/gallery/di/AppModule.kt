@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import dagger.hilt.components.SingletonComponent
 import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.model.database.DATABASE_NAME
-import onlasdan.gallery.model.database.PhotokDatabase
+import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.settings.data.Config
 import timber.log.Timber
 import java.util.concurrent.Executor
@@ -43,7 +43,7 @@ import javax.inject.Singleton
  * Hilt Module for [SingletonComponent].
  *
  * @since 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -51,9 +51,9 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePhotokDatabase(@ApplicationContext app: Context) = Room.databaseBuilder(
+    fun providePhotoZDatabase(@ApplicationContext app: Context) = Room.databaseBuilder(
         app,
-        PhotokDatabase::class.java,
+        PhotoZDatabase::class.java,
         DATABASE_NAME
     ).apply {
         if (BuildConfig.DEBUG) {
@@ -72,11 +72,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePhotoDao(database: PhotokDatabase) = database.getPhotoDao()
+    fun providePhotoDao(database: PhotoZDatabase) = database.getPhotoDao()
 
     @Provides
     @Singleton
-    fun provideAlbumDao(database: PhotokDatabase) = database.getAlbumDao()
+    fun provideAlbumDao(database: PhotoZDatabase) = database.getAlbumDao()
 
     @Provides
     @Singleton

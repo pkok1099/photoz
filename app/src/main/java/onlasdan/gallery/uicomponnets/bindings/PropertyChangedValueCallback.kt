@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ package onlasdan.gallery.uicomponnets.bindings
  * Operates separated from UI Callbacks.
  *
  * @since 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 interface PropertyChangedValueCallback {
 

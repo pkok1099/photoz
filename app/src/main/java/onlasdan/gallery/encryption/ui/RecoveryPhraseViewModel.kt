@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 Leon Latsch
+ *   Copyright 2020-2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -145,7 +145,7 @@ class RecoveryPhraseViewModel @Inject constructor(
 
             is RecoveryPhraseUiEvent.Share -> {
                 val text = """
-                    Photok ${resources.getString(R.string.recovery_phrase_label)}
+                    PhotoZ ${resources.getString(R.string.recovery_phrase_label)}
 
                     ${event.phrase.toMnemonicString()}
                 """.trimIndent()

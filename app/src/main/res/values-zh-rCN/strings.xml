@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-  ~   Copyright 2020–2026 Leon Latsch
+  ~   Copyright 2020–2026 PhotoZ
   ~
   ~   Licensed under the Apache License, Version 2.0 (the "License");
   ~   you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 <resources>
 
     <!-- COMMON -->
-    <string name="common_copyright_notice">版权所有 \u00A9 2020-2026 Leon Latsch</string>
+    <string name="common_copyright_notice">版权所有 \u00A9 2020-2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -41,7 +41,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">正在导入文件</string>
-    <string name="import_permission_rationale">Photok 需要访问你的存储来导入文件</string>
+    <string name="import_permission_rationale">PhotoZ 需要访问你的存储来导入文件</string>
     <string name="import_sharted_question">你想导入 %1$d 个文件吗？</string>
 
     <!-- SETUP -->
@@ -80,7 +80,7 @@
     <string name="import_menu_new_files_title">导入新文件</string>
     <string name="import_menu_new_files_description">从图库中导入相片和视频</string>
     <string name="import_menu_restore_title">恢复备份</string>
-    <string name="import_menu_restore_description">恢复 Photok 备份。恢复的文件将被添加至当前文件中。</string>
+    <string name="import_menu_restore_description">恢复 PhotoZ 备份。恢复的文件将被添加至当前文件中。</string>
     <string name="import_menu_delete_warning">导入的文件将被删除</string>
     <string name="import_menu_album_tooltip">导入后文件将被添加到 \"%s\"</string>
 
@@ -131,17 +131,17 @@
     <string name="export_and_delete_are_you_sure_this">你确定要把这个文件<b>导入</b>图库并删除它吗？</string>
     <string name="export_exporting">导出文件中……</string>
     <string name="export_and_delete_finished">已导出并删除</string>
-    <string name="export_permission_rationale">Photok 需要访问你的存储来导出文件。</string>
+    <string name="export_permission_rationale">PhotoZ 需要访问你的存储来导出文件。</string>
     <string name="export_finished">已导出</string>
 
     <!-- ABOUT -->
     <string name="about_version">版本号:</string>
     <string name="about_developed_by">开发者:</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">第三方软件</string>
     <string name="about_privacy_policy">隐私政策</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">新功能</string>
 
     <!-- SETTINGS -->
@@ -160,7 +160,7 @@
     <string name="settings_security_change_password_title">更改密码</string>
     <string name="settings_security_change_password_summary">更改你的密码</string>
     <string name="settings_security_biometric_title">生物特征解锁</string>
-    <string name="settings_security_biometric_summary">使用生物识别解锁 Photok</string>
+    <string name="settings_security_biometric_summary">使用生物识别解锁 PhotoZ</string>
     <string name="settings_security_biometric_not_available">生物特征解锁不可用</string>
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string> <!-- TODO -->
@@ -173,8 +173,8 @@
     <string name="settings_security_timeout_ten_minute">10 分钟</string>
     <string name="settings_security_timeout_never">永不</string>
     <string name="settings_security_launch_code_title">秘密启动代码</string>
-    <string name="settings_security_launch_code_summary">从拨号器启动 Photok 的秘密代码</string>
-    <string name="settings_security_launch_code_message">在拨号器中输入 *#*#[your code]#*#* 来启动 Photok</string>
+    <string name="settings_security_launch_code_summary">从拨号器启动 PhotoZ 的秘密代码</string>
+    <string name="settings_security_launch_code_message">在拨号器中输入 *#*#[your code]#*#* 来启动 PhotoZ</string>
     <string name="settings_security_hide_app_title">隐藏应用</string>
     <string name="settings_security_hide_app_summary">在应用抽屉中隐藏应用图标</string>
 
@@ -193,25 +193,25 @@
     <string name="settings_other_title">其他</string>
     <string name="settings_other_feedback_title">反馈</string>
     <string name="settings_other_feedback_summary">给我发送一封带反馈的电子邮件</string>
-    <string name="settings_other_feedback_mail_subject">向 Photok 提供反馈</string>
-    <string name="settings_other_feedback_mail_body">写一则 Photok 的反馈 :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">向 PhotoZ 提供反馈</string>
+    <string name="settings_other_feedback_mail_body">写一则 PhotoZ 的反馈 :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">捐赠</string>
-    <string name="settings_other_donate_summary">支持 Photok 开发</string>
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_summary">支持 PhotoZ 开发</string>
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">源代码</string>
-    <string name="settings_other_sourcecode_summary">给 Photok 作贡献</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_summary">给 PhotoZ 作贡献</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">致谢</string>
     <string name="settings_other_credits_summary">贡献者和致谢</string>
     <string name="settings_other_telemetry_title">数据收集</string>
     <string name="settings_other_telemetry_summary">管理使用情况数据收集</string>
     <string name="settings_other_about_title">关于</string>
-    <string name="settings_other_about_summary">有关 Photok 的信息</string>
+    <string name="settings_other_about_summary">有关 PhotoZ 的信息</string>
 
     <!-- CREDITS -->
     <string name="credits_contributors_title">贡献者</string>
-    <string name="credits_contributors_hint">访问 Github 上的 Photok 代码库查看所有贡献者</string>
+    <string name="credits_contributors_hint">访问 Github 上的 PhotoZ 代码库查看所有贡献者</string>
     <string name="credits_icons_title">图标</string>
 
     <!-- CHANGE PASSWORD -->
@@ -231,15 +231,15 @@
     <string name="settings_security_check_password_title">验证密码</string>
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">隐藏 Photok</string>
-    <string name="hide_app_title_show">显示 Photok</string>
-    <string name="hide_app_status_label">Photok 当前状态：</string>
+    <string name="hide_app_title_hide">隐藏 PhotoZ</string>
+    <string name="hide_app_title_show">显示 PhotoZ</string>
+    <string name="hide_app_status_label">PhotoZ 当前状态：</string>
     <string name="hide_app_status_visible">可见</string>
     <string name="hide_app_status_hidden">隐藏</string>
     <string name="hide_app_app_name_stealth">电话</string>
-    <string name="hide_app_confirm_hide">你真想隐藏 Photok 吗？</string>
-    <string name="hide_app_confirm_show">你想再次显示 Photok 吗？</string>
-    <string name="hide_app_hint">一旦隐藏起来，Photok 只能用你的秘密启动代码从手机拨号器启动。</string>
+    <string name="hide_app_confirm_hide">你真想隐藏 PhotoZ 吗？</string>
+    <string name="hide_app_confirm_show">你想再次显示 PhotoZ 吗？</string>
+    <string name="hide_app_hint">一旦隐藏起来，PhotoZ 只能用你的秘密启动代码从手机拨号器启动。</string>
     <string name="settings_security_launch_code_prefix">*#*#</string>
     <string name="settings_security_launch_code_suffix">#*#*</string>
     <string name="hide_app_hint_current_code">当前启动代码：</string>
@@ -273,17 +273,17 @@
     <!-- NEWS -->
     <string name="news_new_in_title">新功能</string>
     <string name="news_view_changelog">查看变更记录</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">恢复菜单</string>
-    <string name="recovery_menu_item_open_photok">打开 Photok</string>
+    <string name="recovery_menu_item_open_photok">打开 PhotoZ</string>
     <string name="recovery_subtitle_reset_hide_app">重置“隐藏应用”设置</string>
 
 
     <!-- Migration -->
     <string name="migration_initial_title_welcome">欢迎来到</string>
-    <string name="migration_initial_explaination">此版 Photok 引入新的加密方法。为了继续使用现有图库，需要进行迁移。</string>
+    <string name="migration_initial_explaination">此版 PhotoZ 引入新的加密方法。为了继续使用现有图库，需要进行迁移。</string>
     <string name="migration_initial_button">开始</string>
 
     <string name="migration_initial_stage_backup_checklist">备份数据</string>
@@ -314,13 +314,13 @@
 
 
     <!-- Biometric -->
-    <string name="biometric_unlock_title">解锁 Photok</string>
+    <string name="biometric_unlock_title">解锁 PhotoZ</string>
     <string name="biometric_unlock_subtitle">验证身份以解锁</string>
-    <string name="biometric_unlock_cancel">使用 Photok 密码</string>
+    <string name="biometric_unlock_cancel">使用 PhotoZ 密码</string>
 
     <string name="biometric_unlock_setup_title">启用生物特征解锁</string>
     <string name="biometric_unlock_setup_subtitle">要启用生物特征解锁，请确认身份</string>
-    <string name="biometric_unlock_error">生物特征解锁失败了。请使用 Photok 密码。</string>
+    <string name="biometric_unlock_error">生物特征解锁失败了。请使用 PhotoZ 密码。</string>
     <string name="biometric_unlock_hint_button">用生物特征解锁</string>
 
     <!-- Sorting -->
@@ -344,8 +344,8 @@
     <string name="video_player_unmute">取消静音</string>
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">帮助改进 Photok</string>
-    <string name="telemetry_sheet_paragraph_1">Photok 可以可选地发送匿名的使用统计数据帮助改进应用。</string>
+    <string name="telemetry_sheet_title">帮助改进 PhotoZ</string>
+    <string name="telemetry_sheet_paragraph_1">PhotoZ 可以可选地发送匿名的使用统计数据帮助改进应用。</string>
     <string name="telemetry_sheet_paragraph_2">所处理的数据完全匿名不允许得出任何有关个人数据的结论。</string>
     <string name="telemetry_sheet_paragraph_3">发送匿名的使用情况数据是可选的，可随时在设置中关闭。</string>
     <string name="telemetry_learn_more">了解更多</string>

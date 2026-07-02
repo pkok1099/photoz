@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-~   Copyright 2020–2026 Leon Latsch
+~   Copyright 2020–2026 PhotoZ
 ~
 ~   Licensed under the Apache License, Version 2.0 (the "License");
 ~   you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 <resources>
 
     <!-- COMMON -->
-    <string name="common_copyright_notice">Copyright \u00A9 2020–2026 Leon Latsch</string>
+    <string name="common_copyright_notice">Copyright \u00A9 2020–2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -41,7 +41,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">Mengimpor File</string>
-    <string name="import_permission_rationale">Photok perlu mengakses penyimpananmu untuk mengimpor file.</string>
+    <string name="import_permission_rationale">PhotoZ perlu mengakses penyimpananmu untuk mengimpor file.</string>
     <string name="import_sharted_question">Impor %1$d file?</string>
 
     <!-- SETUP -->
@@ -80,7 +80,7 @@
     <string name="import_menu_new_files_title">Impor file baru</string>
     <string name="import_menu_new_files_description">Impor foto dan video dari galerimu.</string>
     <string name="import_menu_restore_title">Pulihkan cadangan</string>
-    <string name="import_menu_restore_description">Pulihkan cadangan Photok. File akan ditambahkan ke file yang sudah ada.</string>
+    <string name="import_menu_restore_description">Pulihkan cadangan PhotoZ. File akan ditambahkan ke file yang sudah ada.</string>
     <string name="import_menu_delete_warning">File yang diimpor akan dihapus</string>
     <string name="import_menu_album_tooltip">File akan ditambahkan ke \"%s\" setelah diimpor</string>
 
@@ -130,18 +130,18 @@
     <string name="export_are_you_sure_this">Kamu yakin ingin <b>mengekspor</b> file ini ke galerimu?</string>
     <string name="export_and_delete_are_you_sure_this">Kamu yakin ingin <b>mengekspor</b> file ini ke galerimu dan menghapusnya?</string>
     <string name="export_exporting">Mengekspor file…</string>
-    <string name="export_permission_rationale">Photok perlu mengakses penyimpananmu untuk mengekspor file.</string>
+    <string name="export_permission_rationale">PhotoZ perlu mengakses penyimpananmu untuk mengekspor file.</string>
     <string name="export_finished">Diekspor</string>
     <string name="export_and_delete_finished">Diekspor dan dihapus</string>
 
     <!-- ABOUT -->
     <string name="about_version">Versi:</string>
     <string name="about_developed_by">Dikembangkan oleh:</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">Perangkat Lunak Pihak Ketiga</string>
     <string name="about_privacy_policy">Kebijakan Privasi</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">Berita</string>
 
     <!-- SETTINGS -->
@@ -160,7 +160,7 @@
     <string name="settings_security_change_password_title">Ganti Kata Sandi</string>
     <string name="settings_security_change_password_summary">Ganti kata sandimu</string>
     <string name="settings_security_biometric_title">Buka Kunci Biometrik</string>
-    <string name="settings_security_biometric_summary">Buka kunci Photok dengan autentikasi biometrik.</string>
+    <string name="settings_security_biometric_summary">Buka kunci PhotoZ dengan autentikasi biometrik.</string>
     <string name="settings_security_biometric_not_available">Buka Kunci Biometrik tidak tersedia</string>
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string> <!-- TODO -->
@@ -173,8 +173,8 @@
     <string name="settings_security_timeout_ten_minute">10 Menit</string>
     <string name="settings_security_timeout_never">Tidak pernah</string>
     <string name="settings_security_launch_code_title">Kode Peluncuran Rahasia</string>
-    <string name="settings_security_launch_code_summary">Kode rahasia untuk meluncurkan Photok dari aplikasi telepon.</string>
-    <string name="settings_security_launch_code_message">Masukkan *#*#[kodemu]#*#* di aplikasi telepon untuk meluncurkan Photok.</string>
+    <string name="settings_security_launch_code_summary">Kode rahasia untuk meluncurkan PhotoZ dari aplikasi telepon.</string>
+    <string name="settings_security_launch_code_message">Masukkan *#*#[kodemu]#*#* di aplikasi telepon untuk meluncurkan PhotoZ.</string>
     <string name="settings_security_launch_code_prefix">*#*#</string>
     <string name="settings_security_launch_code_suffix">#*#*</string>
     <string name="settings_security_hide_app_title">Sembunyikan Aplikasi</string>
@@ -195,25 +195,25 @@
     <string name="settings_other_title">Lainnya</string>
     <string name="settings_other_feedback_title">Masukan</string>
     <string name="settings_other_feedback_summary">Kirim email berisi masukan</string>
-    <string name="settings_other_feedback_mail_subject">Masukan untuk Photok</string>
-    <string name="settings_other_feedback_mail_body">Tulis masukan tentang Photok :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">Masukan untuk PhotoZ</string>
+    <string name="settings_other_feedback_mail_body">Tulis masukan tentang PhotoZ :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">Donasi</string>
-    <string name="settings_other_donate_summary">Dukung pengembangan Photok</string>
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_summary">Dukung pengembangan PhotoZ</string>
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">Kode Sumber</string>
-    <string name="settings_other_sourcecode_summary">Berkontribusi pada Photok</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_summary">Berkontribusi pada PhotoZ</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">Kredit</string>
     <string name="settings_other_credits_summary">Kontributor dan kredit</string>
     <string name="settings_other_telemetry_title">Pengumpulan data</string>
     <string name="settings_other_telemetry_summary">Kelola pengumpulan data penggunaan</string>
     <string name="settings_other_about_title">Tentang</string>
-    <string name="settings_other_about_summary">Informasi tentang Photok</string>
+    <string name="settings_other_about_summary">Informasi tentang PhotoZ</string>
 
     <!-- CREDITS -->
     <string name="credits_contributors_title">Kontributor</string>
-    <string name="credits_contributors_hint">Kunjungi Photok di GitHub untuk melihat semua kontributor</string>
+    <string name="credits_contributors_hint">Kunjungi PhotoZ di GitHub untuk melihat semua kontributor</string>
     <string name="credits_icons_title">Ikon</string>
 
     <!-- CHANGE PASSWORD -->
@@ -233,15 +233,15 @@
     <string name="settings_security_check_password_title">Verifikasi Kata Sandi</string>
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">Sembunyikan Photok</string>
-    <string name="hide_app_title_show">Tampilkan Photok</string>
-    <string name="hide_app_status_label">Photok saat ini:</string>
+    <string name="hide_app_title_hide">Sembunyikan PhotoZ</string>
+    <string name="hide_app_title_show">Tampilkan PhotoZ</string>
+    <string name="hide_app_status_label">PhotoZ saat ini:</string>
     <string name="hide_app_status_visible">TERLIHAT</string>
     <string name="hide_app_status_hidden">TERSEMBUNYI</string>
     <string name="hide_app_app_name_stealth">Telepon</string>
-    <string name="hide_app_confirm_hide">Kamu benar-benar ingin menyembunyikan Photok?</string>
-    <string name="hide_app_confirm_show">Tampilkan kembali Photok?</string>
-    <string name="hide_app_hint">Setelah disembunyikan, Photok hanya bisa diluncurkan dari papan tombol telepon menggunakan kode peluncuran rahasiamu.</string>
+    <string name="hide_app_confirm_hide">Kamu benar-benar ingin menyembunyikan PhotoZ?</string>
+    <string name="hide_app_confirm_show">Tampilkan kembali PhotoZ?</string>
+    <string name="hide_app_hint">Setelah disembunyikan, PhotoZ hanya bisa diluncurkan dari papan tombol telepon menggunakan kode peluncuran rahasiamu.</string>
     <string name="hide_app_hint_current_code">Kode peluncuran saat ini:</string>
 
     <!-- ON BOARDING -->
@@ -273,16 +273,16 @@
     <!-- NEWS -->
     <string name="news_new_in_title">Baru di</string>
     <string name="news_view_changelog">Lihat Catatan Perubahan</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">Menu Pemulihan</string>
-    <string name="recovery_menu_item_open_photok">Buka Photok</string>
+    <string name="recovery_menu_item_open_photok">Buka PhotoZ</string>
     <string name="recovery_subtitle_reset_hide_app">Atur Ulang Pengaturan Sembunyikan Aplikasi</string>
 
     <!-- Migration -->
     <string name="migration_initial_title_welcome">Selamat datang di</string>
-    <string name="migration_initial_explaination">Versi Photok ini memperkenalkan metode enkripsi baru. Untuk melanjutkan ke galerimu, diperlukan migrasi.</string>
+    <string name="migration_initial_explaination">Versi PhotoZ ini memperkenalkan metode enkripsi baru. Untuk melanjutkan ke galerimu, diperlukan migrasi.</string>
     <string name="migration_initial_button">Mulai</string>
 
     <string name="migration_initial_stage_backup_checklist">Cadangkan datamu</string>
@@ -313,14 +313,14 @@
 
 
     <!-- Biometric -->
-    <string name="biometric_unlock_title">Buka Kunci Photok</string>
+    <string name="biometric_unlock_title">Buka Kunci PhotoZ</string>
     <string name="biometric_unlock_subtitle">Verifikasi identitasmu untuk membuka kunci</string>
-    <string name="biometric_unlock_cancel">Gunakan kata sandi Photok</string>
+    <string name="biometric_unlock_cancel">Gunakan kata sandi PhotoZ</string>
 
     <string name="biometric_unlock_setup_title">Aktifkan buka kunci biometrik</string>
     <string name="biometric_unlock_setup_subtitle">Konfirmasi identitasmu untuk mengaktifkan buka kunci biometrik</string>
 
-    <string name="biometric_unlock_error">Buka kunci biometrik gagal. Gunakan kata sandi Photok kamu.</string>
+    <string name="biometric_unlock_error">Buka kunci biometrik gagal. Gunakan kata sandi PhotoZ kamu.</string>
     <string name="biometric_unlock_hint_button">Buka kunci dengan biometrik</string>
 
     <!-- Sorting -->
@@ -344,8 +344,8 @@
     <string name="video_player_unmute">Aktifkan Suara</string>
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">Bantu tingkatkan Photok</string>
-    <string name="telemetry_sheet_paragraph_1">Photok dapat mengirimkan statistik penggunaan anonim secara opsional untuk membantu meningkatkan aplikasi.</string>
+    <string name="telemetry_sheet_title">Bantu tingkatkan PhotoZ</string>
+    <string name="telemetry_sheet_paragraph_1">PhotoZ dapat mengirimkan statistik penggunaan anonim secara opsional untuk membantu meningkatkan aplikasi.</string>
     <string name="telemetry_sheet_paragraph_2">Data yang diproses sepenuhnya dianonimkan dan tidak memungkinkan penarikan kesimpulan tentang informasi pribadi.</string>
     <string name="telemetry_sheet_paragraph_3">Pengiriman data penggunaan anonim bersifat opsional dan dapat dimatikan kapan saja di pengaturan.</string>
     <string name="telemetry_learn_more">Pelajari lebih lanjut</string>

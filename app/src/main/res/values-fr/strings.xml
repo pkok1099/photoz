@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ~   Copyright 2020–2026 Leon Latsch
+  ~   Copyright 2020–2026 PhotoZ
   ~
   ~   Licensed under the Apache License, Version 2.0 (the "License");
   ~   you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 <resources>
 
     <!-- COMMON -->
-    <string name="common_copyright_notice">Copyright \u00A9 2020–2026 Leon Latsch</string>
+    <string name="common_copyright_notice">Copyright \u00A9 2020–2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -42,7 +42,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">Importation de fichier(s)</string>
-    <string name="import_permission_rationale">Photok a besoin d\'accéder à votre stockage pour importer des fichiers.</string>
+    <string name="import_permission_rationale">PhotoZ a besoin d\'accéder à votre stockage pour importer des fichiers.</string>
     <string name="import_sharted_question">Voulez-vous importer %1$d fichier(s)\u00A0?</string>
 
     <!-- SETUP -->
@@ -81,7 +81,7 @@
     <string name="import_menu_new_files_title">Importer de nouveaux fichiers</string>
     <string name="import_menu_new_files_description">Importer des photos et vidéos depuis votre galerie.</string>
     <string name="import_menu_restore_title">Restaurer une sauvegarde</string>
-    <string name="import_menu_restore_description">Restaurer une sauvegarde Photok. Les fichiers seront ajoutés à vos fichiers actuels.</string>
+    <string name="import_menu_restore_description">Restaurer une sauvegarde PhotoZ. Les fichiers seront ajoutés à vos fichiers actuels.</string>
     <string name="import_menu_delete_warning">Les fichiers importés seront supprimés</string>
     <string name="import_menu_album_tooltip">Les fichiers seront ajoutés à \"%s\" après l\'importation</string>
 
@@ -132,17 +132,17 @@
     <string name="export_and_delete_are_you_sure_this">Êtes-vous sûr de vouloir <b>exporter</b> ce fichier vers votre galerie et le supprimer\u00A0?</string>
     <string name="export_and_delete_finished">Exporté et supprimé</string>
     <string name="export_exporting">Exportation des fichier(s)…</string>
-    <string name="export_permission_rationale">Photok a besoin d\'accéder à votre stockage pour exporter des fichiers.</string>
+    <string name="export_permission_rationale">PhotoZ a besoin d\'accéder à votre stockage pour exporter des fichiers.</string>
     <string name="export_finished">Exporté</string>
 
     <!-- ABOUT -->
     <string name="about_version">Version :</string>
     <string name="about_developed_by">Développé par :</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">Logiciels tiers</string>
     <string name="about_privacy_policy">Politique de confidentialité</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">Actualités</string>
 
 
@@ -162,7 +162,7 @@
     <string name="settings_security_change_password_title">Changer le mot de passe</string>
     <string name="settings_security_change_password_summary">Changer votre mot de passe</string>
     <string name="settings_security_biometric_title">Déverrouillage biométrique</string>
-    <string name="settings_security_biometric_summary">Déverrouiller Photok grâce à l\'authentification biométrique.</string>
+    <string name="settings_security_biometric_summary">Déverrouiller PhotoZ grâce à l\'authentification biométrique.</string>
     <string name="settings_security_biometric_not_available">Déverrouillage biométrique non disponible</string>
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string> <!-- TODO -->
@@ -175,8 +175,8 @@
     <string name="settings_security_timeout_ten_minute">10 minutes</string>
     <string name="settings_security_timeout_never">Jamais</string>
     <string name="settings_security_launch_code_title">Code de démarrage secret</string>
-    <string name="settings_security_launch_code_summary">Code secret pour lancer Photok à partir du clavier téléphonique.</string>
-    <string name="settings_security_launch_code_message">Entrez *#*#[votre code]#*#* dans le clavier téléphonique pour lancer Photok.</string>
+    <string name="settings_security_launch_code_summary">Code secret pour lancer PhotoZ à partir du clavier téléphonique.</string>
+    <string name="settings_security_launch_code_message">Entrez *#*#[votre code]#*#* dans le clavier téléphonique pour lancer PhotoZ.</string>
     <string name="settings_security_launch_code_prefix">*#*#</string>
     <string name="settings_security_launch_code_suffix">#*#*</string>
     <string name="settings_security_hide_app_title">Masquer l\'application</string>
@@ -197,25 +197,25 @@
     <string name="settings_other_title">Autre</string>
     <string name="settings_other_feedback_title">Rétroaction</string>
     <string name="settings_other_feedback_summary">Envoyez-moi un e-mail avec des commentaires</string>
-    <string name="settings_other_feedback_mail_subject">Commentaires à Photok</string>
-    <string name="settings_other_feedback_mail_body">Donnez votre avis sur Photok :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">Commentaires à PhotoZ</string>
+    <string name="settings_other_feedback_mail_body">Donnez votre avis sur PhotoZ :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">Faire un don</string>
-    <string name="settings_other_donate_summary">Soutenir le développement de Photok</string>
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_summary">Soutenir le développement de PhotoZ</string>
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">Code source</string>
-    <string name="settings_other_sourcecode_summary">Contribuer à Photok</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_summary">Contribuer à PhotoZ</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">Crédits</string>
     <string name="settings_other_credits_summary">Contributeurs et crédits</string>
     <string name="settings_other_telemetry_title">Collecte de données</string>
     <string name="settings_other_telemetry_summary">Gérer la collecte des données d\'utilisation</string>
     <string name="settings_other_about_title">À propos</string>
-    <string name="settings_other_about_summary">Informations sur Photok</string>
+    <string name="settings_other_about_summary">Informations sur PhotoZ</string>
 
     <!-- CREDITS -->
     <string name="credits_contributors_title">Contributeurs</string>
-    <string name="credits_contributors_hint">Visitez Photok sur GitHub pour voir tous les contributeurs</string>
+    <string name="credits_contributors_hint">Visitez PhotoZ sur GitHub pour voir tous les contributeurs</string>
     <string name="credits_icons_title">Icônes</string>
 
     <!-- CHANGE PASSWORD -->
@@ -235,15 +235,15 @@
     <string name="settings_security_check_password_title">Vérifier le mot de passe</string>
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">Cacher Photok</string>
-    <string name="hide_app_title_show">Afficher Photok</string>
-    <string name="hide_app_status_label">Photok est actuellement :</string>
+    <string name="hide_app_title_hide">Cacher PhotoZ</string>
+    <string name="hide_app_title_show">Afficher PhotoZ</string>
+    <string name="hide_app_status_label">PhotoZ est actuellement :</string>
     <string name="hide_app_status_visible">VISIBLE</string>
     <string name="hide_app_status_hidden">CACHÉ</string>
     <string name="hide_app_app_name_stealth">Téléphone</string>
-    <string name="hide_app_confirm_hide">Voulez-vous vraiment cacher Photok\u00A0?</string>
-    <string name="hide_app_confirm_show">Voulez-vous afficher à nouveau Photok\u00A0?</string>
-    <string name="hide_app_hint">Une fois caché, Photok ne peut être lancé qu\'à partir du clavier téléphonique avec votre code de démarrage secret.</string>
+    <string name="hide_app_confirm_hide">Voulez-vous vraiment cacher PhotoZ\u00A0?</string>
+    <string name="hide_app_confirm_show">Voulez-vous afficher à nouveau PhotoZ\u00A0?</string>
+    <string name="hide_app_hint">Une fois caché, PhotoZ ne peut être lancé qu\'à partir du clavier téléphonique avec votre code de démarrage secret.</string>
     <string name="hide_app_hint_current_code">Code de lancement actuel :</string>
 
     <!-- ON BOARDING -->
@@ -275,17 +275,17 @@
     <!-- NEWS -->
     <string name="news_new_in_title">Nouveautés dans</string>
     <string name="news_view_changelog">Voir le journal des modifications</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">Menu de récupération</string>
-    <string name="recovery_menu_item_open_photok">Ouvrir Photok</string>
+    <string name="recovery_menu_item_open_photok">Ouvrir PhotoZ</string>
     <string name="recovery_subtitle_reset_hide_app">Réinitialiser le paramètre de visibilité de l\'application</string>
 
 
     <!-- Migration -->
     <string name="migration_initial_title_welcome">Bienvenue dans</string>
-    <string name="migration_initial_explaination">Cette version de Photok introduit une nouvelle méthode de chiffrement. Afin de pouvoir continuer à accéder à votre galerie, une migration est nécessaire.</string>
+    <string name="migration_initial_explaination">Cette version de PhotoZ introduit une nouvelle méthode de chiffrement. Afin de pouvoir continuer à accéder à votre galerie, une migration est nécessaire.</string>
     <string name="migration_initial_button">Commencer</string>
 
     <string name="migration_initial_stage_backup_checklist">Sauvegarder vos données</string>
@@ -316,13 +316,13 @@
 
 
     <!-- Biometric -->
-    <string name="biometric_unlock_title">Déverrouiller Photok</string>
+    <string name="biometric_unlock_title">Déverrouiller PhotoZ</string>
     <string name="biometric_unlock_subtitle">Vérifiez votre identité pour déverrouiller</string>
-    <string name="biometric_unlock_cancel">Utiliser le mot de passe Photok</string>
+    <string name="biometric_unlock_cancel">Utiliser le mot de passe PhotoZ</string>
 
     <string name="biometric_unlock_setup_title">Activer le verrouillage biométrique</string>
     <string name="biometric_unlock_setup_subtitle">Pour activer le verrouillage biométrique, confirmez votre identité</string>
-    <string name="biometric_unlock_error">Échec du déverrouillage biométrique. Utilisez votre mot de passe Photok.</string>
+    <string name="biometric_unlock_error">Échec du déverrouillage biométrique. Utilisez votre mot de passe PhotoZ.</string>
     <string name="biometric_unlock_hint_button">Déverrouillage par biométrie</string>
 
     <!-- Sorting -->
@@ -346,8 +346,8 @@
     <string name="video_player_unmute">Activer le son</string>
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">Aidez à améliorer Photok</string>
-    <string name="telemetry_sheet_paragraph_1">Photok peut, facultativement, envoyer des statistiques d\'utilisation anonymes afin d\'améliorer l\'application.</string>
+    <string name="telemetry_sheet_title">Aidez à améliorer PhotoZ</string>
+    <string name="telemetry_sheet_paragraph_1">PhotoZ peut, facultativement, envoyer des statistiques d\'utilisation anonymes afin d\'améliorer l\'application.</string>
     <string name="telemetry_sheet_paragraph_2">Les données traitées sont totalement anonymisées et ne permettent pas de tirer de conclusions concernant les informations personnelles.</string>
     <string name="telemetry_sheet_paragraph_3">L\'envoi de données d\'utilisation anonymes est facultatif et peut être désactivé à tout moment dans les paramètres.</string>
     <string name="telemetry_learn_more">En savoir plus</string>

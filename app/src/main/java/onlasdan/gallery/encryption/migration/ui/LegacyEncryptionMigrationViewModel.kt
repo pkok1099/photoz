@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 Leon Latsch
+ *   Copyright 2020-2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -120,9 +120,9 @@ class LegacyEncryptionMigrationViewModel @Inject constructor(
             is LegacyEncryptionMigrationUiEvent.SendErrorReport -> {
                 val email = event.context.getString(R.string.settings_other_feedback_mail_emailaddress)
                 val subject =
-                    "Photok Migration Error Report (App ${BuildConfig.VERSION_NAME} / Android ${Build.VERSION.RELEASE})"
+                    "PhotoZ Migration Error Report (App ${BuildConfig.VERSION_NAME} / Android ${Build.VERSION.RELEASE})"
 
-                val text = "Photok error migration report.\n\nPlease don't change the content below.\n\n ${event.error.stackTraceToString()}"
+                val text = "PhotoZ error migration report.\n\nPlease don't change the content below.\n\n ${event.error.stackTraceToString()}"
 
                 event.context.sendEmail(
                     email = email,

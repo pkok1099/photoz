@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?><!--
- ~   Copyright 2020–2026 Leon Latsch
+ ~   Copyright 2020–2026 PhotoZ
   ~
   ~   Licensed under the Apache License, Version 2.0 (the "License");
   ~   you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 <resources>
 
     <!-- COMMON -->
-    <string name="common_copyright_notice">کاپی رائٹ \u00A9 2020–2026 Leon Latsch</string>
+    <string name="common_copyright_notice">کاپی رائٹ \u00A9 2020–2026 PhotoZ</string>
     <string name="common_slash">/</string>
     <string name="common_percent">%</string>
     <string name="common_pipe">|</string>
@@ -42,7 +42,7 @@
 
     <!-- IMPORT -->
     <string name="import_importing">فائلیں لائی جا رہی ہیں</string>
-    <string name="import_permission_rationale">فائلیں لانے کے لیے Photok کو آپ کے فون کی اسٹوریج استعمال کرنے کی اجازت چاہیے۔</string>
+    <string name="import_permission_rationale">فائلیں لانے کے لیے PhotoZ کو آپ کے فون کی اسٹوریج استعمال کرنے کی اجازت چاہیے۔</string>
     <string name="import_sharted_question">کیا آپ %1$d فائلیں لانا چاہتے ہیں؟</string>
 
     <!-- SETUP -->
@@ -129,18 +129,18 @@
     <string name="export_are_you_sure_this">کیا آپ یہ فائل واپس گیلری میں بھیجنا چاہتے ہیں؟</string>
     <string name="export_and_delete_are_you_sure_this">کیا آپ یہ فائل گیلری میں بھیج کر یہاں سے مٹانا چاہتے ہیں؟</string>
     <string name="export_exporting">فائلیں باہر نکالی جا رہی ہیں…</string>
-    <string name="export_permission_rationale">باہر بھیجنے کے لیے Photok کو اسٹوریج کی اجازت چاہیے۔</string>
+    <string name="export_permission_rationale">باہر بھیجنے کے لیے PhotoZ کو اسٹوریج کی اجازت چاہیے۔</string>
     <string name="export_finished">باہر بھیج دی گئیں</string>
     <string name="export_and_delete_finished">باہر بھیج کر مٹا دی گئیں</string>
 
     <!-- ABOUT -->
     <string name="about_version">ورژن:</string>
     <string name="about_developed_by">بنانے والا:</string>
-    <string name="about_website_label">leonlatsch.dev</string>
-    <string name="about_website_url">https://leonlatsch.dev</string>
+    <string name="about_website_label">github.com/pkok1099/photok-sync-fork</string>
+    <string name="about_website_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="about_third_party">دیگر سافٹ ویئر</string>
     <string name="about_privacy_policy">رازداری کی پالیسی</string>
-    <string name="about_privacy_policy_url">https://leonlatsch.dev/photok_privacy_policy</string>
+    <string name="about_privacy_policy_url">https://github.com/pkok1099/photok-sync-fork/photok_privacy_policy</string>
     <string name="about_menu_news">نئی خبریں</string>
 
   <!-- SETTINGS -->
@@ -159,7 +159,7 @@
     <string name="settings_security_change_password_title">پاس ورڈ بدلیں</string>
     <string name="settings_security_change_password_summary">اپنا نیا پاس ورڈ سیٹ کریں</string>
     <string name="settings_security_biometric_title">فنگر پرنٹ یا چہرہ</string>
-    <string name="settings_security_biometric_summary">Photok کو فون کے لاک سے کھولیں۔</string>
+    <string name="settings_security_biometric_summary">PhotoZ کو فون کے لاک سے کھولیں۔</string>
     <string name="settings_security_biometric_not_available">یہ سہولت دستیاب نہیں ہے</string>
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string> <!-- TODO -->
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string> <!-- TODO -->
@@ -194,15 +194,15 @@
     <string name="settings_other_title">دیگر</string>
     <string name="settings_other_feedback_title">اپنی رائے دیں</string>
     <string name="settings_other_feedback_summary">ہمیں ای میل کر کے بتائیں کہ ایپ کیسی ہے</string>
-    <string name="settings_other_feedback_mail_subject">Photok کے بارے میں رائے</string>
-    <string name="settings_other_feedback_mail_body">Photok کے بارے میں کچھ لکھیں :)</string>
-    <string name="settings_other_feedback_mail_emailaddress">photok@leonlatsch.dev</string>
+    <string name="settings_other_feedback_mail_subject">PhotoZ کے بارے میں رائے</string>
+    <string name="settings_other_feedback_mail_body">PhotoZ کے بارے میں کچھ لکھیں :)</string>
+    <string name="settings_other_feedback_mail_emailaddress">photok@github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_donate_title">مدد کریں</string>
     <string name="settings_other_donate_summary">ایپ کو بہتر بنانے کے لیے مالی مدد کریں</string>
-    <string name="settings_other_donate_url">https://ko-fi.com/leonlatsch</string>
+    <string name="settings_other_donate_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_sourcecode_title">سورس کوڈ</string>
     <string name="settings_other_sourcecode_summary">ایپ بنانے میں حصہ لیں</string>
-    <string name="settings_other_sourcecode_url">https://github.com/leonlatsch/Photok</string>
+    <string name="settings_other_sourcecode_url">https://github.com/pkok1099/photok-sync-fork</string>
     <string name="settings_other_credits_title">شکریہ</string>
     <string name="settings_other_credits_summary">مدد کرنے والوں کے نام</string>
     <string name="settings_other_telemetry_title">Data collection</string> <!-- TODO -->
@@ -232,13 +232,13 @@
     <string name="settings_security_check_password_title">پاس ورڈ چیک کریں</string>
 
     <!-- HIDE APP -->
-    <string name="hide_app_title_hide">Photok چھپائیں</string>
-    <string name="hide_app_title_show">Photok دکھائیں</string>
-    <string name="hide_app_status_label">Photok اس وقت:</string>
+    <string name="hide_app_title_hide">PhotoZ چھپائیں</string>
+    <string name="hide_app_title_show">PhotoZ دکھائیں</string>
+    <string name="hide_app_status_label">PhotoZ اس وقت:</string>
     <string name="hide_app_status_visible">سب کو دکھ رہی ہے</string>
     <string name="hide_app_status_hidden">چھپی ہوئی ہے</string>
     <string name="hide_app_app_name_stealth">فون</string>
-    <string name="hide_app_confirm_hide">کیا آپ واقعی Photok چھپانا چاہتے ہیں؟</string>
+    <string name="hide_app_confirm_hide">کیا آپ واقعی PhotoZ چھپانا چاہتے ہیں؟</string>
     <string name="hide_app_confirm_show">کیا آپ ایپ دوبارہ دکھانا چاہتے ہیں؟</string>
     <string name="hide_app_hint">چھپانے کے بعد ایپ صرف ڈائلر سے خفیہ کوڈ کے ذریعے کھلے گی۔</string>
     <string name="hide_app_hint_current_code">موجودہ خفیہ کوڈ:</string>
@@ -272,11 +272,11 @@
     <!-- NEWS -->
     <string name="news_new_in_title">نیا کیا ہے</string>
     <string name="news_view_changelog">تبدیلیوں کی لسٹ دیکھیں</string>
-    <string name="news_changelog_url">https://github.com/leonlatsch/Photok/releases</string>
+    <string name="news_changelog_url">https://github.com/pkok1099/photok-sync-fork/releases</string>
 
     <!-- Recovery Menu -->
     <string name="recovery_subtitle">واپسی کا مینو</string>
-    <string name="recovery_menu_item_open_photok">Photok کھولیں</string>
+    <string name="recovery_menu_item_open_photok">PhotoZ کھولیں</string>
     <string name="recovery_subtitle_reset_hide_app">ایپ چھپانے کی سیٹنگ ختم کریں</string>
 
     <!-- Migration -->
@@ -311,7 +311,7 @@
     <string name="migration_error_extracting_title">ZIP میں نکالا جا رہا ہے…</string>
 
     <!-- Biometric -->
-    <string name="biometric_unlock_title">Photok کھولیں</string>
+    <string name="biometric_unlock_title">PhotoZ کھولیں</string>
     <string name="biometric_unlock_subtitle">اپنی شناخت چیک کروائیں</string>
     <string name="biometric_unlock_cancel">پاس ورڈ استعمال کریں</string>
 
@@ -342,8 +342,8 @@
     <string name="video_player_unmute">Unmute</string> <!-- TODO -->
 
     <!-- Telemetry -->
-    <string name="telemetry_sheet_title">Help improve Photok</string> <!-- TODO -->
-    <string name="telemetry_sheet_paragraph_1">Photok can optionally send anonymous usage statistics to help improve the app.</string> <!-- TODO -->
+    <string name="telemetry_sheet_title">Help improve PhotoZ</string> <!-- TODO -->
+    <string name="telemetry_sheet_paragraph_1">PhotoZ can optionally send anonymous usage statistics to help improve the app.</string> <!-- TODO -->
     <string name="telemetry_sheet_paragraph_2">The data processed is completely anonymized and does not allow any conclusions to be drawn about personal information.</string> <!-- TODO -->
     <string name="telemetry_sheet_paragraph_3">Sending anonymous usage data is optional and can be turned off at any time in the settings.</string> <!-- TODO -->
     <string name="telemetry_learn_more">Learn more</string> <!-- TODO -->

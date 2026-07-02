@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@ class RecoveryMenuViewModel @Inject constructor(
 
     val navigationEvent = SingleLiveEvent<RecoveryMenuNavigator.NavigationEvent>()
 
-    fun openPhotok() {
-        navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.OpenPhotok
+    fun openPhotoZ() {
+        navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.OpenPhotoZ
     }
 
     fun resetHidePhotoSetting() {

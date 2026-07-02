@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ class RecoveryMenuNavigator @Inject constructor() {
 
     fun navigate(navigationEvent: NavigationEvent, activity: AppCompatActivity) {
         when (navigationEvent) {
-            NavigationEvent.OpenPhotok -> navigateOpenPhotok(activity)
+            NavigationEvent.OpenPhotoZ -> navigateOpenPhotoZ(activity)
             NavigationEvent.AfterResetHideApp -> navigateAfterResetHideApp(activity)
         }
     }
@@ -34,7 +34,7 @@ class RecoveryMenuNavigator @Inject constructor() {
         activity.finish()
     }
 
-    private fun navigateOpenPhotok(activity: AppCompatActivity) {
+    private fun navigateOpenPhotoZ(activity: AppCompatActivity) {
         val intent = Intent(activity, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
@@ -43,7 +43,7 @@ class RecoveryMenuNavigator @Inject constructor() {
     }
 
     sealed class NavigationEvent {
-        object OpenPhotok : NavigationEvent()
+        object OpenPhotoZ : NavigationEvent()
         object AfterResetHideApp : NavigationEvent()
     }
 }

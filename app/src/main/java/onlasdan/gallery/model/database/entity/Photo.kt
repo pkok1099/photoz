@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020–2026 Leon Latsch
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import java.util.UUID
  * Entity describing a Photo.
  *
  * @since 1.0.0
- * @author Leon Latsch
+ * @author PhotoZ
  */
 // TODO: Add a domain model for photos
 @Entity(tableName = Photo.TABLE_NAME)
@@ -65,9 +65,9 @@ data class Photo(
     /**
      * Original local-origin provenance path for this photo, captured at import time.
      *
-     * This is a metadata-only field — Photok's vault is its own managed encrypted storage
+     * This is a metadata-only field — PhotoZ's vault is its own managed encrypted storage
      * and does NOT mirror the device's public filesystem. The restored photo still lives
-     * in Photok's vault (as it always has); this column merely records where the photo
+     * in PhotoZ's vault (as it always has); this column merely records where the photo
      * came from for the user's reference (filename, or in a future enhancement, the full
      * MediaStore `RELATIVE_PATH` such as `DCIM/Camera`).
      *

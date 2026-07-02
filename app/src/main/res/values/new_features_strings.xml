@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-  ~   Copyright 2020-2026 Leon Latsch
+  ~   Copyright 2020-2026 PhotoZ
   ~
   ~   Licensed under the Apache License, Version 2.0 (the "License");
   ~   you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <string name="release_title_1" tools:ignore="MissingTranslation">Stronger Security, Faster Password Changes</string>
-    <string name="release_summary_1" tools:ignore="MissingTranslation">Photok now uses a more secure way to protect your vault. Changing your password is now instant.</string>
+    <string name="release_summary_1" tools:ignore="MissingTranslation">PhotoZ now uses a more secure way to protect your vault. Changing your password is now instant.</string>
 
     <string name="release_title_2" tools:ignore="MissingTranslation">Pin Files to the Top of an Album</string>
     <string name="release_summary_2" tools:ignore="MissingTranslation">Keep your most important photos and videos always within reach.</string>
 
     <string name="release_title_3" tools:ignore="MissingTranslation">HEIC Image Support</string>
-    <string name="release_summary_3" tools:ignore="MissingTranslation">Photok now supports HEIC. A high-efficiency format used by many modern cameras and devices.</string>
+    <string name="release_summary_3" tools:ignore="MissingTranslation">PhotoZ now supports HEIC. A high-efficiency format used by many modern cameras and devices.</string>
 
     <string name="release_title_4" tools:ignore="MissingTranslation">Redesigned Settings</string>
     <string name="release_summary_4" tools:ignore="MissingTranslation">The settings screen has been redesigned with a clean, Pixel-inspired look.</string>
