@@ -1276,7 +1276,7 @@ class RepoManager @Inject constructor(
     }
 
     companion object {
-        const val REPO_DIR = "photok-backup"
+        const val REPO_DIR = "photoz-backup"
         const val MARKER_FILENAME = "repo-config.json"
 
         // @since PR4 sync — thumbnail filename suffix, mirrors

@@ -33,22 +33,25 @@ object SyncConfig {
     const val deleteLocalAfterUpload: Boolean = false
     const val maxSyncAttempts: Int = 5
     const val initialBackoffSeconds: Long = 10L
-    const val remoteOriginalsDir: String = "originals"
-    const val remoteThumbnailsDir: String = "thumbnails"
-    const val remoteVideosDir: String = "videos"
+
+    // ─── Remote layout (consolidated under photoz-backup/) ────────────────
+    // All sync artifacts live INSIDE the repo root folder (photoz-backup/),
+    // not scattered at the remote root. This makes the remote layout clean:
+    //   <remote>:photoz-backup/originals/<uuid>.crypt
+    //   <remote>:photoz-backup/thumbnails/<uuid>.crypt.tn
+    //   <remote>:photoz-backup/videos/<uuid>.crypt.vp
+    //   <remote>:photoz-backup/metadata/<uuid>.json
+    //   <remote>:photoz-backup/repo-config.json
+    //   <remote>:photoz-backup/vault-protection/recovery-phrase.json
+    //   <remote>:photoz-backup/vault-protection/wrapped-phrase.json
+    //
+    // @since rebrand + consolidation — moved from remote root to under photoz-backup/
+    const val REPO_DIR: String = "photoz-backup"
+    const val remoteOriginalsDir: String = "$REPO_DIR/originals"
+    const val remoteThumbnailsDir: String = "$REPO_DIR/thumbnails"
+    const val remoteVideosDir: String = "$REPO_DIR/videos"
 
     // ─── Per-photo metadata sidecar (v8 path-consistency) ───────────────────
-    // A small JSON file uploaded alongside each photo's encrypted artifacts,
-    // capturing the photo's original local-origin provenance (relativePath +
-    // fileName), type, and size — so a fresh-install restore can populate the
-    // Photo DB row accurately instead of guessing `type=JPEG, size=0`.
-    //
-    // Remote layout (note the `photok-backup/` prefix — the metadata dir lives
-    // UNDER the repo root, alongside `vault-protection/`. The encrypted
-    // originals/thumbnails/videos live at the REMOTE ROOT — no prefix — for
-    // backwards compat with PR1/PR4 installs):
-    //   <remote>:photok-backup/metadata/<uuid>.json
-    // @since v8 — path-consistency metadata sidecar
-    const val METADATA_DIR: String = "metadata"
+    const val METADATA_DIR: String = "$REPO_DIR/metadata"
     const val METADATA_FILENAME_SUFFIX: String = ".json"
 }

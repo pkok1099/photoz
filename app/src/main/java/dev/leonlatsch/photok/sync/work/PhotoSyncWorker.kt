@@ -409,11 +409,12 @@ class PhotoSyncWorker @AssistedInject constructor(
             "batchCurrent=${batchState.current} batchTotal=${batchState.total}")
 
         // ─── Item 1: precompute batch-style notification text ───────────────
-        // Collapsed (single line): "Uploading N of M: filename"
-        // Expanded (BigTextStyle): "Uploading N of M photos\nfilename\nZ uploaded so far"
-        // Z = bytesCompleted accumulated from prior successful uploads in this batch.
-        val collapsedText = "Uploading ${batchState.current} of ${batchState.total}: ${photo.fileName}"
-        val expandedText = "Uploading ${batchState.current} of ${batchState.total} photos\n${photo.fileName}\n" +
+        // Collapsed (single line): "Uploading N of M: filename (size)"
+        // Expanded (BigTextStyle): "Uploading N of M photos\nfilename (size)\nZ uploaded so far"
+        val fileSizeStr = formatBytes(photo.size)
+        val collapsedText = "Uploading ${batchState.current} of ${batchState.total}: ${photo.fileName} ($fileSizeStr)"
+        val expandedText = "Uploading ${batchState.current} of ${batchState.total} photos\n" +
+            "${photo.fileName} ($fileSizeStr)\n" +
             "${formatBytes(batchState.bytesCompleted)} uploaded so far"
 
         // ─── Upload thumbnail ──────────────────────────────────────────────
@@ -757,59 +758,22 @@ class PhotoSyncWorker @AssistedInject constructor(
         val isStateChange = text != lastNotificationText
         val isComplete = progress != null && progress >= 100f
         val msSinceLast = now - lastNotificationUpdateMs
+        // Rate-limit ONLY for non-state-change progress ticks (reduces flicker).
+        // State changes and completion ALWAYS go through immediately — no delay.
         if (!isStateChange && !isComplete &&
             msSinceLast < NOTIFICATION_UPDATE_MIN_INTERVAL_MS
         ) {
-            // Rate-limited: drop this update. The next tick (≥500ms later, or a
-            // state change, or completion) will get through.
-            //
-            // STEP-0 DIAG: this branch was previously silent. That made it
-            // impossible to tell from sync_log.txt whether progress ticks were
-            // being received and rate-limited away, vs. never received at all.
-            // Now every dropped call is logged with the exact msSinceLast and
-            // threshold so the rate-limit behavior is fully observable.
-            diag("updateNotification: SKIPPED (rate-limited) progress=$progress text=\"$text\" msSinceLast=$msSinceLast threshold=$NOTIFICATION_UPDATE_MIN_INTERVAL_MS isStateChange=$isStateChange isComplete=$isComplete")
             return
         }
-        // STEP-0 DIAG: every non-rate-limited call is logged (previously only
-        // state changes + completion were logged, which meant in-place progress
-        // ticks were silently going through `nm.notify()` and the log gave no
-        // evidence of it). Now the log proves one way or the other whether
-        // updateNotification is being called during the upload (not just at
-        // the start/end).
-        diag("updateNotification: PROCESSING progress=$progress text=\"$text\" isStateChange=$isStateChange isComplete=$isComplete msSinceLast=$msSinceLast ongoing=$ongoing bigText=${bigText != null}")
         lastNotificationUpdateMs = now
         lastNotificationText = text
 
         ensureChannel()
-        val nm = appContext.getSystemService(NotificationManager::class.java)
-        if (nm == null) {
-            diag("updateNotification: NotificationManager unavailable — cannot post notification")
-            return
-        }
-
-        // Check app-level notification permission (POST_NOTIFICATIONS since API 33)
-        val appEnabled = androidx.core.app.NotificationManagerCompat.from(appContext).areNotificationsEnabled()
-        if (!appEnabled) {
-            diag("updateNotification: app-level notifications DISABLED — POST_NOTIFICATIONS not granted or app-level toggle off")
-        }
-
-        // Check channel-level importance (independent of app-level).
-        // importance == IMPORTANCE_NONE means the channel is blocked by the user.
-        val channel = nm.getNotificationChannel(CHANNEL_ID)
-        if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
-            diag("updateNotification: channel $CHANNEL_ID importance=NONE (blocked by user) — notification will not appear")
-        }
+        val nm = appContext.getSystemService(NotificationManager::class.java) ?: return
 
         try {
             val notification = buildNotificationInternal(text, progress, ongoing, bigText)
             nm.notify(NOTIFICATION_ID, notification)
-            // STEP-0 DIAG: unconditional POSTED log (previously gated on
-            // isStateChange || isComplete, which silently swallowed in-place
-            // progress ticks). This is the line that proves whether the
-            // notification is actually being updated mid-upload or only at
-            // state transitions.
-            diag("updateNotification: POSTED id=$NOTIFICATION_ID text=\"$text\" progress=$progress ongoing=$ongoing bigText=${bigText != null} appEnabled=$appEnabled channelImportance=${channel?.importance}")
         } catch (e: Exception) {
             diag("updateNotification: nm.notify() THREW ${e.javaClass.name}: ${e.message}", e)
         }
@@ -976,7 +940,7 @@ class PhotoSyncWorker @AssistedInject constructor(
         // Caps UI refreshes at ~2/sec — fast enough to feel responsive, slow
         // enough to avoid notification-manager thrash / flicker. State changes
         // and 100%-complete updates bypass this limit (see updateNotification).
-        private const val NOTIFICATION_UPDATE_MIN_INTERVAL_MS = 500L
+        private const val NOTIFICATION_UPDATE_MIN_INTERVAL_MS = 200L
 
         // ─── Batch-complete summary notification ID (Item 1) ──────────────────
         // SEPARATE from [NOTIFICATION_ID] — WorkManager cancels the foreground
