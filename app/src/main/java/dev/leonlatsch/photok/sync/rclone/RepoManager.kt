@@ -17,6 +17,12 @@
 package dev.leonlatsch.photok.sync.rclone
 
 import android.app.Application
+import dev.leonlatsch.photok.encryption.domain.VaultProtectionRepository
+import dev.leonlatsch.photok.encryption.domain.models.Algorithm
+import dev.leonlatsch.photok.encryption.domain.models.Kdf
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtection
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionParams
+import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionType
 import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.model.database.entity.PHOTOK_FILE_EXTENSION
 import dev.leonlatsch.photok.model.database.entity.Photo
@@ -30,6 +36,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.IOException
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,6 +77,11 @@ class RepoManager @Inject constructor(
     // @since PR4 sync — needed by restoreThumbnailsAfterLogin() to insert DB rows for
     // each thumbnail pulled back from the remote after a successful login.
     private val photoDao: PhotoDao,
+    // @since key-escrow — needed by uploadVaultProtectionEscrow() / downloadVaultProtectionEscrow()
+    // to persist the recovery-phrase wrapped-VMK artifact on the remote during registration
+    // and to restore it into the local DB during login (so the existing phrase-entry UI can
+    // unlock the VMK on a fresh install).
+    private val vaultProtectionRepository: VaultProtectionRepository,
 ) {
 
     // ─── DIAGNOSTIC LOGGING (RcloneDiag pattern, same as RcloneController) ────
@@ -106,6 +118,30 @@ class RepoManager @Inject constructor(
 
         /** Listing failed. Caller should surface error — do NOT guess register vs login. */
         data class ERROR(val message: String) : RepoState()
+    }
+
+    /**
+     * Result of [loginRepo]. Carries the escrow-artifact status so the caller
+     * can decide whether to route the user to the phrase-entry UI or to the
+     * degraded-mode ("no escrow available") UI.
+     *
+     * @since key-escrow — login-branch phrase entry
+     */
+    sealed class LoginResult {
+        /**
+         * Login (remote repo session) succeeded.
+         *
+         * @param escrowAvailable `true` if a recovery-phrase wrapped-VMK artifact
+         *   was downloaded from the remote and persisted into the local
+         *   VaultProtection DB; the caller should route the user to the
+         *   phrase-entry UI. `false` if the artifact was missing (old repo)
+         *   or the download failed non-fatally — the caller should route to
+         *   the "no escrow available" UI.
+         */
+        data class Success(val escrowAvailable: Boolean) : LoginResult()
+
+        /** Login failed — caller should surface error. */
+        data class Failure(val message: String) : LoginResult()
     }
 
     /**
@@ -257,6 +293,28 @@ class RepoManager @Inject constructor(
                     )
                 }
 
+                // Upload the recovery-phrase wrapped-VMK escrow so a fresh install on
+                // another device can restore the vault via the user's recovery phrase.
+                // Failure here MUST NOT block registration — the repo is still usable
+                // for photo upload; only recovery-phrase restore on fresh installs
+                // won't work. Log but don't throw.
+                // @since key-escrow — upload wrapped VMK during repo registration
+                try {
+                    val escrowResult = uploadVaultProtectionEscrow()
+                    if (escrowResult.isFailure) {
+                        diag(
+                            "registerRepo: escrow upload failed (non-fatal, continuing): " +
+                                "${escrowResult.exceptionOrNull()?.message}",
+                            escrowResult.exceptionOrNull(),
+                        )
+                    }
+                } catch (e: Exception) {
+                    diag(
+                        "registerRepo: escrow upload threw (non-fatal, continuing): ${e.message}",
+                        e,
+                    )
+                }
+
                 // Persist the repo binding locally
                 config.repoId = marker.repoId
                 config.repoConfirmed = true
@@ -283,14 +341,51 @@ class RepoManager @Inject constructor(
      * into PhotoZ itself.
      *
      * Read-only — does NOT touch the marker file. Persists the repo binding locally.
+     *
+     * After confirming the repo binding, downloads the recovery-phrase wrapped-VMK
+     * escrow artifact (if present on the remote) and persists it into the local
+     * VaultProtection DB so the existing phrase-entry UI can unlock the VMK on
+     * this fresh install. The escrow status is carried in [LoginResult.Success.escrowAvailable].
+     *
+     * @since key-escrow — login now returns [LoginResult] carrying escrow status
      */
-    suspend fun loginRepo(marker: RepoMarker): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun loginRepo(marker: RepoMarker): LoginResult = withContext(Dispatchers.IO) {
         runCatching {
             config.repoId = marker.repoId
             config.repoConfirmed = true
             Timber.i("Repo login: id=${marker.repoId}")
-            Unit
-        }
+
+            // Download the wrapped-VMK escrow artifact (if present on the remote) and
+            // persist it to the local VaultProtection DB. The presence/absence of this
+            // artifact determines whether the login flow can offer recovery-phrase
+            // restore on a fresh install.
+            // @since key-escrow — download wrapped VMK during repo login
+            val escrowResult = downloadVaultProtectionEscrow()
+            if (escrowResult.isFailure) {
+                // Don't block login — the user can still get into the gallery via the
+                // normal vault PIN/password path; just no recovery-phrase restore on
+                // this fresh install. Surface as "not available" rather than an error.
+                val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
+                diag(
+                    "loginRepo: escrow download failed (non-fatal): $err",
+                    escrowResult.exceptionOrNull(),
+                )
+                LoginResult.Success(escrowAvailable = false)
+            } else {
+                val available = escrowResult.getOrNull() != null
+                diag("loginRepo: escrow available=$available")
+                LoginResult.Success(escrowAvailable = available)
+            }
+        }.fold(
+            onSuccess = { it },
+            onFailure = { e ->
+                diag(
+                    "loginRepo: FAILED ${e.javaClass.name}: ${e.message}",
+                    e,
+                )
+                LoginResult.Failure(e.message ?: e.javaClass.simpleName)
+            },
+        )
     }
 
     /**
@@ -411,6 +506,274 @@ class RepoManager @Inject constructor(
     }
 
     /**
+     * Upload the local recovery-phrase [VaultProtection] (the wrapped VMK + KDF
+     * params) to a well-known path on the rclone remote, so a fresh install of
+     * the app on another device can later download it and unlock the VMK via
+     * the user's recovery phrase.
+     *
+     * The artifact is written as JSON at:
+     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<VAULT_PROTECTION_FILENAME>`
+     *   = `<remote>:photok-backup/vault-protection/recovery-phrase.json`
+     *
+     * Independent verification (re-list) follows the same pattern as the repo
+     * marker upload — the upload call's return value alone is NOT proof.
+     *
+     * Failure is non-fatal: registration MUST still succeed even if escrow
+     * upload fails (the repo is still usable for photo upload; only fresh-install
+     * recovery-phrase restore won't work). The caller ([registerRepo]) wraps the
+     * call in try/catch and logs but does not throw.
+     *
+     * @since key-escrow — upload wrapped VMK during repo registration
+     */
+    private suspend fun uploadVaultProtectionEscrow(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val remote = config.syncChosenRemote
+                ?: throw IllegalStateException("No remote chosen")
+
+            diag("uploadVaultProtectionEscrow: BEGIN remote=$remote")
+
+            val protection = vaultProtectionRepository.getProtection(VaultProtectionType.RecoveryPhrase)
+            if (protection == null) {
+                // No recovery-phrase protection set up locally yet. Shouldn't happen
+                // in the normal register flow (the user must have a vault password +
+                // recovery phrase to get here), but handle gracefully — skip escrow
+                // upload, don't fail registration.
+                diag("uploadVaultProtectionEscrow: no RecoveryPhrase protection in local DB — skipping")
+                return@runCatching Unit
+            }
+
+            // Hand-built JSON — consistent with the marker file style (no external
+            // serialization dependency in this class). java.util.Base64 (NOT
+            // android.util.Base64) — simpler API, available on minSdk 26+ (this
+            // project's minSdk is 35).
+            val wrappedVmkB64 = Base64.getEncoder().encodeToString(protection.wrappedVMK)
+            val saltJson = protection.params.salt?.let { "\"$it\"" } ?: "null"
+            val kdfJson = protection.params.kdf?.value?.let { "\"$it\"" } ?: "null"
+            val kdfIterJson = protection.params.kdfIterations?.toString() ?: "null"
+
+            val json = """{"id":"${protection.id}","type":"${protection.type.name}",""" +
+                """"wrappedVMK":"$wrappedVmkB64","params":{"salt":$saltJson,""" +
+                """"iv":"${protection.params.iv}","kdf":$kdfJson,""" +
+                """"kdfIterations":$kdfIterJson,"algorithm":"${protection.params.algorithm.value}",""" +
+                """"keySize":${protection.params.keySize},"version":${protection.params.version}}}"""
+            diag(
+                "uploadVaultProtectionEscrow: serialized protection id=${protection.id} " +
+                    "type=${protection.type} vmkB64Len=${wrappedVmkB64.length}"
+            )
+
+            val tempFile = File(app.cacheDir, "vault-protection-${System.currentTimeMillis()}.json")
+            try {
+                tempFile.writeText(json)
+                diag(
+                    "uploadVaultProtectionEscrow: wrote temp file ${tempFile.absolutePath} " +
+                        "(${tempFile.length()} bytes)"
+                )
+
+                val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
+                diag("uploadVaultProtectionEscrow: uploading → $remotePath")
+                val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
+                if (uploadResult.isFailure) {
+                    throw uploadResult.exceptionOrNull()
+                        ?: IOException("Escrow upload failed")
+                }
+
+                // Independent verification — same pattern as registerRepo() marker.
+                val verifyResult = rcloneController.listRemote(
+                    "$remote:", "$REPO_DIR/$VAULT_PROTECTION_DIR"
+                )
+                if (verifyResult.isFailure) {
+                    throw IOException(
+                        "Escrow upload succeeded but verification listing failed: " +
+                            verifyResult.exceptionOrNull()?.message
+                    )
+                }
+
+                val files = verifyResult.getOrThrow()
+                val found = files.any { it.name == VAULT_PROTECTION_FILENAME && it.size > 0 }
+                if (!found) {
+                    throw IOException(
+                        "Escrow upload succeeded but file not found in independent listing. " +
+                            "Files: $files"
+                    )
+                }
+                diag("uploadVaultProtectionEscrow: verification OK — file present on remote")
+                Unit
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * Download the recovery-phrase [VaultProtection] escrow artifact from the
+     * rclone remote (the counterpart of [uploadVaultProtectionEscrow]) and
+     * persist it into the local VaultProtection DB so the existing phrase-entry
+     * UI ([dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreScreen]) can
+     * unlock the VMK on this fresh install.
+     *
+     * Behavior:
+     * - Remote artifact present → deserialize, persist via [VaultProtectionRepository]
+     *   (`createProtection` or `updateProtection` if a RecoveryPhrase row already
+     *   exists — no duplicates), return `Result.success(protection)`.
+     * - Remote artifact absent (older repo created before this feature existed,
+     *   or rclone returns "not found") → return `Result.success(null)`. The
+     *   caller treats this as "no escrow available" — login still succeeds but
+     *   the user is routed to the degraded-mode UI.
+     * - Other download errors (network, permissions, malformed JSON) → return
+     *   `Result.failure(exception)`. The caller treats this as a non-fatal
+     *   download error — login still succeeds (degraded mode), the user can
+     *   still reach the gallery via the normal vault PIN/password path.
+     *
+     * @since key-escrow — download wrapped VMK during repo login
+     */
+    private suspend fun downloadVaultProtectionEscrow(): Result<VaultProtection?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val remote = config.syncChosenRemote
+                    ?: throw IllegalStateException("No remote chosen")
+
+                diag("downloadVaultProtectionEscrow: BEGIN remote=$remote")
+
+                val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
+                val tempFile = File(
+                    app.cacheDir, "vault-protection-dl-${System.currentTimeMillis()}.json"
+                )
+                try {
+                    diag("downloadVaultProtectionEscrow: downloading $remotePath → ${tempFile.absolutePath}")
+                    val dlResult = rcloneController.downloadFile(remotePath, tempFile.absolutePath)
+                    if (dlResult.isFailure) {
+                        val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
+                        // Graceful missing-artifact case: file doesn't exist on remote
+                        // (older repo created before this feature existed). Don't fail —
+                        // return null so the caller can show "not available" UI instead
+                        // of an error. Match the same "not found" pattern used in
+                        // detectRepo() but tightened: only the file-not-found phrasings
+                        // rclone actually emits for a missing remote file.
+                        val isNotFound = err.contains("not found", ignoreCase = true) ||
+                            err.contains("doesn't exist", ignoreCase = true) ||
+                            err.contains("does not exist", ignoreCase = true) ||
+                            err.contains("no such file", ignoreCase = true) ||
+                            err.contains("object not found", ignoreCase = true)
+                        if (isNotFound) {
+                            diag(
+                                "downloadVaultProtectionEscrow: artifact not on remote " +
+                                    "(old repo) — returning null"
+                            )
+                            return@runCatching null
+                        }
+                        throw dlResult.exceptionOrNull()
+                            ?: IOException("Escrow download failed: $err")
+                    }
+
+                    if (!tempFile.exists() || tempFile.length() == 0L) {
+                        // Defensive: rclone sometimes returns success with an empty file
+                        // when the remote path is missing. Treat as "not on remote".
+                        diag(
+                            "downloadVaultProtectionEscrow: downloaded file missing or empty " +
+                                "— treating as not-on-remote"
+                        )
+                        return@runCatching null
+                    }
+
+                    val json = tempFile.readText()
+                    diag("downloadVaultProtectionEscrow: downloaded ${json.length} chars")
+
+                    val protection = parseVaultProtection(json)
+                        ?: throw IOException("Malformed vault-protection JSON")
+                    diag(
+                        "downloadVaultProtectionEscrow: parsed id=${protection.id} " +
+                            "type=${protection.type}"
+                    )
+
+                    // Persist into local DB. If a RecoveryPhrase protection already
+                    // exists (e.g. this device already has one set up), update it —
+                    // don't create duplicates. Otherwise insert.
+                    val existing = vaultProtectionRepository
+                        .getProtection(VaultProtectionType.RecoveryPhrase)
+                    if (existing != null) {
+                        diag(
+                            "downloadVaultProtectionEscrow: existing protection in DB " +
+                                "(id=${existing.id}) — updating"
+                        )
+                        vaultProtectionRepository.updateProtection(protection)
+                    } else {
+                        diag("downloadVaultProtectionEscrow: no existing protection — creating")
+                        vaultProtectionRepository.createProtection(protection)
+                    }
+                    diag("downloadVaultProtectionEscrow: persisted to local DB")
+                    protection
+                } finally {
+                    tempFile.delete()
+                }
+            }
+        }
+
+    /**
+     * Minimal hand-rolled JSON parser for the vault-protection escrow artifact.
+     * Mirrors the style of [parseMarker] (regex-based, no external dependency).
+     *
+     * @since key-escrow — paired with [uploadVaultProtectionEscrow]
+     */
+    private fun parseVaultProtection(json: String): VaultProtection? {
+        return try {
+            val id = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            val typeStr = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            val wrappedVmkB64 = Regex("\"wrappedVMK\"\\s*:\\s*\"([^\"]+)\"")
+                .find(json)?.groupValues?.get(1)
+            // salt is a nullable string — match the quoted form only (null → null).
+            val salt = Regex("\"salt\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            val iv = Regex("\"iv\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            val kdfStr = Regex("\"kdf\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            val kdfIterations = Regex("\"kdfIterations\"\\s*:\\s*(\\d+)")
+                .find(json)?.groupValues?.get(1)?.toIntOrNull()
+            val algorithmStr = Regex("\"algorithm\"\\s*:\\s*\"([^\"]+)\"")
+                .find(json)?.groupValues?.get(1)
+            val keySize = Regex("\"keySize\"\\s*:\\s*(\\d+)")
+                .find(json)?.groupValues?.get(1)?.toIntOrNull()
+            val version = Regex("\"version\"\\s*:\\s*(\\d+)")
+                .find(json)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+            if (id == null || typeStr == null || wrappedVmkB64 == null ||
+                iv == null || algorithmStr == null || keySize == null
+            ) {
+                diag("parseVaultProtection: missing required field(s)")
+                return null
+            }
+
+            val type = VaultProtectionType.entries.find { it.name == typeStr }
+            if (type == null) {
+                diag("parseVaultProtection: unknown type=$typeStr")
+                return null
+            }
+            val algorithm = Algorithm.entries.find { it.value == algorithmStr }
+            if (algorithm == null) {
+                diag("parseVaultProtection: unknown algorithm=$algorithmStr")
+                return null
+            }
+            val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
+            val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
+
+            VaultProtection(
+                id = id,
+                type = type,
+                wrappedVMK = wrappedVMK,
+                params = VaultProtectionParams(
+                    salt = salt,
+                    iv = iv,
+                    kdf = kdf,
+                    kdfIterations = kdfIterations,
+                    algorithm = algorithm,
+                    keySize = keySize,
+                    version = version,
+                ),
+            )
+        } catch (e: Exception) {
+            diag("parseVaultProtection: FAILED ${e.javaClass.name}: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
      * Whether this device has a confirmed repo session. This is the gate for gallery access.
      *
      * Note: this reads a local flag. On cold start, [revalidateRepo] should be called to
@@ -457,5 +820,12 @@ class RepoManager @Inject constructor(
         // @since PR4 sync — thumbnail filename suffix, mirrors
         // internalThumbnailFileName(uuid) = "${uuid}.$PHOTOK_FILE_EXTENSION.tn"
         private const val THUMBNAIL_SUFFIX = ".$PHOTOK_FILE_EXTENSION.tn"
+
+        // @since key-escrow — location of the recovery-phrase wrapped-VMK artifact
+        // on the rclone remote. Written by uploadVaultProtectionEscrow() during
+        // registerRepo(); read by downloadVaultProtectionEscrow() during loginRepo().
+        const val VAULT_PROTECTION_DIR = "vault-protection"
+        const val VAULT_PROTECTION_FILENAME = "recovery-phrase.json"
+        const val VAULT_PROTECTION_REMOTE_PATH = "$REPO_DIR/$VAULT_PROTECTION_DIR/$VAULT_PROTECTION_FILENAME"
     }
 }

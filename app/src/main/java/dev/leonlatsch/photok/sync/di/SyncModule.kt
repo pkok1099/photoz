@@ -22,6 +22,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dev.leonlatsch.photok.encryption.domain.VaultProtectionRepository
 import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.rclone.RepoManager
@@ -57,7 +58,19 @@ object SyncModule {
         // @since PR4 sync — RepoManager.restoreThumbnailsAfterLogin() inserts Photo
         // DB rows for each thumbnail pulled back from the remote after login.
         photoDao: PhotoDao,
-    ) = RepoManager(app, config, rcloneController, configManager, photoDao)
+        // @since key-escrow — RepoManager needs to read/write the recovery-phrase
+        // VaultProtection row to escrow it to the remote during register and
+        // restore it from the remote during login. Already bound by Hilt
+        // (VaultProtectionRepositoryImpl has @Inject constructor).
+        vaultProtectionRepository: VaultProtectionRepository,
+    ) = RepoManager(
+        app,
+        config,
+        rcloneController,
+        configManager,
+        photoDao,
+        vaultProtectionRepository,
+    )
 
     @Provides
     @Singleton

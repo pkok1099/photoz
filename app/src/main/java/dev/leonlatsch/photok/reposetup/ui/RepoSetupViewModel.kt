@@ -62,6 +62,33 @@ sealed interface RepoSetupState {
      */
     object RestoringBackup : RepoSetupState
 
+    /**
+     * Escrow downloaded successfully — user needs to enter their recovery phrase
+     * to unlock the VMK. The recovery-phrase [VaultProtection] has been persisted
+     * to the local DB by [RepoManager.downloadVaultProtectionEscrow], so the
+     * embedded `RecoveryPhraseRestoreScreen` (which calls
+     * `vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))`) will succeed.
+     *
+     * Thumbnails were already restored from the remote in the preceding
+     * [RestoringBackup] state — they're on disk (still encrypted with the VMK).
+     * After the user enters the correct phrase, the VMK is in memory via
+     * SessionRepository, and the existing decryption path will use it when the
+     * gallery renders those thumbnails.
+     *
+     * @since key-escrow — login-branch phrase entry
+     */
+    object NeedsPhraseEntry : RepoSetupState
+
+    /**
+     * No escrow artifact available on the remote (old repo created before this
+     * feature, OR escrow download failed non-fatally). User can still reach the
+     * gallery via the normal vault PIN/password path (SetupFragment), but
+     * recovery-phrase restore is not available on this fresh install.
+     *
+     * @since key-escrow — login-branch phrase entry
+     */
+    object NoEscrowAvailable : RepoSetupState
+
     /** Repo session confirmed — gallery can be unlocked. */
     object Completed : RepoSetupState
 
@@ -164,25 +191,48 @@ class RepoSetupViewModel @Inject constructor(
                 // gate. This state confirms the remote repo session only.
                 _state.value = RepoSetupState.Connecting
                 val loginResult = repoManager.loginRepo(repoState.marker)
-                if (loginResult.isSuccess) {
-                    // @since PR4 sync — restore thumbnails from backup before completing.
-                    // Show a brief "Restoring backup…" state so the user knows why
-                    // login is taking longer than a no-op connect. Restore failure
-                    // MUST NOT block login — the user can still get into the gallery;
-                    // photos will be re-uploaded on the next sync cycle.
-                    _state.value = RepoSetupState.RestoringBackup
-                    val restored = try {
-                        repoManager.restoreThumbnailsAfterLogin()
-                    } catch (e: Exception) {
-                        Timber.w(e, "restoreThumbnailsAfterLogin failed; continuing to Completed")
-                        0
+                when (loginResult) {
+                    is RepoManager.LoginResult.Success -> {
+                        // @since PR4 sync — restore thumbnails from backup before
+                        // completing. Show a brief "Restoring backup…" state so the
+                        // user knows why login is taking longer than a no-op connect.
+                        // Restore failure MUST NOT block login — the user can still
+                        // get into the gallery; photos will be re-uploaded on the next
+                        // sync cycle.
+                        _state.value = RepoSetupState.RestoringBackup
+                        val restored = try {
+                            repoManager.restoreThumbnailsAfterLogin()
+                        } catch (e: Exception) {
+                            Timber.w(e, "restoreThumbnailsAfterLogin failed; continuing")
+                            0
+                        }
+                        Timber.i(
+                            "Repo login complete; restored $restored thumbnails from backup; " +
+                                "escrowAvailable=${loginResult.escrowAvailable}"
+                        )
+
+                        if (loginResult.escrowAvailable) {
+                            // @since key-escrow — escrow downloaded successfully, user
+                            // needs to enter their recovery phrase to unlock the VMK.
+                            // The thumbnails restored above are already on disk
+                            // (encrypted with the VMK); once the phrase unlocks the VMK
+                            // via the embedded RecoveryPhraseRestoreScreen, the gallery
+                            // decryption path will use it.
+                            _state.value = RepoSetupState.NeedsPhraseEntry
+                        } else {
+                            // Old repo (pre-escrow feature) OR escrow download failed
+                            // non-fatally. Show degraded-mode message — user can still
+                            // reach the gallery via their normal vault PIN/password
+                            // (SetupFragment), but recovery-phrase restore is not
+                            // available on this fresh install.
+                            _state.value = RepoSetupState.NoEscrowAvailable
+                        }
                     }
-                    Timber.i("Repo login complete; restored $restored thumbnails from backup")
-                    _state.value = RepoSetupState.Completed
-                } else {
-                    _state.value = RepoSetupState.Error(
-                        "Connection failed: ${loginResult.exceptionOrNull()?.message}"
-                    )
+                    is RepoManager.LoginResult.Failure -> {
+                        _state.value = RepoSetupState.Error(
+                            "Connection failed: ${loginResult.message}"
+                        )
+                    }
                 }
             }
             is RepoManager.RepoState.ERROR -> {
@@ -227,5 +277,16 @@ class RepoSetupViewModel @Inject constructor(
                 checkRemoteAndDetectRepo()
             }
         }
+    }
+
+    /**
+     * User chose to continue without recovery-phrase restore (from the
+     * [RepoSetupState.NoEscrowAvailable] state). Transitions to [RepoSetupState.Completed],
+     * which chains forward to SetupFragment (normal vault PIN/password unlock path).
+     *
+     * @since key-escrow — login-branch phrase entry
+     */
+    fun continueWithoutEscrow() {
+        _state.value = RepoSetupState.Completed
     }
 }

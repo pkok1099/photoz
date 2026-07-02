@@ -436,4 +436,9 @@
 
     <!-- Repo setup: restore-after-login — @since PR4 sync — restore thumbnails on login -->
     <string name="repo_setup_restoring_backup">Restoring thumbnails from backup…</string>
+
+    <!-- Repo setup: login-branch phrase entry — @since key-escrow -->
+    <string name="repo_setup_no_escrow_title">Recovery phrase restore unavailable</string>
+    <string name="repo_setup_no_escrow_body">Recovery phrase restore is not available for this repo (it was created before this feature existed). You can still use the gallery, but to enable recovery-phrase restore, you would need to re-register the repo.</string>
+    <string name="repo_setup_no_escrow_continue">Continue to gallery</string>
 </resources>

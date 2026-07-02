@@ -53,11 +53,12 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
+import dagger.hilt.android.AndroidEntryPoint
 import dev.leonlatsch.photok.R
+import dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreScreen
 import dev.leonlatsch.photok.gallery.ui.navigation.NavigateToGallery
 import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.ui.theme.AppTheme
-import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
@@ -93,7 +94,18 @@ class RepoSetupFragment : Fragment() {
                             findNavController().navigate(
                                 R.id.action_repoSetupFragment_to_setupFragment
                             )
-                        }
+                        },
+                        // @since key-escrow — login-branch phrase entry.
+                        // When the user successfully unlocks via the embedded
+                        // RecoveryPhraseRestoreScreen, the VMK is in memory via
+                        // SessionRepository — skip SetupFragment (no PIN/password
+                        // needed) and go straight to the gallery.
+                        onUnlocked = {
+                            navigateToGallery(findNavController())
+                        },
+                        onBack = {
+                            findNavController().navigateUp()
+                        },
                     )
                 }
             }
@@ -105,6 +117,8 @@ class RepoSetupFragment : Fragment() {
 private fun RepoSetupScreen(
     viewModel: RepoSetupViewModel,
     onCompleted: () -> Unit,
+    onUnlocked: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -118,24 +132,40 @@ private fun RepoSetupScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            when (val s = state) {
-                RepoSetupState.NeedsConfig -> NeedsConfigContent(viewModel)
-                is RepoSetupState.NeedsRemoteChoice -> NeedsRemoteChoiceContent(s.remotes, viewModel)
-                RepoSetupState.Checking -> CheckingContent()
-                RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
-                RepoSetupState.Connecting -> ConnectingContent()
-                RepoSetupState.RestoringBackup -> RestoringBackupContent()
-                RepoSetupState.Completed -> {
-                    // Will be navigated away by LaunchedEffect
+        // @since key-escrow — login-branch phrase entry.
+        // NeedsPhraseEntry embeds RecoveryPhraseRestoreScreen, which has its own
+        // Scaffold (topBar + bottomBar). It needs the full screen — NOT wrapped
+        // in the padded/centered Column used by the other states.
+        if (state is RepoSetupState.NeedsPhraseEntry) {
+            NeedsPhraseEntryContent(
+                onUnlocked = onUnlocked,
+                onBack = onBack,
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                when (val s = state) {
+                    RepoSetupState.NeedsConfig -> NeedsConfigContent(viewModel)
+                    is RepoSetupState.NeedsRemoteChoice -> NeedsRemoteChoiceContent(s.remotes, viewModel)
+                    RepoSetupState.Checking -> CheckingContent()
+                    RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
+                    RepoSetupState.Connecting -> ConnectingContent()
+                    RepoSetupState.RestoringBackup -> RestoringBackupContent()
+                    RepoSetupState.NoEscrowAvailable -> NoEscrowAvailableContent(viewModel)
+                    RepoSetupState.Completed -> {
+                        // Will be navigated away by LaunchedEffect
+                    }
+                    is RepoSetupState.Error -> ErrorContent(s.message, viewModel)
+                    RepoSetupState.NeedsPhraseEntry -> {
+                        // Handled by the outer if — unreachable here, but the
+                        // when must remain exhaustive over the sealed hierarchy.
+                    }
                 }
-                is RepoSetupState.Error -> ErrorContent(s.message, viewModel)
             }
         }
     }
@@ -258,6 +288,71 @@ private fun RestoringBackupContent() {
         modifier = Modifier.padding(top = 16.dp),
         textAlign = TextAlign.Center,
     )
+}
+
+/**
+ * Embeds the existing [RecoveryPhraseRestoreScreen] for the login-branch phrase
+ * entry flow. The `RecoveryPhraseRestoreViewModel` (Hilt-injected internally)
+ * calls `vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))`, which will
+ * succeed because [RepoManager.downloadVaultProtectionEscrow] persisted the
+ * recovery-phrase [VaultProtection] to the local DB during `loginRepo()`.
+ *
+ * After successful unlock:
+ * - The VMK is in memory via `SessionRepository`.
+ * - The thumbnails downloaded by [RepoManager.restoreThumbnailsAfterLogin] are
+ *   already on disk (encrypted with that VMK) — when the gallery renders them,
+ *   the existing decryption path will use the now-unlocked VMK. No additional
+ *   decrypt-verify step is needed: if the phrase was wrong,
+ *   `vaultService.unlock()` would have thrown (the wrapped VMK decryption would
+ *   fail with a padding error), so reaching `onUnlocked` is sufficient proof
+ *   the phrase was correct.
+ *
+ * @since key-escrow — login-branch phrase entry
+ */
+@Composable
+private fun NeedsPhraseEntryContent(
+    onUnlocked: () -> Unit,
+    onBack: () -> Unit,
+) {
+    // Reused AS-IS — do NOT rebuild the phrase input UI. The screen has its
+    // own Scaffold (TopAppBar + bottom unlock button) and handles all input
+    // methods (type-by-hand, file, QR, clipboard).
+    RecoveryPhraseRestoreScreen(
+        onUnlocked = onUnlocked,
+        onBack = onBack,
+    )
+}
+
+/**
+ * Degraded-mode screen shown when no escrow artifact is available on the remote
+ * (old repo created before this feature, OR escrow download failed non-fatally).
+ *
+ * The user can still reach the gallery via their normal vault PIN/password
+ * (SetupFragment), but recovery-phrase restore is not available on this fresh
+ * install. Tapping "Continue to gallery" transitions to [RepoSetupState.Completed]
+ * which chains forward to SetupFragment.
+ *
+ * @since key-escrow — login-branch phrase entry
+ */
+@Composable
+private fun NoEscrowAvailableContent(viewModel: RepoSetupViewModel) {
+    Text(
+        text = stringResource(R.string.repo_setup_no_escrow_title),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+    )
+    Text(
+        text = stringResource(R.string.repo_setup_no_escrow_body),
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+    Button(
+        onClick = { viewModel.continueWithoutEscrow() },
+        modifier = Modifier.padding(top = 24.dp),
+    ) {
+        Text(stringResource(R.string.repo_setup_no_escrow_continue))
+    }
 }
 
 @Composable
