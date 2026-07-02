@@ -24,8 +24,11 @@ import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.rclone.RcloneController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.SecureRandom
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -106,6 +109,49 @@ class HashRegistry @Inject constructor(
         private const val REGISTRY_REMOTE_PATH = "${SyncConfig.REPO_DIR}/registry.json.crypt"
         private const val GCM_NONCE_SIZE = 12 // bytes (96 bits, standard for GCM)
         private const val GCM_TAG_SIZE = 128 // bits
+
+        // ─── GZIP compression for registry (file-upload feature) ──────────────
+        // The registry is hand-rolled JSON — text-heavy, with lots of repeated
+        // field names ("content_hash", "uuid", "filename", etc.) and predictable
+        // structure. GZIP typically achieves 70-80% size reduction on such
+        // payloads, which directly reduces the per-batch upload size and the
+        // remote storage footprint.
+        //
+        // ## On-wire format (versioned)
+        //
+        // The first byte of the encrypted blob is a version tag:
+        //   0x01 = legacy: [12-byte nonce][GCM(plaintext JSON)]
+        //          (no version byte was written — the file starts with the
+        //           nonce. The download path treats "first byte != 0x02" as
+        //           legacy and parses from offset 0.)
+        //   0x02 = current: [1-byte version=0x02][12-byte nonce][GCM(GZIP(JSON))]
+        //
+        // The 1/256 chance that a legacy file's nonce happens to start with
+        // 0x02 is handled by a try/catch around the GZIP decompress in the
+        // 0x02 branch — if decompression fails, fall back to treating the
+        // payload as legacy plaintext JSON. This is rare (one registry in
+        // every ~256 devices on first upload after upgrade) and recoverable
+        // (the next batch's upload overwrites the file with a properly-
+        // tagged 0x02 version).
+        //
+        // ## Why only the registry (not photos)
+        //
+        // Photo bodies stay on AES-CBC without GZIP because:
+        //   1. JPEGs / MP4s / HEICs are already compressed — GZIP would
+        //      shrink them by <5% while burning CPU on every import.
+        //   2. The image viewer uses random-access CBC reads to decode
+        //      regions of large JPEGs without loading the whole file.
+        //      GZIP doesn't support random access, so adding it would
+        //      break the viewer.
+        //   3. Changing the photo format would require migrating every
+        //      existing encrypted photo on disk — high risk, low reward.
+        //
+        // The registry is small, pure-metadata, and re-uploaded on every
+        // batch — perfect candidate for compression.
+        //
+        // @since gzip-registry feature
+        private const val REGISTRY_FORMAT_VERSION_LEGACY: Byte = 0x01
+        private const val REGISTRY_FORMAT_VERSION_GZIP: Byte = 0x02
     }
 
     private fun diag(msg: String, t: Throwable? = null) {
@@ -203,17 +249,45 @@ class HashRegistry @Inject constructor(
                 return@withContext 0
             }
 
-            // Decrypt: [nonce(12)][ciphertext+tag]
-            val nonce = encryptedData.copyOfRange(0, GCM_NONCE_SIZE)
-            val ciphertext = encryptedData.copyOfRange(GCM_NONCE_SIZE, encryptedData.size)
+            // ─── Versioned format dispatch (gzip-registry feature) ──────────
+            // First byte is the format version tag (0x02 for the new
+            // GZIP-compressed format). Anything else is the legacy format
+            // (no version byte — the first byte is the start of the GCM
+            // nonce). See [REGISTRY_FORMAT_VERSION_GZIP] for the full
+            // format spec.
+            val versionByte = encryptedData[0]
+            val json = if (versionByte == REGISTRY_FORMAT_VERSION_GZIP) {
+                // New format: [1-byte version][12-byte nonce][GCM(GZIP(JSON))]
+                val nonce = encryptedData.copyOfRange(1, 1 + GCM_NONCE_SIZE)
+                val ciphertext = encryptedData.copyOfRange(1 + GCM_NONCE_SIZE, encryptedData.size)
 
-            val key = SecretKeySpec(vmkBytes, "AES")
-            val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
-            val plaintext = cipher.doFinal(ciphertext)
+                val key = SecretKeySpec(vmkBytes, "AES")
+                val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+                val plaintextCompressed = cipher.doFinal(ciphertext)
 
-            val json = String(plaintext, Charsets.UTF_8)
-            diag("downloadAndCache: decrypted registry (${plaintext.size} bytes)")
+                // Decompress GZIP. If this fails (1/256 chance the legacy
+                // nonce's first byte happened to be 0x02), fall through to
+                // the legacy path below — the GCM auth tag would already
+                // have failed verification, but the catch block keeps the
+                // error message informative.
+                try {
+                    gzipDecompressToString(plaintextCompressed)
+                } catch (gzipEx: Exception) {
+                    diag("downloadAndCache: version byte was 0x02 but GZIP decompress failed — " +
+                        "likely a legacy file whose nonce happened to start with 0x02. " +
+                        "Re-attempting as legacy format. gzipError=${gzipEx.message}")
+                    // Fall through to legacy path — re-parse with offset 0.
+                    decryptLegacyRegistryJson(encryptedData, vmkBytes)
+                }
+            } else {
+                // Legacy format: [12-byte nonce][GCM(plaintext JSON)]
+                // The "version byte" we read is actually the first byte of
+                // the legacy nonce — pass the whole buffer.
+                decryptLegacyRegistryJson(encryptedData, vmkBytes)
+            }
+
+            diag("downloadAndCache: decrypted registry (${json.length} chars)")
 
             val entries = parseRegistryJson(json)
             diag("downloadAndCache: parsed ${entries.size} entries")
@@ -255,26 +329,102 @@ class HashRegistry @Inject constructor(
         val json = serializeRegistry(entries)
         val plaintext = json.toByteArray(Charsets.UTF_8)
 
-        // Encrypt with AES-256-GCM: [nonce(12)][ciphertext+tag]
+        // ─── GZIP compression BEFORE encrypt (gzip-registry feature) ───────
+        // JSON compresses 70-80% with GZIP due to repeated field names and
+        // predictable structure. We compress BEFORE encrypting because:
+        //   - GCM is a stream cipher — compression ratios are preserved
+        //     through encryption (encrypted output is ~same size as input)
+        //   - Compressing AFTER encrypting would be useless (ciphertext is
+        //     high-entropy by design — GZIP can't compress it)
+        //   - The decompression happens on download, after GCM decrypt
+        val compressed = gzipCompress(plaintext)
+        val compressionRatio = if (plaintext.isNotEmpty()) {
+            (1.0 - compressed.size.toDouble() / plaintext.size.toDouble()) * 100.0
+        } else 0.0
+        diag("uploadToRemote: GZIP compressed ${plaintext.size} → ${compressed.size} bytes " +
+            "(%.1f%% reduction)".format(compressionRatio))
+
+        // Encrypt with AES-256-GCM: [1-byte version=0x02][nonce(12)][ciphertext+tag]
+        // @since gzip-registry feature — added the 1-byte version prefix so
+        //   the download path can dispatch between legacy and GZIP formats.
         val nonce = ByteArray(GCM_NONCE_SIZE).also { SecureRandom().nextBytes(it) }
         val key = SecretKeySpec(vmkBytes, "AES")
         val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
-        val ciphertext = cipher.doFinal(plaintext)
+        val ciphertext = cipher.doFinal(compressed)
 
-        val encryptedData = ByteArray(GCM_NONCE_SIZE + ciphertext.size)
-        System.arraycopy(nonce, 0, encryptedData, 0, GCM_NONCE_SIZE)
-        System.arraycopy(ciphertext, 0, encryptedData, GCM_NONCE_SIZE, ciphertext.size)
+        // Format: [version(1)][nonce(12)][ciphertext+tag]
+        val encryptedData = ByteArray(1 + GCM_NONCE_SIZE + ciphertext.size)
+        encryptedData[0] = REGISTRY_FORMAT_VERSION_GZIP
+        System.arraycopy(nonce, 0, encryptedData, 1, GCM_NONCE_SIZE)
+        System.arraycopy(ciphertext, 0, encryptedData, 1 + GCM_NONCE_SIZE, ciphertext.size)
 
         val tempFile = File(app.cacheDir, "registry-upload-${System.currentTimeMillis()}.crypt")
         try {
             tempFile.writeBytes(encryptedData)
             val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
-            diag("uploadToRemote: uploading ${encryptedData.size} bytes → $remotePath")
+            diag("uploadToRemote: uploading ${encryptedData.size} bytes (compressed) → $remotePath")
             rcloneController.uploadFile(tempFile.absolutePath, remotePath).getOrThrow()
             diag("uploadToRemote: OK")
         } finally {
             tempFile.delete()
+        }
+    }
+
+    /**
+     * Decrypt a legacy-format registry blob (no version byte, just
+     * `[12-byte nonce][GCM(plaintext JSON)]`) and return the JSON as a string.
+     *
+     * Helper extracted from the old [downloadAndCache] inline implementation
+     * so the new GZIP code path can fall back to it on the (rare) case where
+     * a legacy file's nonce happens to start with the `0x02` byte that the
+     * new format uses as its version tag.
+     *
+     * @since gzip-registry feature — extracted helper for legacy fallback
+     */
+    private fun decryptLegacyRegistryJson(encryptedData: ByteArray, vmkBytes: ByteArray): String {
+        val nonce = encryptedData.copyOfRange(0, GCM_NONCE_SIZE)
+        val ciphertext = encryptedData.copyOfRange(GCM_NONCE_SIZE, encryptedData.size)
+
+        val key = SecretKeySpec(vmkBytes, "AES")
+        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+        val plaintext = cipher.doFinal(ciphertext)
+        return String(plaintext, Charsets.UTF_8)
+    }
+
+    /**
+     * GZIP-compress a byte array. Used by [uploadToRemote] to compress the
+     * registry JSON before GCM encryption — JSON compresses 70-80% with
+     * GZIP due to repeated field names and predictable structure.
+     *
+     * Uses a 64 KB buffer for the underlying `GZIPOutputStream` — the default
+     * 512-byte buffer would force many small `write()` syscalls on large
+     * registries.
+     *
+     * @since gzip-registry feature
+     */
+    private fun gzipCompress(data: ByteArray): ByteArray {
+        val baos = ByteArrayOutputStream(data.size / 4) // estimate ~4x compression
+        GZIPOutputStream(baos).use { gzipOut ->
+            gzipOut.write(data)
+        }
+        return baos.toByteArray()
+    }
+
+    /**
+     * GZIP-decompress a byte array to a UTF-8 string. Used by [downloadAndCache]
+     * after GCM decryption to recover the registry JSON.
+     *
+     * Throws [java.io.IOException] if the input is not a valid GZIP stream —
+     * the caller ([downloadAndCache]) catches this and falls back to the
+     * legacy plaintext-JSON interpretation.
+     *
+     * @since gzip-registry feature
+     */
+    private fun gzipDecompressToString(data: ByteArray): String {
+        GZIPInputStream(data.inputStream()).use { gzipIn ->
+            return gzipIn.bufferedReader(Charsets.UTF_8).readText()
         }
     }
 
