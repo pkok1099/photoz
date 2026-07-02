@@ -14,13 +14,13 @@
  *   limitations under the License.
  */
 
-package dev.leonlatsch.photok.encryption.integration
+package onlasdan.gallery.encryption.integration
 
-import dev.leonlatsch.photok.encryption.domain.LegacyEncryption
-import dev.leonlatsch.photok.encryption.domain.crypto.CbcCryptoEngine
-import dev.leonlatsch.photok.encryption.domain.crypto.KeyGen
-import dev.leonlatsch.photok.encryption.domain.crypto.LegacyGcmCryptoEngine
-import dev.leonlatsch.photok.encryption.domain.models.VaultSession
+import onlasdan.gallery.encryption.domain.LegacyEncryption
+import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.KeyGen
+import onlasdan.gallery.encryption.domain.crypto.LegacyGcmCryptoEngine
+import onlasdan.gallery.encryption.domain.models.VaultSession
 import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,7 +33,7 @@ import java.io.ByteArrayOutputStream
  *
  * A file encrypted with the legacy AES/GCM engine (no header) is decrypted and then
  * re-encrypted using the modern AES/CBC engine (V2 header), matching what
- * [dev.leonlatsch.photok.encryption.migration.LegacyEncryptionMigrator] performs.
+ * [onlasdan.gallery.encryption.migration.LegacyEncryptionMigrator] performs.
  */
 @RunWith(RobolectricTestRunner::class)
 class CryptoMigrationV1ToV3Test {

@@ -21,7 +21,7 @@
     app:startDestination="@id/initialFragment">
     <fragment
         android:id="@+id/settingsFragment"
-        android:name="dev.leonlatsch.photok.settings.ui.SettingsFragment"
+        android:name="onlasdan.gallery.settings.ui.SettingsFragment"
         android:label="SettingsFragment">
         <action
             android:id="@+id/action_settingsFragment_to_aboutFragment"
@@ -40,7 +40,7 @@
     </fragment>
     <fragment
         android:id="@+id/aboutFragment"
-        android:name="dev.leonlatsch.photok.settings.ui.AboutFragment"
+        android:name="onlasdan.gallery.settings.ui.AboutFragment"
         android:label="AboutFragment">
         <action
             android:id="@+id/action_aboutFragment_to_ossLicensesFragment"
@@ -52,7 +52,7 @@
     </fragment>
     <fragment
         android:id="@+id/setupFragment"
-        android:name="dev.leonlatsch.photok.setup.ui.SetupFragment"
+        android:name="onlasdan.gallery.setup.ui.SetupFragment"
         android:label="fragment_setup"
         tools:layout="@layout/fragment_setup">
         <action
@@ -63,12 +63,12 @@
     </fragment>
     <fragment
         android:id="@+id/recoveryPhraseSetupFragment"
-        android:name="dev.leonlatsch.photok.setup.ui.RecoveryPhraseSetupFragment"
+        android:name="onlasdan.gallery.setup.ui.RecoveryPhraseSetupFragment"
         android:label="RecoveryPhraseSetupFragment">
     </fragment>
     <fragment
         android:id="@+id/unlockFragment"
-        android:name="dev.leonlatsch.photok.unlock.ui.UnlockFragment"
+        android:name="onlasdan.gallery.unlock.ui.UnlockFragment"
         android:label="fragment_unlock"
         tools:layout="@layout/fragment_unlock">
         <action
@@ -90,7 +90,7 @@
     </fragment>
     <fragment
         android:id="@+id/onBoardingFragment"
-        android:name="dev.leonlatsch.photok.onboarding.ui.OnBoardingFragment"
+        android:name="onlasdan.gallery.onboarding.ui.OnBoardingFragment"
         android:label="fragment_intro"
         tools:layout="@layout/fragment_onboarding">
         <!--
@@ -111,7 +111,7 @@
     </fragment>
     <fragment
         android:id="@+id/initialFragment"
-        android:name="dev.leonlatsch.photok.appstart.ui.InitialFragment"
+        android:name="onlasdan.gallery.appstart.ui.InitialFragment"
         android:label="InitialFragment">
         <action
             android:id="@+id/action_initialFragment_to_unlockFragment"
@@ -131,15 +131,15 @@
     </fragment>
     <fragment
         android:id="@+id/creditsFragment"
-        android:name="dev.leonlatsch.photok.settings.ui.credits.CreditsFragment"
+        android:name="onlasdan.gallery.settings.ui.credits.CreditsFragment"
         android:label="CreditsFragment" />
     <fragment
         android:id="@+id/ossLicensesFragment"
-        android:name="dev.leonlatsch.photok.settings.ui.thirdparty.OssLicensesFragment"
+        android:name="onlasdan.gallery.settings.ui.thirdparty.OssLicensesFragment"
         android:label="OssLicensesFragment" />
     <fragment
         android:id="@+id/imageViewerFragment"
-        android:name="dev.leonlatsch.photok.imageviewer.ui.ImageViewerFragment"
+        android:name="onlasdan.gallery.imageviewer.ui.ImageViewerFragment"
         android:label="ImageViewerFragment">
         <argument
             android:name="photo_uuid"
@@ -152,11 +152,11 @@
     </fragment>
     <fragment
         android:id="@+id/galleryFragment"
-        android:name="dev.leonlatsch.photok.gallery.ui.GalleryFragment"
+        android:name="onlasdan.gallery.gallery.ui.GalleryFragment"
         android:label="GalleryFragment" />
     <fragment
         android:id="@+id/repoSetupFragment"
-        android:name="dev.leonlatsch.photok.reposetup.ui.RepoSetupFragment"
+        android:name="onlasdan.gallery.reposetup.ui.RepoSetupFragment"
         android:label="RepoSetupFragment">
         <!--
           @since PR3 — repo setup now navigates forward to SetupFragment (vault password)
@@ -171,12 +171,12 @@
     </fragment>
     <fragment
         android:id="@+id/albumsFragment"
-        android:name="dev.leonlatsch.photok.gallery.albums.ui.AlbumsFragment"
+        android:name="onlasdan.gallery.gallery.albums.ui.AlbumsFragment"
         android:label="GalleryFragment">
     </fragment>
     <fragment
         android:id="@+id/albumDetailFragment"
-        android:name="dev.leonlatsch.photok.gallery.albums.detail.ui.AlbumDetailFragment"
+        android:name="onlasdan.gallery.gallery.albums.detail.ui.AlbumDetailFragment"
         android:label="AlbumDetailFragment">
         <argument
             android:name="album_uuid"
@@ -225,7 +225,7 @@
         />
     <fragment
         android:id="@+id/encryptionMigrationFragment"
-        android:name="dev.leonlatsch.photok.encryption.migration.ui.EncryptionMigrationFragment"
+        android:name="onlasdan.gallery.encryption.migration.ui.EncryptionMigrationFragment"
         android:label="EncryptionMigrationFragment" >
         <action
             android:id="@+id/action_encryptionMigrationFragment_to_galleryFragment"
@@ -235,7 +235,7 @@
     </fragment>
     <fragment
         android:id="@+id/recoveryPhraseRestoreFragment"
-        android:name="dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreFragment"
+        android:name="onlasdan.gallery.encryption.ui.RecoveryPhraseRestoreFragment"
         android:label="RecoveryPhraseRestoreFragment" >
     </fragment>
 </navigation>

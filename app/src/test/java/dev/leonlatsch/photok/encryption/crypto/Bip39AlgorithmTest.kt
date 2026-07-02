@@ -14,10 +14,10 @@
  *   limitations under the License.
  */
 
-package dev.leonlatsch.photok.encryption.crypto
+package onlasdan.gallery.encryption.crypto
 
-import dev.leonlatsch.photok.encryption.domain.crypto.Bip39WordCount
-import dev.leonlatsch.photok.encryption.domain.crypto.entropyToWords
+import onlasdan.gallery.encryption.domain.crypto.Bip39WordCount
+import onlasdan.gallery.encryption.domain.crypto.entropyToWords
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

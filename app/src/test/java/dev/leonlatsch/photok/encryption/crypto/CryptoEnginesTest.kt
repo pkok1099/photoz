@@ -14,15 +14,15 @@
  *   limitations under the License.
  */
 
-package dev.leonlatsch.photok.encryption.crypto
+package onlasdan.gallery.encryption.crypto
 
-import dev.leonlatsch.photok.encryption.domain.LegacyEncryption
-import dev.leonlatsch.photok.encryption.domain.crypto.CbcCryptoEngine
-import dev.leonlatsch.photok.encryption.domain.crypto.KeyGen
-import dev.leonlatsch.photok.encryption.domain.crypto.LegacyGcmCryptoEngine
-import dev.leonlatsch.photok.encryption.domain.models.Algorithm
-import dev.leonlatsch.photok.encryption.domain.models.LegacySession
-import dev.leonlatsch.photok.encryption.domain.models.VaultSession
+import onlasdan.gallery.encryption.domain.LegacyEncryption
+import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.KeyGen
+import onlasdan.gallery.encryption.domain.crypto.LegacyGcmCryptoEngine
+import onlasdan.gallery.encryption.domain.models.Algorithm
+import onlasdan.gallery.encryption.domain.models.LegacySession
+import onlasdan.gallery.encryption.domain.models.VaultSession
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -22,7 +22,7 @@
 
         <variable
             name="context"
-            type="dev.leonlatsch.photok.onboarding.ui.OnBoardingFragment" />
+            type="onlasdan.gallery.onboarding.ui.OnBoardingFragment" />
     </data>
 
     <androidx.constraintlayout.widget.ConstraintLayout

@@ -14,17 +14,17 @@
  *   limitations under the License.
  */
 
-package dev.leonlatsch.photok.encryption.integration
+package onlasdan.gallery.encryption.integration
 
-import dev.leonlatsch.photok.encryption.domain.RecoveryPhraseStore
-import dev.leonlatsch.photok.encryption.domain.crypto.Bip39MnemonicGenerator
-import dev.leonlatsch.photok.encryption.domain.crypto.Bip39WordCount
-import dev.leonlatsch.photok.encryption.domain.crypto.KeyGen
-import dev.leonlatsch.photok.encryption.domain.handlers.RecoveryPhraseVaultProtectionHandler
-import dev.leonlatsch.photok.encryption.domain.models.CreateRequest
-import dev.leonlatsch.photok.encryption.domain.models.RecoveryPhrase
-import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
-import dev.leonlatsch.photok.encryption.domain.models.VaultSession
+import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
+import onlasdan.gallery.encryption.domain.crypto.Bip39MnemonicGenerator
+import onlasdan.gallery.encryption.domain.crypto.Bip39WordCount
+import onlasdan.gallery.encryption.domain.crypto.KeyGen
+import onlasdan.gallery.encryption.domain.handlers.RecoveryPhraseVaultProtectionHandler
+import onlasdan.gallery.encryption.domain.models.CreateRequest
+import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
+import onlasdan.gallery.encryption.domain.models.UnlockRequest
+import onlasdan.gallery.encryption.domain.models.VaultSession
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow

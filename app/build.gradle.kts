@@ -104,7 +104,7 @@ android {
         lintConfig = file("$rootDir/gradle/lint.xml")
         baseline = file("$rootDir/gradle/lint-baseline.xml")
     }
-    namespace = "dev.leonlatsch.photok"
+    namespace = "onlasdan.gallery"
 
     // ─── Native library packaging — fix for "rclone binary not found" on Android 14+ ─────
     //
@@ -204,10 +204,10 @@ dependencies {
     kapt("androidx.hilt:hilt-compiler:1.3.0")
 
     // Hilt-Work — allows @HiltWorker injection into WorkManager Workers.
-    // Required by dev.leonlatsch.photok.sync.work.PhotoSyncWorker.
+    // Required by onlasdan.gallery.sync.work.PhotoSyncWorker.
     implementation("androidx.hilt:hilt-work:1.3.0")
 
-    // WorkManager — required by dev.leonlatsch.photok.sync.work.PhotoSyncWorker for cloud sync.
+    // WorkManager — required by onlasdan.gallery.sync.work.PhotoSyncWorker for cloud sync.
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // kotlinx-serialization — used by RcloneController for JSON (de)serialization of rclone rc API.

@@ -1,0 +1,82 @@
+/*
+ *   Copyright 2020–2026 Leon Latsch
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
+
+package onlasdan.gallery.model.database
+
+import androidx.room.TypeConverter
+import com.google.gson.Gson
+import onlasdan.gallery.encryption.domain.models.VaultProtectionParams
+import onlasdan.gallery.model.database.entity.PhotoType
+import onlasdan.gallery.sort.domain.Sort
+import onlasdan.gallery.sync.domain.SyncState
+
+/**
+ * TypeConverters for Room
+ *
+ * @since 1.0.0
+ * @author Leon Latsch
+ */
+class Converters {
+
+    /**
+     * Convert [PhotoType] to [Int].
+     */
+    @TypeConverter
+    fun fromPhotoType(photoType: PhotoType): Int = photoType.value
+
+    /**
+     * Convert [Int] to [PhotoType].
+     */
+    @TypeConverter
+    fun toPhotoType(photoType: Int): PhotoType = PhotoType.fromValue(photoType)
+
+
+    @TypeConverter
+    fun toSortOrder(value: Int): Sort.Order = Sort.Order.fromValue(value)
+
+    @TypeConverter
+    fun fromSortOrder(order: Sort.Order) = order.value
+
+    @TypeConverter
+    fun toSortField(value: Int): Sort.Field = Sort.Field.fromValue(value)
+
+    @TypeConverter
+    fun fromSortField(field: Sort.Field): Int = field.value
+
+    @TypeConverter
+    fun fromKdfParams(params: VaultProtectionParams): String {
+        val gson = Gson()
+        return gson.toJson(params)
+    }
+
+    @TypeConverter
+    fun toKdfParams(string: String): VaultProtectionParams {
+        val gson = Gson()
+        return gson.fromJson(string, VaultProtectionParams::class.java)
+    }
+
+    /**
+     * Persist [SyncState] as its [SyncState.storageKey] string. Storing as TEXT (rather than
+     * Int ordinal) keeps the column readable in DB browsers and is robust against enum reordering.
+     *
+     * @since PR1 sync feature
+     */
+    @TypeConverter
+    fun fromSyncState(state: SyncState): String = state.storageKey
+
+    @TypeConverter
+    fun toSyncState(value: String): SyncState = SyncState.fromStorageKey(value)
+}

@@ -18,15 +18,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <data>
-        <import type="dev.leonlatsch.photok.databinding.BindingConverters" />
+        <import type="onlasdan.gallery.databinding.BindingConverters" />
 
         <variable
             name="context"
-            type="dev.leonlatsch.photok.uicomponnets.base.processdialogs.BaseProcessBottomSheetDialogFragment" />
+            type="onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetDialogFragment" />
 
         <variable
             name="viewModel"
-            type="dev.leonlatsch.photok.uicomponnets.base.processdialogs.BaseProcessViewModel" />
+            type="onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessViewModel" />
 
     </data>
 

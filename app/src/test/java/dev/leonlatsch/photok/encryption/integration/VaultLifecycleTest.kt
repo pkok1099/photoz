@@ -14,20 +14,20 @@
  *   limitations under the License.
  */
 
-package dev.leonlatsch.photok.encryption.integration
+package onlasdan.gallery.encryption.integration
 
-import dev.leonlatsch.photok.encryption.domain.ChangePasswordUseCase
-import dev.leonlatsch.photok.encryption.domain.SessionRepository
-import dev.leonlatsch.photok.encryption.domain.VaultProtectionRepository
-import dev.leonlatsch.photok.encryption.domain.crypto.KeyGen
-import dev.leonlatsch.photok.encryption.domain.handlers.PasswordVaultProtectionHandler
-import dev.leonlatsch.photok.encryption.domain.models.CreateRequest
-import dev.leonlatsch.photok.encryption.domain.models.Kdf
-import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
-import dev.leonlatsch.photok.encryption.domain.models.VaultProtection
-import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionType
-import dev.leonlatsch.photok.encryption.domain.models.VaultSession
-import dev.leonlatsch.photok.settings.data.Config as AppConfig
+import onlasdan.gallery.encryption.domain.ChangePasswordUseCase
+import onlasdan.gallery.encryption.domain.SessionRepository
+import onlasdan.gallery.encryption.domain.VaultProtectionRepository
+import onlasdan.gallery.encryption.domain.crypto.KeyGen
+import onlasdan.gallery.encryption.domain.handlers.PasswordVaultProtectionHandler
+import onlasdan.gallery.encryption.domain.models.CreateRequest
+import onlasdan.gallery.encryption.domain.models.Kdf
+import onlasdan.gallery.encryption.domain.models.UnlockRequest
+import onlasdan.gallery.encryption.domain.models.VaultProtection
+import onlasdan.gallery.encryption.domain.models.VaultProtectionType
+import onlasdan.gallery.encryption.domain.models.VaultSession
+import onlasdan.gallery.settings.data.Config as AppConfig
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
