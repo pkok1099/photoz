@@ -17,12 +17,15 @@
 package dev.leonlatsch.photok.sync.rclone
 
 import android.app.Application
+import dev.leonlatsch.photok.encryption.domain.RecoveryPhraseStore
 import dev.leonlatsch.photok.encryption.domain.VaultProtectionRepository
+import dev.leonlatsch.photok.encryption.domain.crypto.PhraseEscrowWrapper
 import dev.leonlatsch.photok.encryption.domain.models.Algorithm
 import dev.leonlatsch.photok.encryption.domain.models.Kdf
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtection
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionParams
 import dev.leonlatsch.photok.encryption.domain.models.VaultProtectionType
+import dev.leonlatsch.photok.encryption.domain.models.VaultSession
 import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.model.database.entity.PHOTOK_FILE_EXTENSION
 import dev.leonlatsch.photok.model.database.entity.Photo
@@ -31,6 +34,7 @@ import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.domain.SyncConfig
 import dev.leonlatsch.photok.sync.domain.SyncState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
@@ -77,11 +81,22 @@ class RepoManager @Inject constructor(
     // @since PR4 sync — needed by restoreThumbnailsAfterLogin() to insert DB rows for
     // each thumbnail pulled back from the remote after a successful login.
     private val photoDao: PhotoDao,
-    // @since key-escrow — needed by uploadVaultProtectionEscrow() / downloadVaultProtectionEscrow()
+    // @since key-escrow — needed by uploadRecoveryPhraseEscrow() / downloadVaultProtectionEscrow()
     // to persist the recovery-phrase wrapped-VMK artifact on the remote during registration
     // and to restore it into the local DB during login (so the existing phrase-entry UI can
     // unlock the VMK on a fresh install).
     private val vaultProtectionRepository: VaultProtectionRepository,
+    // @since Part A fix + Part B two-layer escrow — PhraseEscrowWrapper wraps the recovery
+    // phrase with a password-derived KEK. Used by uploadAllEscrows() (which runs AFTER
+    // SetupFragment has created both password + phrase VaultProtection rows, NOT during
+    // registerRepo() — the prior early call was the root cause of the register-always-
+    // triggered bug) and by submitPassword() on the login branch.
+    private val phraseEscrowWrapper: PhraseEscrowWrapper,
+    // @since Part A fix + Part B two-layer escrow — needed by uploadAllEscrows() to read
+    // the locally-stored recovery phrase (encrypted-at-rest with the VMK via
+    // RecoveryPhraseStoreImpl) so it can be wrapped with the password and uploaded as
+    // wrapped-phrase.json (Layer 2 of the two-layer escrow).
+    private val recoveryPhraseStore: RecoveryPhraseStore,
 ) {
 
     // ─── DIAGNOSTIC LOGGING (RcloneDiag pattern, same as RcloneController) ────
@@ -121,24 +136,42 @@ class RepoManager @Inject constructor(
     }
 
     /**
-     * Result of [loginRepo]. Carries the escrow-artifact status so the caller
-     * can decide whether to route the user to the phrase-entry UI or to the
-     * degraded-mode ("no escrow available") UI.
+     * What kind of escrow was downloaded from the remote during [loginRepo].
      *
-     * @since key-escrow — login-branch phrase entry
+     * Drives which restore UI the login branch shows:
+     * - [PASSWORD_PLUS_PHRASE] → both `recovery-phrase.json` (wrapped VMK) AND
+     *   `wrapped-phrase.json` (password-wrapped phrase) downloaded. Show the
+     *   password-entry UI — the user's password unwraps the phrase, which in
+     *   turn unwraps the VMK via the existing RecoveryPhraseVaultProtectionHandler.
+     * - [PHRASE_ONLY] → only `recovery-phrase.json` downloaded (older repo
+     *   created before Part B two-layer escrow existed). Show the existing
+     *   recovery-phrase-entry UI (RecoveryPhraseRestoreScreen) — the user must
+     *   type their phrase directly.
+     * - [NONE] → neither artifact available. Show the degraded-mode UI
+     *   ("no escrow available"); the user can still reach the gallery via
+     *   the normal vault PIN/password path (SetupFragment).
+     *
+     * @since Part A fix + Part B two-layer escrow — replaces the prior
+     *   `escrowAvailable: Boolean` flag with a 3-way enum so the login branch
+     *   can distinguish "password-entry UI" from "phrase-entry UI".
+     */
+    enum class EscrowType { NONE, PHRASE_ONLY, PASSWORD_PLUS_PHRASE }
+
+    /**
+     * Result of [loginRepo]. Carries the escrow-artifact status so the caller
+     * can decide which restore UI to route the user to.
+     *
+     * @since key-escrow — login-branch phrase entry; refined in Part B to carry
+     *   an [EscrowType] instead of a Boolean.
      */
     sealed class LoginResult {
         /**
          * Login (remote repo session) succeeded.
          *
-         * @param escrowAvailable `true` if a recovery-phrase wrapped-VMK artifact
-         *   was downloaded from the remote and persisted into the local
-         *   VaultProtection DB; the caller should route the user to the
-         *   phrase-entry UI. `false` if the artifact was missing (old repo)
-         *   or the download failed non-fatally — the caller should route to
-         *   the "no escrow available" UI.
+         * @param escrow which escrow artifacts were downloaded from the remote
+         *   during login. See [EscrowType] for the routing logic.
          */
-        data class Success(val escrowAvailable: Boolean) : LoginResult()
+        data class Success(val escrow: EscrowType) : LoginResult()
 
         /** Login failed — caller should surface error. */
         data class Failure(val message: String) : LoginResult()
@@ -293,27 +326,24 @@ class RepoManager @Inject constructor(
                     )
                 }
 
-                // Upload the recovery-phrase wrapped-VMK escrow so a fresh install on
-                // another device can restore the vault via the user's recovery phrase.
-                // Failure here MUST NOT block registration — the repo is still usable
-                // for photo upload; only recovery-phrase restore on fresh installs
-                // won't work. Log but don't throw.
-                // @since key-escrow — upload wrapped VMK during repo registration
-                try {
-                    val escrowResult = uploadVaultProtectionEscrow()
-                    if (escrowResult.isFailure) {
-                        diag(
-                            "registerRepo: escrow upload failed (non-fatal, continuing): " +
-                                "${escrowResult.exceptionOrNull()?.message}",
-                            escrowResult.exceptionOrNull(),
-                        )
-                    }
-                } catch (e: Exception) {
-                    diag(
-                        "registerRepo: escrow upload threw (non-fatal, continuing): ${e.message}",
-                        e,
-                    )
-                }
+                // NOTE: The recovery-phrase wrapped-VMK escrow is NO LONGER uploaded here.
+                // The prior uploadVaultProtectionEscrow() call was the root cause of the
+                // "register-always-triggered" bug: at this point in the flow (RepoSetup
+                // → registerRepo → SetupFragment), the VaultProtection(RecoveryPhrase)
+                // row does NOT exist in the local DB yet — it's created later inside
+                // SetupFragment.onSetupClicked() via vaultService.create(CreateRequest.
+                // RecoveryPhrase(session, ...)). The premature call therefore always
+                // skipped escrow upload (read: null → return early), and fresh-install
+                // login always fell through to NoEscrowAvailable → continueWithoutEscrow
+                // → Completed → SetupFragment → new phrase.
+                //
+                // The escrow upload now happens in SetupViewModel AFTER
+                // vaultService.create(CreateRequest.RecoveryPhrase(...)) returns,
+                // via repoManager.uploadAllEscrows(password, session). That call uploads
+                // BOTH layers of the two-layer escrow (wrapped VMK + wrapped phrase).
+                // See [uploadAllEscrows] for details.
+                //
+                // @since Part A fix — moved escrow upload out of registerRepo()
 
                 // Persist the repo binding locally
                 config.repoId = marker.repoId
@@ -342,12 +372,21 @@ class RepoManager @Inject constructor(
      *
      * Read-only — does NOT touch the marker file. Persists the repo binding locally.
      *
-     * After confirming the repo binding, downloads the recovery-phrase wrapped-VMK
-     * escrow artifact (if present on the remote) and persists it into the local
-     * VaultProtection DB so the existing phrase-entry UI can unlock the VMK on
-     * this fresh install. The escrow status is carried in [LoginResult.Success.escrowAvailable].
+     * After confirming the repo binding, downloads both escrow artifacts:
+     * - `recovery-phrase.json` (Layer 1: phrase wraps VMK) — always attempted;
+     *   persisted into the local VaultProtection DB so the existing phrase-entry
+     *   UI ([dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreScreen])
+     *   can unlock the VMK on a fresh install.
+     * - `wrapped-phrase.json` (Layer 2: password wraps phrase) — attempted only
+     *   when Layer 1 succeeded. Stored in [downloadedWrappedPhrase] for the
+     *   login-branch password-entry UI to use via [getDownloadedWrappedPhrase].
      *
-     * @since key-escrow — login now returns [LoginResult] carrying escrow status
+     * The combined status is carried in [LoginResult.Success.escrow] as an
+     * [EscrowType], so the caller can route the user to the right restore UI.
+     *
+     * @since key-escrow — login now returns [LoginResult] carrying escrow status;
+     *   refined in Part B to download the wrapped-phrase artifact and carry
+     *   [EscrowType] instead of a Boolean.
      */
     suspend fun loginRepo(marker: RepoMarker): LoginResult = withContext(Dispatchers.IO) {
         runCatching {
@@ -355,11 +394,9 @@ class RepoManager @Inject constructor(
             config.repoConfirmed = true
             Timber.i("Repo login: id=${marker.repoId}")
 
-            // Download the wrapped-VMK escrow artifact (if present on the remote) and
-            // persist it to the local VaultProtection DB. The presence/absence of this
-            // artifact determines whether the login flow can offer recovery-phrase
-            // restore on a fresh install.
-            // @since key-escrow — download wrapped VMK during repo login
+            // ─── Layer 1: recovery-phrase.json (wrapped VMK) ─────────────────
+            // Download + persist into local DB. Presence/absence determines whether
+            // ANY phrase-based restore is possible on this fresh install.
             val escrowResult = downloadVaultProtectionEscrow()
             if (escrowResult.isFailure) {
                 // Don't block login — the user can still get into the gallery via the
@@ -367,15 +404,47 @@ class RepoManager @Inject constructor(
                 // this fresh install. Surface as "not available" rather than an error.
                 val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
                 diag(
-                    "loginRepo: escrow download failed (non-fatal): $err",
+                    "loginRepo: Layer 1 escrow download failed (non-fatal): $err",
                     escrowResult.exceptionOrNull(),
                 )
-                LoginResult.Success(escrowAvailable = false)
-            } else {
-                val available = escrowResult.getOrNull() != null
-                diag("loginRepo: escrow available=$available")
-                LoginResult.Success(escrowAvailable = available)
+                // Reset any stale wrapped-phrase from a prior login attempt.
+                downloadedWrappedPhrase = null
+                return@runCatching LoginResult.Success(EscrowType.NONE)
             }
+
+            val layer1 = escrowResult.getOrNull()
+            if (layer1 == null) {
+                diag("loginRepo: Layer 1 escrow not on remote (old repo) — EscrowType.NONE")
+                downloadedWrappedPhrase = null
+                return@runCatching LoginResult.Success(EscrowType.NONE)
+            }
+            diag("loginRepo: Layer 1 escrow available (id=${layer1.id})")
+
+            // ─── Layer 2: wrapped-phrase.json (password wraps phrase) ─────────
+            // Only meaningful if Layer 1 is present. Old repos created before Part B
+            // won't have this artifact — fall back to PHRASE_ONLY (the existing
+            // phrase-entry UI).
+            val wrappedResult = downloadWrappedPhraseEscrow()
+            if (wrappedResult.isFailure) {
+                diag(
+                    "loginRepo: Layer 2 escrow download failed (non-fatal, fall back to PHRASE_ONLY): " +
+                        "${wrappedResult.exceptionOrNull()?.message}",
+                    wrappedResult.exceptionOrNull(),
+                )
+                downloadedWrappedPhrase = null
+                return@runCatching LoginResult.Success(EscrowType.PHRASE_ONLY)
+            }
+
+            val layer2 = wrappedResult.getOrNull()
+            if (layer2 == null) {
+                diag("loginRepo: Layer 2 escrow not on remote (old repo) — EscrowType.PHRASE_ONLY")
+                downloadedWrappedPhrase = null
+                return@runCatching LoginResult.Success(EscrowType.PHRASE_ONLY)
+            }
+
+            diag("loginRepo: Layer 2 escrow available — EscrowType.PASSWORD_PLUS_PHRASE")
+            downloadedWrappedPhrase = layer2
+            LoginResult.Success(EscrowType.PASSWORD_PLUS_PHRASE)
         }.fold(
             onSuccess = { it },
             onFailure = { e ->
@@ -387,6 +456,29 @@ class RepoManager @Inject constructor(
             },
         )
     }
+
+    /**
+     * The wrapped-phrase artifact downloaded during [loginRepo] (Layer 2 of the
+     * two-layer escrow). `null` after a login that didn't download a wrapped-phrase
+     * artifact (old repo / [EscrowType.NONE] / [EscrowType.PHRASE_ONLY]).
+     *
+     * Read by [RepoSetupViewModel.submitPassword] via [getDownloadedWrappedPhrase]
+     * to unwrap the phrase with the user's password.
+     *
+     * @since Part B two-layer escrow — stored on the singleton RepoManager so the
+     *   ViewModel doesn't need to thread it through state.
+     */
+    @Volatile
+    private var downloadedWrappedPhrase: PhraseEscrowWrapper.WrappedPhrase? = null
+
+    /**
+     * Public read accessor for [downloadedWrappedPhrase]. Returns `null` if the
+     * last [loginRepo] did not download a wrapped-phrase artifact.
+     *
+     * @since Part B two-layer escrow
+     */
+    fun getDownloadedWrappedPhrase(): PhraseEscrowWrapper.WrappedPhrase? =
+        downloadedWrappedPhrase
 
     /**
      * Restore thumbnails from the remote backup after a successful [loginRepo].
@@ -511,6 +603,10 @@ class RepoManager @Inject constructor(
      * the app on another device can later download it and unlock the VMK via
      * the user's recovery phrase.
      *
+     * This is **Layer 1** of the two-layer escrow: the phrase wraps the VMK.
+     * Layer 2 (the password wrapping the phrase) is uploaded separately by
+     * [uploadWrappedPhraseEscrow]; the two are coordinated by [uploadAllEscrows].
+     *
      * The artifact is written as JSON at:
      *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<VAULT_PROTECTION_FILENAME>`
      *   = `<remote>:photok-backup/vault-protection/recovery-phrase.json`
@@ -518,27 +614,34 @@ class RepoManager @Inject constructor(
      * Independent verification (re-list) follows the same pattern as the repo
      * marker upload — the upload call's return value alone is NOT proof.
      *
-     * Failure is non-fatal: registration MUST still succeed even if escrow
-     * upload fails (the repo is still usable for photo upload; only fresh-install
-     * recovery-phrase restore won't work). The caller ([registerRepo]) wraps the
-     * call in try/catch and logs but does not throw.
+     * Failure is non-fatal: setup MUST still succeed even if escrow upload fails
+     * (the vault is still usable for photo upload; only fresh-install
+     * recovery-phrase restore won't work). The caller ([uploadAllEscrows],
+     * invoked from [SetupViewModel]) wraps the call in try/catch and logs but
+     * does not throw.
      *
-     * @since key-escrow — upload wrapped VMK during repo registration
+     * @since key-escrow — upload wrapped VMK during repo registration.
+     *   Renamed in Part A fix from `uploadVaultProtectionEscrow()` to
+     *   `uploadRecoveryPhraseEscrow()` to disambiguate from the new
+     *   [uploadWrappedPhraseEscrow] (Layer 2). No behavior change.
      */
-    private suspend fun uploadVaultProtectionEscrow(): Result<Unit> = withContext(Dispatchers.IO) {
+    private suspend fun uploadRecoveryPhraseEscrow(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val remote = config.syncChosenRemote
                 ?: throw IllegalStateException("No remote chosen")
 
-            diag("uploadVaultProtectionEscrow: BEGIN remote=$remote")
+            diag("uploadRecoveryPhraseEscrow: BEGIN remote=$remote")
 
             val protection = vaultProtectionRepository.getProtection(VaultProtectionType.RecoveryPhrase)
             if (protection == null) {
-                // No recovery-phrase protection set up locally yet. Shouldn't happen
-                // in the normal register flow (the user must have a vault password +
-                // recovery phrase to get here), but handle gracefully — skip escrow
-                // upload, don't fail registration.
-                diag("uploadVaultProtectionEscrow: no RecoveryPhrase protection in local DB — skipping")
+                // No recovery-phrase protection set up locally yet. This was the
+                // root cause of the register-always-triggered bug (Part A): the
+                // prior call site (registerRepo) ran BEFORE SetupFragment created
+                // the VaultProtection(RecoveryPhrase) row. The new call site
+                // (uploadAllEscrows, invoked from SetupViewModel AFTER
+                // vaultService.create(CreateRequest.RecoveryPhrase(...))) guarantees
+                // the row exists by this point — but handle gracefully anyway.
+                diag("uploadRecoveryPhraseEscrow: no RecoveryPhrase protection in local DB — skipping")
                 return@runCatching Unit
             }
 
@@ -557,7 +660,7 @@ class RepoManager @Inject constructor(
                 """"kdfIterations":$kdfIterJson,"algorithm":"${protection.params.algorithm.value}",""" +
                 """"keySize":${protection.params.keySize},"version":${protection.params.version}}}"""
             diag(
-                "uploadVaultProtectionEscrow: serialized protection id=${protection.id} " +
+                "uploadRecoveryPhraseEscrow: serialized protection id=${protection.id} " +
                     "type=${protection.type} vmkB64Len=${wrappedVmkB64.length}"
             )
 
@@ -565,12 +668,12 @@ class RepoManager @Inject constructor(
             try {
                 tempFile.writeText(json)
                 diag(
-                    "uploadVaultProtectionEscrow: wrote temp file ${tempFile.absolutePath} " +
+                    "uploadRecoveryPhraseEscrow: wrote temp file ${tempFile.absolutePath} " +
                         "(${tempFile.length()} bytes)"
                 )
 
                 val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
-                diag("uploadVaultProtectionEscrow: uploading → $remotePath")
+                diag("uploadRecoveryPhraseEscrow: uploading → $remotePath")
                 val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
                 if (uploadResult.isFailure) {
                     throw uploadResult.exceptionOrNull()
@@ -596,7 +699,7 @@ class RepoManager @Inject constructor(
                             "Files: $files"
                     )
                 }
-                diag("uploadVaultProtectionEscrow: verification OK — file present on remote")
+                diag("uploadRecoveryPhraseEscrow: verification OK — file present on remote")
                 Unit
             } finally {
                 tempFile.delete()
@@ -606,7 +709,7 @@ class RepoManager @Inject constructor(
 
     /**
      * Download the recovery-phrase [VaultProtection] escrow artifact from the
-     * rclone remote (the counterpart of [uploadVaultProtectionEscrow]) and
+     * rclone remote (the counterpart of [uploadRecoveryPhraseEscrow]) and
      * persist it into the local VaultProtection DB so the existing phrase-entry
      * UI ([dev.leonlatsch.photok.encryption.ui.RecoveryPhraseRestoreScreen]) can
      * unlock the VMK on this fresh install.
@@ -709,10 +812,252 @@ class RepoManager @Inject constructor(
         }
 
     /**
+     * Upload both escrow layers (Layer 1: wrapped VMK + Layer 2: wrapped phrase) to
+     * the rclone remote, as the second half of vault setup.
+     *
+     * This is the call site that REPLACES the prior premature
+     * `uploadVaultProtectionEscrow()` invocation in [registerRepo]. That call always
+     * skipped because `VaultProtection(RecoveryPhrase)` doesn't exist in the local DB
+     * at registration time (Part A's root cause — see the long note in [registerRepo]).
+     * This method MUST be invoked AFTER SetupFragment has created both
+     * `VaultProtection(Password)` AND `VaultProtection(RecoveryPhrase)` rows in the
+     * local DB, which is exactly when [SetupViewModel.onSetupClicked] runs the
+     * `vaultService.create(CreateRequest.RecoveryPhrase(session, ...))` call.
+     *
+     * The phrase itself is read back from [RecoveryPhraseStore] (which holds the
+     * phrase encrypted-at-rest with the VMK) using the freshly-unlocked
+     * [VaultSession] that SetupViewModel passes in. The phrase is then re-wrapped
+     * with the user's password (a fresh salt + IV — NOT reusing the
+     * password-VaultProtection's salt, per the Part B spec) via
+     * [PhraseEscrowWrapper.wrapPhrase], and uploaded as `wrapped-phrase.json`.
+     *
+     * Failure is non-fatal: setup MUST still succeed even if escrow upload fails
+     * (the vault is still usable; only fresh-install restore won't work). The
+     * caller ([SetupViewModel]) wraps the call in try/catch and logs but does not
+     * throw.
+     *
+     * @param password the user's vault password (already validated by SetupFragment)
+     * @param session the current [VaultSession] — needed to decrypt the phrase from
+     *   [RecoveryPhraseStore]. The session was set in `sessionRepository.set(session)`
+     *   just before this call.
+     * @since Part A fix + Part B two-layer escrow — replaces the premature
+     *   registerRepo() escrow upload. Uploads BOTH layers atomically (Layer 2 only
+     *   uploaded if Layer 1 succeeds).
+     */
+    suspend fun uploadAllEscrows(password: String, session: VaultSession): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                diag("uploadAllEscrows: BEGIN — uploading Layer 1 (wrapped VMK)")
+
+                // ─── Layer 1: recovery-phrase.json (wrapped VMK) ─────────────────
+                val layer1 = uploadRecoveryPhraseEscrow()
+                if (layer1.isFailure) {
+                    throw layer1.exceptionOrNull()
+                        ?: IOException("Layer 1 (recovery-phrase.json) upload failed")
+                }
+                diag("uploadAllEscrows: Layer 1 OK — proceeding to Layer 2 (wrapped phrase)")
+
+                // ─── Layer 2: wrapped-phrase.json (password wraps phrase) ───────
+                // Read the phrase from RecoveryPhraseStore (encrypted-at-rest with the
+                // VMK via RecoveryPhraseStoreImpl). The session was just set in
+                // SetupViewModel, so observe(session).first() returns the phrase that
+                // vaultService.create(CreateRequest.RecoveryPhrase(session, ...)) just
+                // stored.
+                val phrase = try {
+                    recoveryPhraseStore.observe(session).first()
+                } catch (e: Exception) {
+                    diag(
+                        "uploadAllEscrows: failed to read phrase from RecoveryPhraseStore " +
+                            "— skipping Layer 2 (non-fatal)",
+                        e,
+                    )
+                    return@runCatching Unit
+                }
+
+                if (phrase == null) {
+                    // Phrase wasn't stored (shouldn't happen if
+                    // vaultService.create(RecoveryPhrase) ran successfully, but be
+                    // defensive). Layer 1 is already uploaded; Layer 2 just can't be.
+                    diag("uploadAllEscrows: RecoveryPhraseStore has no phrase — skipping Layer 2")
+                    return@runCatching Unit
+                }
+
+                val layer2 = uploadWrappedPhraseEscrow(phrase, password)
+                if (layer2.isFailure) {
+                    throw layer2.exceptionOrNull()
+                        ?: IOException("Layer 2 (wrapped-phrase.json) upload failed")
+                }
+                diag("uploadAllEscrows: Layer 2 OK — both layers uploaded + verified")
+                Unit
+            }
+        }
+
+    /**
+     * Upload the password-wrapped recovery phrase (Layer 2 of the two-layer escrow)
+     * to `wrapped-phrase.json` on the rclone remote, and independently verify it
+     * landed via a re-list.
+     *
+     * The phrase is wrapped via [PhraseEscrowWrapper.wrapPhrase] using a FRESH salt
+     * and IV — NOT reusing the password-VaultProtection's salt (per the Part B
+     * spec). The wrapped phrase is serialized via [PhraseEscrowWrapper.WrappedPhrase.toJson]
+     * and uploaded to:
+     *   `<remote>:<REPO_DIR>/<VAULT_PROTECTION_DIR>/<WRAPPED_PHRASE_FILENAME>`
+     *   = `<remote>:photok-backup/vault-protection/wrapped-phrase.json`
+     *
+     * @since Part B two-layer escrow — paired with [downloadWrappedPhraseEscrow].
+     */
+    private suspend fun uploadWrappedPhraseEscrow(
+        phrase: dev.leonlatsch.photok.encryption.domain.models.RecoveryPhrase,
+        password: String,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val remote = config.syncChosenRemote
+                ?: throw IllegalStateException("No remote chosen")
+
+            diag("uploadWrappedPhraseEscrow: BEGIN remote=$remote")
+
+            val wrapped = phraseEscrowWrapper.wrapPhrase(phrase, password)
+            val json = wrapped.toJson()
+            diag(
+                "uploadWrappedPhraseEscrow: wrapped phrase " +
+                    "(wrappedLen=${wrapped.wrappedPhrase.size} saltLen=${wrapped.salt.size} " +
+                    "ivLen=${wrapped.iv.size} kdf=${wrapped.kdf.value} iter=${wrapped.kdfIterations} " +
+                    "alg=${wrapped.algorithm.value} keySize=${wrapped.keySize})"
+            )
+
+            val tempFile = File(
+                app.cacheDir, "wrapped-phrase-${System.currentTimeMillis()}.json"
+            )
+            try {
+                tempFile.writeText(json)
+                diag(
+                    "uploadWrappedPhraseEscrow: wrote temp file ${tempFile.absolutePath} " +
+                        "(${tempFile.length()} bytes)"
+                )
+
+                val remotePath = "$remote:$WRAPPED_PHRASE_REMOTE_PATH"
+                diag("uploadWrappedPhraseEscrow: uploading → $remotePath")
+                val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
+                if (uploadResult.isFailure) {
+                    throw uploadResult.exceptionOrNull()
+                        ?: IOException("Wrapped-phrase upload failed")
+                }
+
+                // Independent verification — same pattern as Layer 1 + registerRepo() marker.
+                val verifyResult = rcloneController.listRemote(
+                    "$remote:", "$REPO_DIR/$VAULT_PROTECTION_DIR"
+                )
+                if (verifyResult.isFailure) {
+                    throw IOException(
+                        "Wrapped-phrase upload succeeded but verification listing failed: " +
+                            verifyResult.exceptionOrNull()?.message
+                    )
+                }
+
+                val files = verifyResult.getOrThrow()
+                val found = files.any { it.name == WRAPPED_PHRASE_FILENAME && it.size > 0 }
+                if (!found) {
+                    throw IOException(
+                        "Wrapped-phrase upload succeeded but file not found in independent " +
+                            "listing. Files: $files"
+                    )
+                }
+                diag("uploadWrappedPhraseEscrow: verification OK — file present on remote")
+                Unit
+            } finally {
+                tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * Download the password-wrapped recovery phrase (Layer 2 of the two-layer
+     * escrow) from `wrapped-phrase.json` on the rclone remote.
+     *
+     * Counterpart of [uploadWrappedPhraseEscrow]. Called from [loginRepo] after
+     * Layer 1 ([downloadVaultProtectionEscrow]) succeeds.
+     *
+     * Behavior:
+     * - Remote artifact present → deserialize via
+     *   [PhraseEscrowWrapper.WrappedPhrase.fromJson], return `Result.success(wrapped)`.
+     * - Remote artifact absent (older repo created before Part B, or rclone returns
+     *   "not found") → return `Result.success(null)`. The caller falls back to
+     *   [EscrowType.PHRASE_ONLY] (the existing phrase-entry UI).
+     * - Other download errors (network, permissions, malformed JSON) → return
+     *   `Result.failure(exception)`. The caller also falls back to
+     *   [EscrowType.PHRASE_ONLY] (Layer 1 is still usable).
+     *
+     * @since Part B two-layer escrow
+     */
+    suspend fun downloadWrappedPhraseEscrow(): Result<PhraseEscrowWrapper.WrappedPhrase?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val remote = config.syncChosenRemote
+                    ?: throw IllegalStateException("No remote chosen")
+
+                diag("downloadWrappedPhraseEscrow: BEGIN remote=$remote")
+
+                val remotePath = "$remote:$WRAPPED_PHRASE_REMOTE_PATH"
+                val tempFile = File(
+                    app.cacheDir, "wrapped-phrase-dl-${System.currentTimeMillis()}.json"
+                )
+                try {
+                    diag(
+                        "downloadWrappedPhraseEscrow: downloading $remotePath → " +
+                            tempFile.absolutePath
+                    )
+                    val dlResult = rcloneController.downloadFile(remotePath, tempFile.absolutePath)
+                    if (dlResult.isFailure) {
+                        val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
+                        // Same "not found" pattern as downloadVaultProtectionEscrow —
+                        // old repos don't have a wrapped-phrase.json. Don't fail;
+                        // return null so the caller falls back to PHRASE_ONLY.
+                        val isNotFound = err.contains("not found", ignoreCase = true) ||
+                            err.contains("doesn't exist", ignoreCase = true) ||
+                            err.contains("does not exist", ignoreCase = true) ||
+                            err.contains("no such file", ignoreCase = true) ||
+                            err.contains("object not found", ignoreCase = true)
+                        if (isNotFound) {
+                            diag(
+                                "downloadWrappedPhraseEscrow: artifact not on remote " +
+                                    "(old repo) — returning null"
+                            )
+                            return@runCatching null
+                        }
+                        throw dlResult.exceptionOrNull()
+                            ?: IOException("Wrapped-phrase download failed: $err")
+                    }
+
+                    if (!tempFile.exists() || tempFile.length() == 0L) {
+                        diag(
+                            "downloadWrappedPhraseEscrow: downloaded file missing or empty " +
+                                "— treating as not-on-remote"
+                        )
+                        return@runCatching null
+                    }
+
+                    val json = tempFile.readText()
+                    diag("downloadWrappedPhraseEscrow: downloaded ${json.length} chars")
+
+                    val wrapped = PhraseEscrowWrapper.WrappedPhrase.fromJson(json)
+                        ?: throw IOException("Malformed wrapped-phrase JSON")
+                    diag(
+                        "downloadWrappedPhraseEscrow: parsed " +
+                            "(wrappedLen=${wrapped.wrappedPhrase.size} kdf=${wrapped.kdf.value} " +
+                            "iter=${wrapped.kdfIterations} alg=${wrapped.algorithm.value})"
+                    )
+                    wrapped
+                } finally {
+                    tempFile.delete()
+                }
+            }
+        }
+
+    /**
      * Minimal hand-rolled JSON parser for the vault-protection escrow artifact.
      * Mirrors the style of [parseMarker] (regex-based, no external dependency).
      *
-     * @since key-escrow — paired with [uploadVaultProtectionEscrow]
+     * @since key-escrow — paired with [uploadRecoveryPhraseEscrow]
      */
     private fun parseVaultProtection(json: String): VaultProtection? {
         return try {
@@ -822,10 +1167,20 @@ class RepoManager @Inject constructor(
         private const val THUMBNAIL_SUFFIX = ".$PHOTOK_FILE_EXTENSION.tn"
 
         // @since key-escrow — location of the recovery-phrase wrapped-VMK artifact
-        // on the rclone remote. Written by uploadVaultProtectionEscrow() during
-        // registerRepo(); read by downloadVaultProtectionEscrow() during loginRepo().
+        // (Layer 1 of the two-layer escrow) on the rclone remote. Written by
+        // uploadRecoveryPhraseEscrow() (now invoked via uploadAllEscrows() from
+        // SetupViewModel, NOT from registerRepo() — see Part A fix); read by
+        // downloadVaultProtectionEscrow() during loginRepo().
         const val VAULT_PROTECTION_DIR = "vault-protection"
         const val VAULT_PROTECTION_FILENAME = "recovery-phrase.json"
         const val VAULT_PROTECTION_REMOTE_PATH = "$REPO_DIR/$VAULT_PROTECTION_DIR/$VAULT_PROTECTION_FILENAME"
+
+        // @since Part B two-layer escrow — location of the password-wrapped recovery
+        // phrase artifact (Layer 2) on the rclone remote. Written by
+        // uploadWrappedPhraseEscrow() (invoked via uploadAllEscrows() from
+        // SetupViewModel); read by downloadWrappedPhraseEscrow() during loginRepo().
+        // Lives in the same VAULT_PROTECTION_DIR directory as Layer 1.
+        const val WRAPPED_PHRASE_FILENAME = "wrapped-phrase.json"
+        const val WRAPPED_PHRASE_REMOTE_PATH = "$REPO_DIR/$VAULT_PROTECTION_DIR/$WRAPPED_PHRASE_FILENAME"
     }
 }

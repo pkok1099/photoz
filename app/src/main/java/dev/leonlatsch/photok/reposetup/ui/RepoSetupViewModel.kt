@@ -22,6 +22,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.leonlatsch.photok.R
+import dev.leonlatsch.photok.encryption.domain.SessionRepository
+import dev.leonlatsch.photok.encryption.domain.VaultService
+import dev.leonlatsch.photok.encryption.domain.crypto.PhraseEscrowWrapper
+import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.rclone.RcloneConfigManager
 import dev.leonlatsch.photok.sync.rclone.RepoManager
@@ -75,9 +79,37 @@ sealed interface RepoSetupState {
      * SessionRepository, and the existing decryption path will use it when the
      * gallery renders those thumbnails.
      *
+     * Shown when [RepoManager.LoginResult.Success.escrow] is [RepoManager.EscrowType.PHRASE_ONLY]
+     * (older repo created before Part B two-layer escrow existed — only Layer 1
+     * `recovery-phrase.json` is on the remote, no Layer 2 `wrapped-phrase.json`).
+     *
      * @since key-escrow — login-branch phrase entry
      */
     object NeedsPhraseEntry : RepoSetupState
+
+    /**
+     * Both escrow layers downloaded successfully — user needs to enter their
+     * vault PASSWORD (not the phrase) to restore the backup. This is the
+     * preferred login path on a fresh install of an app created with Part B
+     * two-layer escrow: the user enters their password, which unwraps the
+     * recovery phrase (Layer 2: `wrapped-phrase.json`), which in turn unwraps
+     * the VMK (Layer 1: `recovery-phrase.json`) via the existing
+     * RecoveryPhraseVaultProtectionHandler.
+     *
+     * The state carries the loading flag (set while [RepoSetupViewModel.submitPassword]
+     * is unwrapping + unlocking) and an optional error message (set when the
+     * password is wrong — the wrapper produces a padding error → caught →
+     * clear "Incorrect password" message, NOT a crash).
+     *
+     * Shown when [RepoManager.LoginResult.Success.escrow] is
+     * [RepoManager.EscrowType.PASSWORD_PLUS_PHRASE].
+     *
+     * @since Part B two-layer escrow — password-entry UI for the login branch
+     */
+    data class NeedsPasswordEntry(
+        val loading: Boolean = false,
+        val error: String? = null,
+    ) : RepoSetupState
 
     /**
      * No escrow artifact available on the remote (old repo created before this
@@ -92,6 +124,19 @@ sealed interface RepoSetupState {
     /** Repo session confirmed — gallery can be unlocked. */
     object Completed : RepoSetupState
 
+    /**
+     * Vault unlocked via the login-branch password or phrase entry path — the
+     * VMK is in memory via [SessionRepository], so the user can be navigated
+     * straight to the gallery, skipping SetupFragment (which would otherwise
+     * prompt for a new password).
+     *
+     * The Fragment's `LaunchedEffect(state)` observes this and invokes
+     * `onUnlocked` (= `navigateToGallery`).
+     *
+     * @since Part B two-layer escrow — password-entry UI for the login branch
+     */
+    object Unlocked : RepoSetupState
+
     /** Error at any stage. [message] is user-facing. */
     data class Error(val message: String) : RepoSetupState
 }
@@ -102,6 +147,17 @@ class RepoSetupViewModel @Inject constructor(
     private val config: Config,
     private val rcloneConfigManager: RcloneConfigManager,
     private val repoManager: RepoManager,
+    // @since Part B two-layer escrow — needed by submitPassword() to unwrap the
+    // downloaded recovery phrase (Layer 2 artifact) with the user's password.
+    private val phraseEscrowWrapper: PhraseEscrowWrapper,
+    // @since Part B two-layer escrow — needed by submitPassword() to unlock the
+    // VMK via the existing RecoveryPhrase unlock path once the phrase is
+    // recovered from the password-wrapped artifact.
+    private val vaultService: VaultService,
+    // @since Part B two-layer escrow — needed by submitPassword() to set the
+    // unlocked VaultSession into the in-memory session repo so the gallery's
+    // decryption path can use the VMK.
+    private val sessionRepository: SessionRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<RepoSetupState>(RepoSetupState.NeedsConfig)
@@ -208,24 +264,26 @@ class RepoSetupViewModel @Inject constructor(
                         }
                         Timber.i(
                             "Repo login complete; restored $restored thumbnails from backup; " +
-                                "escrowAvailable=${loginResult.escrowAvailable}"
+                                "escrow=${loginResult.escrow}"
                         )
 
-                        if (loginResult.escrowAvailable) {
-                            // @since key-escrow — escrow downloaded successfully, user
-                            // needs to enter their recovery phrase to unlock the VMK.
-                            // The thumbnails restored above are already on disk
-                            // (encrypted with the VMK); once the phrase unlocks the VMK
-                            // via the embedded RecoveryPhraseRestoreScreen, the gallery
-                            // decryption path will use it.
-                            _state.value = RepoSetupState.NeedsPhraseEntry
-                        } else {
-                            // Old repo (pre-escrow feature) OR escrow download failed
-                            // non-fatally. Show degraded-mode message — user can still
-                            // reach the gallery via their normal vault PIN/password
-                            // (SetupFragment), but recovery-phrase restore is not
-                            // available on this fresh install.
-                            _state.value = RepoSetupState.NoEscrowAvailable
+                        // @since Part B two-layer escrow — route the user to the
+                        // appropriate restore UI based on which escrow artifacts
+                        // were downloaded. PASSWORD_PLUS_PHRASE is the preferred
+                        // path (the user's password is more memorable than the
+                        // 12-word phrase); PHRASE_ONLY is the fallback for old
+                        // repos created before Part B; NONE is the degraded mode
+                        // (no escrow — user goes through SetupFragment instead).
+                        when (loginResult.escrow) {
+                            RepoManager.EscrowType.PASSWORD_PLUS_PHRASE -> {
+                                _state.value = RepoSetupState.NeedsPasswordEntry()
+                            }
+                            RepoManager.EscrowType.PHRASE_ONLY -> {
+                                _state.value = RepoSetupState.NeedsPhraseEntry
+                            }
+                            RepoManager.EscrowType.NONE -> {
+                                _state.value = RepoSetupState.NoEscrowAvailable
+                            }
                         }
                     }
                     is RepoManager.LoginResult.Failure -> {
@@ -288,5 +346,75 @@ class RepoSetupViewModel @Inject constructor(
      */
     fun continueWithoutEscrow() {
         _state.value = RepoSetupState.Completed
+    }
+
+    /**
+     * User submitted their vault password on the [RepoSetupState.NeedsPasswordEntry]
+     * screen. Attempts to unwrap the downloaded recovery phrase (Layer 2 artifact,
+     * stored on the singleton [RepoManager] from [RepoManager.loginRepo]) with the
+     * password, then feeds the recovered phrase into the existing
+     * `vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))` path.
+     *
+     * Outcomes (all routed back through `_state`):
+     * - Wrong password → [PhraseEscrowWrapper.unwrapPhrase] returns null (caught
+     *   padding error) → state goes back to [RepoSetupState.NeedsPasswordEntry]
+     *   with the `repo_setup_password_entry_error` string ("Incorrect password").
+     *   This is a clear, user-facing message — NOT a crash.
+     * - Correct password + unlock succeeds → state goes to [RepoSetupState.Unlocked],
+     *   which the Fragment's `LaunchedEffect` observes to call `onUnlocked`
+     *   (= `navigateToGallery`). The VMK is now in memory via [SessionRepository],
+     *   so the gallery's decryption path will use it.
+     * - Correct password + unlock fails (e.g. corrupted Layer 1 artifact) →
+     *   state goes back to [RepoSetupState.NeedsPasswordEntry] with the exception
+     *   message (rare; surfaces the underlying error rather than masking it).
+     *
+     * @since Part B two-layer escrow — password-entry UI for the login branch
+     */
+    fun submitPassword(password: String) {
+        viewModelScope.launch {
+            _state.value = RepoSetupState.NeedsPasswordEntry(loading = true, error = null)
+
+            val wrapped = repoManager.getDownloadedWrappedPhrase()
+            if (wrapped == null) {
+                // Defensive — we only enter NeedsPasswordEntry when
+                // PASSWORD_PLUS_PHRASE was returned, which means wrapped != null.
+                // If we get here, state was corrupted somehow; surface as error.
+                _state.value = RepoSetupState.NeedsPasswordEntry(
+                    error = app.getString(R.string.repo_setup_password_entry_error),
+                )
+                return@launch
+            }
+
+            val phrase = try {
+                phraseEscrowWrapper.unwrapPhrase(wrapped, password)
+            } catch (e: Exception) {
+                // Shouldn't happen — unwrapPhrase catches internally — but be defensive.
+                Timber.w(e, "unwrapPhrase threw (non-fatal) — treating as wrong password")
+                null
+            }
+            if (phrase == null) {
+                // Wrong password → padding error → null. Clear message, NOT a crash.
+                _state.value = RepoSetupState.NeedsPasswordEntry(
+                    error = app.getString(R.string.repo_setup_password_entry_error),
+                )
+                return@launch
+            }
+
+            // Phrase recovered — feed into the existing RecoveryPhrase unlock path.
+            // vaultService.unlock() will look up the local VaultProtection(RecoveryPhrase)
+            // row (downloaded by RepoManager.downloadVaultProtectionEscrow during
+            // loginRepo) and unwrap the VMK with the phrase.
+            vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))
+                .onSuccess { session ->
+                    sessionRepository.set(session)
+                    _state.value = RepoSetupState.Unlocked
+                }
+                .onFailure { e ->
+                    Timber.w(e, "submitPassword: vaultService.unlock failed")
+                    _state.value = RepoSetupState.NeedsPasswordEntry(
+                        error = e.message ?: app.getString(R.string.repo_setup_password_entry_error),
+                    )
+                }
+        }
     }
 }

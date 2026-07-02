@@ -22,7 +22,9 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import dev.leonlatsch.photok.encryption.domain.RecoveryPhraseStore
 import dev.leonlatsch.photok.encryption.domain.VaultProtectionRepository
+import dev.leonlatsch.photok.encryption.domain.crypto.PhraseEscrowWrapper
 import dev.leonlatsch.photok.model.database.dao.PhotoDao
 import dev.leonlatsch.photok.settings.data.Config
 import dev.leonlatsch.photok.sync.rclone.RepoManager
@@ -63,6 +65,17 @@ object SyncModule {
         // restore it from the remote during login. Already bound by Hilt
         // (VaultProtectionRepositoryImpl has @Inject constructor).
         vaultProtectionRepository: VaultProtectionRepository,
+        // @since Part A fix + Part B two-layer escrow — RepoManager uses
+        // PhraseEscrowWrapper to wrap/unwrap the recovery phrase with a
+        // password-derived KEK (Layer 2 of the two-layer escrow). The wrapper
+        // has @Inject constructor + @Singleton, so Hilt provides it directly.
+        phraseEscrowWrapper: PhraseEscrowWrapper,
+        // @since Part A fix + Part B two-layer escrow — RepoManager reads the
+        // locally-stored recovery phrase (encrypted-at-rest with the VMK) so it
+        // can be re-wrapped with the password and uploaded as wrapped-phrase.json.
+        // Already bound by Hilt (RecoveryPhraseStoreImpl has @Inject constructor,
+        // bound to RecoveryPhraseStore interface by EncryptionBindingModule).
+        recoveryPhraseStore: RecoveryPhraseStore,
     ) = RepoManager(
         app,
         config,
@@ -70,6 +83,8 @@ object SyncModule {
         configManager,
         photoDao,
         vaultProtectionRepository,
+        phraseEscrowWrapper,
+        recoveryPhraseStore,
     )
 
     @Provides

@@ -26,14 +26,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,6 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
@@ -126,6 +135,13 @@ private fun RepoSetupScreen(
         if (state is RepoSetupState.Completed) {
             onCompleted()
         }
+        // @since Part B two-layer escrow — when the user successfully unlocks via
+        // the password-entry (or phrase-entry) login-branch path, the VMK is in
+        // memory via SessionRepository. Skip SetupFragment (no PIN/password
+        // needed) and go straight to the gallery.
+        if (state is RepoSetupState.Unlocked) {
+            onUnlocked()
+        }
     }
 
     Surface(
@@ -157,8 +173,12 @@ private fun RepoSetupScreen(
                     RepoSetupState.Connecting -> ConnectingContent()
                     RepoSetupState.RestoringBackup -> RestoringBackupContent()
                     RepoSetupState.NoEscrowAvailable -> NoEscrowAvailableContent(viewModel)
+                    is RepoSetupState.NeedsPasswordEntry -> NeedsPasswordEntryContent(s, viewModel)
                     RepoSetupState.Completed -> {
                         // Will be navigated away by LaunchedEffect
+                    }
+                    RepoSetupState.Unlocked -> {
+                        // Will be navigated away by LaunchedEffect (onUnlocked)
                     }
                     is RepoSetupState.Error -> ErrorContent(s.message, viewModel)
                     RepoSetupState.NeedsPhraseEntry -> {
@@ -352,6 +372,92 @@ private fun NoEscrowAvailableContent(viewModel: RepoSetupViewModel) {
         modifier = Modifier.padding(top = 24.dp),
     ) {
         Text(stringResource(R.string.repo_setup_no_escrow_continue))
+    }
+}
+
+/**
+ * Password-entry screen for the login branch when both escrow layers are
+ * available on the remote ([RepoManager.EscrowType.PASSWORD_PLUS_PHRASE]).
+ *
+ * The user enters their vault password; [RepoSetupViewModel.submitPassword]
+ * unwraps the recovery phrase (Layer 2: `wrapped-phrase.json`) using
+ * [PhraseEscrowWrapper.unwrapPhrase], then feeds the recovered phrase into
+ * the existing `vaultService.unlock(UnlockRequest.RecoveryPhrase(phrase))`
+ * path to unlock the VMK (Layer 1: `recovery-phrase.json`).
+ *
+ * Wrong password → `unwrapPhrase` returns null (caught padding error) →
+ * [RepoSetupState.NeedsPasswordEntry.error] is set to
+ * `repo_setup_password_entry_error` ("Incorrect password"). The user can retry
+ * — the password field is preserved across attempts because the composable
+ * owns its own `remember` state.
+ *
+ * @since Part B two-layer escrow — password-entry UI for the login branch
+ */
+@Composable
+private fun NeedsPasswordEntryContent(
+    state: RepoSetupState.NeedsPasswordEntry,
+    viewModel: RepoSetupViewModel,
+) {
+    var password by remember { mutableStateOf("") }
+
+    Text(
+        text = stringResource(R.string.repo_setup_password_entry_title),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
+    )
+    Text(
+        text = stringResource(R.string.repo_setup_password_entry_subtitle),
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+
+    OutlinedTextField(
+        value = password,
+        onValueChange = { password = it },
+        label = { Text(stringResource(R.string.repo_setup_password_entry_title)) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = {
+                if (password.isNotEmpty() && !state.loading) {
+                    viewModel.submitPassword(password)
+                }
+            },
+        ),
+        isError = state.error != null,
+        supportingText = {
+            if (state.error != null) {
+                Text(
+                    text = state.error,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        enabled = !state.loading,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 24.dp),
+    )
+
+    Spacer(Modifier.height(16.dp))
+
+    if (state.loading) {
+        CircularProgressIndicator()
+    } else {
+        Button(
+            onClick = { viewModel.submitPassword(password) },
+            enabled = password.isNotEmpty(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+        ) {
+            Text(stringResource(R.string.repo_setup_password_entry_submit))
+        }
     }
 }
 

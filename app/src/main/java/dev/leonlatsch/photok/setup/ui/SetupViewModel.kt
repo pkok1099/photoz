@@ -29,10 +29,12 @@ import dev.leonlatsch.photok.encryption.domain.models.CreateRequest
 import dev.leonlatsch.photok.encryption.domain.models.UnlockRequest
 import dev.leonlatsch.photok.other.extensions.empty
 import dev.leonlatsch.photok.settings.data.Config
+import dev.leonlatsch.photok.sync.rclone.RepoManager
 import dev.leonlatsch.photok.telemetry.domain.Signal
 import dev.leonlatsch.photok.telemetry.domain.TelemetryService
 import dev.leonlatsch.photok.uicomponnets.bindings.ObservableViewModel
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -49,6 +51,12 @@ class SetupViewModel @Inject constructor(
     private val vaultService: VaultService,
     private val sessionRepository: SessionRepository,
     private val telemetryService: TelemetryService,
+    // @since Part A fix + Part B two-layer escrow — needed to upload both escrow
+    // layers (wrapped VMK + wrapped phrase) to the rclone remote AFTER the
+    // vault is created. The prior call site (registerRepo) ran BEFORE
+    // SetupFragment and always skipped escrow upload — see the long note in
+    // RepoManager.registerRepo().
+    private val repoManager: RepoManager,
 ) : ObservableViewModel(app) {
 
     //region binding properties
@@ -86,6 +94,33 @@ class SetupViewModel @Inject constructor(
                 .onSuccess { session ->
                     sessionRepository.set(session)
                     vaultService.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+
+                    // Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
+                    // This MUST happen after both password + phrase VaultProtection rows
+                    // exist in the local DB, which is why it's here (after SetupFragment
+                    // creates them) rather than during registerRepo() (which runs before
+                    // SetupFragment — that prior ordering was the root cause of the
+                    // register-always-triggered bug: the premature
+                    // uploadVaultProtectionEscrow() call always saw a null
+                    // VaultProtection(RecoveryPhrase) row and skipped).
+                    //
+                    // Non-fatal: if escrow upload fails, setup still completes — the
+                    // vault is usable on this device; only fresh-install restore won't
+                    // work. The user can re-upload from Settings → Re-register repo
+                    // (follow-up, not in scope).
+                    // @since Part A fix + Part B two-layer escrow
+                    if (config.repoConfirmed) {
+                        viewModelScope.launch {
+                            try {
+                                val result = repoManager.uploadAllEscrows(password, session)
+                                if (result.isFailure) {
+                                    Timber.w(result.exceptionOrNull(), "Escrow upload failed (non-fatal)")
+                                }
+                            } catch (e: Exception) {
+                                Timber.w(e, "Escrow upload threw (non-fatal)")
+                            }
+                        }
+                    }
 
                     config.justFinishedSetup = true
                     telemetryService.signal(Signal.SetupCompleted)

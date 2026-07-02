@@ -441,4 +441,10 @@
     <string name="repo_setup_no_escrow_title">Recovery phrase restore unavailable</string>
     <string name="repo_setup_no_escrow_body">Recovery phrase restore is not available for this repo (it was created before this feature existed). You can still use the gallery, but to enable recovery-phrase restore, you would need to re-register the repo.</string>
     <string name="repo_setup_no_escrow_continue">Continue to gallery</string>
+
+    <!-- Repo setup: login-branch password entry — @since Part B two-layer escrow -->
+    <string name="repo_setup_password_entry_title">Enter your password</string>
+    <string name="repo_setup_password_entry_subtitle">Enter your vault password to restore your backup</string>
+    <string name="repo_setup_password_entry_error">Incorrect password</string>
+    <string name="repo_setup_password_entry_submit">Restore</string>
 </resources>
