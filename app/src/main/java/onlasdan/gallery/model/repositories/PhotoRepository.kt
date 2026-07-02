@@ -39,6 +39,7 @@ import timber.log.Timber
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 import kotlin.coroutines.resume
@@ -111,6 +112,18 @@ class PhotoRepository @Inject constructor(
         val type = PhotoType.fromMimeType(metaData.mimeType)
         if (type == PhotoType.UNDEFINED) return String.empty
 
+        // ─── v9 dedup: compute SHA-256 of the plaintext source bytes ───────
+        // The hash is computed INCREMENTALLY as the source stream is copied to
+        // the encrypted destination (see [createPhotoFile]) — no extra disk
+        // read and no extra memory beyond the digest's internal state. The
+        // resulting hex string is the dedup key consulted by the upload worker
+        // before transferring the original to the remote: if the same hash is
+        // already on the remote under a different UUID, the upload is skipped.
+        //
+        // `null` if the source stream can't be read (the import will fail
+        // downstream anyway) — the worker treats null hash as "no dedup,
+        // upload normally".
+        val sha256 = runCatching { MessageDigest.getInstance("SHA-256") }.getOrNull()
 
         val inputStream = io.openFileInput(sourceUri)
         val photo = Photo(
@@ -134,10 +147,32 @@ class PhotoRepository @Inject constructor(
             //   is the most meaningful provenance we have.
             //   See onlasdan.gallery.other.getMetadataFor.
             relativePath = metaData.fileName,
+            // ─── v9 dedup: album-path key (currently same as relativePath) ─────
+            // Distinct from `relativePath` because the registry's per-hash entry
+            // needs a stable album grouping key for the future packed-thumbnails
+            // optimization (50 MB packs per album). Until the `FileMetaData`
+            // model is extended to expose MediaStore `RELATIVE_PATH`, this is
+            // the same value as `relativePath` (the filename).
+            albumPath = metaData.fileName,
         )
 
-        val created = safeCreatePhoto(photo, inputStream, sourceUri)
+        val created = safeCreatePhoto(photo, inputStream, sourceUri, sha256)
         inputStream?.lazyClose()
+
+        // ─── v9 dedup: finalize the SHA-256 hash and stash it on the Photo ──
+        // The digest was updated incrementally inside createPhotoFile() as the
+        // plaintext bytes were streamed through. If the import succeeded, the
+        // hash now represents the photo's unencrypted content — store its hex
+        // string on the Photo row so the upload worker can consult the dedup
+        // registry without re-reading the file.
+        if (created && sha256 != null) {
+            val hashHex = sha256.digest().joinToString("") { "%02x".format(it) }
+            try {
+                photoDao.updateContentHash(photo.uuid, hashHex)
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to persist contentHash for %s", photo.uuid)
+            }
+        }
 
         if (!created) {
             return String.empty
@@ -157,14 +192,22 @@ class PhotoRepository @Inject constructor(
      * It is up to the caller to close the [source].
      * Does create a thumbnail, IF [origUri] is specified.
      *
+     * @param digest optional [MessageDigest] — if non-null, it is updated
+     *   incrementally as the plaintext source bytes are streamed through to
+     *   the encrypted destination. The caller finalizes the digest
+     *   (`digest.digest()`) after this returns to obtain the SHA-256 hash of
+     *   the photo's unencrypted content (used as the v9 dedup key).
+     *   `null` for callers that don't need the hash (e.g. legacy restore).
+     *
      * @return true, if everything worked
      */
     private suspend fun safeCreatePhoto(
         photo: Photo,
         source: InputStream?,
-        origUri: Uri? = null
+        origUri: Uri? = null,
+        digest: MessageDigest? = null,
     ): Boolean {
-        val fileLen = createPhotoFile(photo, source)
+        val fileLen = createPhotoFile(photo, source, digest)
         var success = fileLen != -1L
 
         if (success) {
@@ -199,15 +242,38 @@ class PhotoRepository @Inject constructor(
 
     /**
      * Create the internal file for a photo.
+     *
+     * @param digest optional [MessageDigest] — if non-null, it is updated
+     *   incrementally as the plaintext source bytes are read (BEFORE they're
+     *   handed to the encrypted destination). This lets the caller compute
+     *   the SHA-256 of the plaintext — the v9 dedup key — without an extra
+     *   disk read. The caller finalizes the digest after this returns.
      */
-    fun createPhotoFile(photo: Photo, source: InputStream?): Long {
+    fun createPhotoFile(photo: Photo, source: InputStream?, digest: MessageDigest? = null): Long {
         try {
             val encryptedDestination = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
 
             source ?: return -1L
             encryptedDestination ?: return -1L
 
-            val fileLen = source.copyTo(encryptedDestination)
+            // ─── v9 dedup: stream-copy with optional digest update ──────────
+            // Replaces `source.copyTo(encryptedDestination)` with a manual
+            // byte-buffer loop so we can feed each chunk through the digest
+            // BEFORE it goes to the encrypted destination. The digest sees
+            // the plaintext bytes; the destination sees the AES-CBC-encrypted
+            // version of the same bytes (the encryption happens inside
+            // `encryptedDestination.write`, transparently to this loop).
+            //
+            // 64 KB buffer matches the default used by Kotlin's `copyTo`.
+            val buf = ByteArray(64 * 1024)
+            var fileLen = 0L
+            while (true) {
+                val n = source.read(buf)
+                if (n <= 0) break
+                if (digest != null) digest.update(buf, 0, n)
+                encryptedDestination.write(buf, 0, n)
+                fileLen += n
+            }
             encryptedDestination.lazyClose()
 
             return fileLen

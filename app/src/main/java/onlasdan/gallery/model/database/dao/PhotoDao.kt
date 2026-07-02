@@ -111,4 +111,16 @@ interface PhotoDao {
     ): List<Photo>
 
     // endregion
+
+    // region DEDUP — @since v9 dedup + encrypted GCM registry
+
+    /**
+     * Update the SHA-256 content hash for a photo. Called by
+     * [onlasdan.gallery.model.repositories.PhotoRepository.safeImportPhoto]
+     * after the plaintext bytes have been streamed through the digest.
+     */
+    @Query("UPDATE photo SET content_hash = :hash WHERE photo_uuid = :uuid")
+    suspend fun updateContentHash(uuid: String, hash: String)
+
+    // endregion
 }

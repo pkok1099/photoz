@@ -33,6 +33,7 @@ import onlasdan.gallery.model.database.entity.PhotoType
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.domain.SyncState
+import onlasdan.gallery.sync.work.HashRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -97,6 +98,12 @@ class RepoManager @Inject constructor(
     // RecoveryPhraseStoreImpl) so it can be wrapped with the password and uploaded as
     // wrapped-phrase.json (Layer 2 of the two-layer escrow).
     private val recoveryPhraseStore: RecoveryPhraseStore,
+    // @since v9 dedup + encrypted GCM registry — needed by [downloadRegistry] to
+    // download + decrypt the remote `registry.json.crypt` into the local Room cache
+    // after the vault is unlocked. The VMK is required for decryption, so this is
+    // called from [RepoSetupViewModel.submitPassword] AFTER `sessionRepository.set`
+    // (not from [restoreThumbnailsAfterLogin], which runs BEFORE unlock).
+    private val hashRegistry: HashRegistry,
 ) {
 
     // ─── DIAGNOSTIC LOGGING (RcloneDiag pattern, same as RcloneController) ────
@@ -562,30 +569,39 @@ class RepoManager @Inject constructor(
                 continue
             }
 
-            // ─── Best-effort metadata sidecar download (v8 Part 2b) ──────────
-            // Try to fetch `photok-backup/metadata/<uuid>.json` — if present, use
-            // its relativePath / type / size fields to populate the Photo row
-            // accurately (instead of guessing type=JPEG, size=0). If the sidecar
-            // is absent (photo was uploaded before v8) or download fails, fall
-            // back to the existing defaults. Failure here is non-fatal — the
-            // thumbnail was already downloaded successfully; we just lose the
-            // extra metadata accuracy.
-            val metadata = tryDownloadPhotoMetadata(remote, uuid)
+            // ─── v9 dedup: metadata now lives in the registry, not per-file sidecars ──
+            // The v8 per-photo `metadata/<uuid>.json` sidecar is GONE in v9 —
+            // replaced by the encrypted `registry.json.crypt` (one entry per
+            // content-hash, see [HashRegistry]). The registry can only be
+            // decrypted with the VMK, which ISN'T available at this point in the
+            // login flow (the user hasn't entered their password yet — see
+            // [RepoSetupViewModel.checkRemoteAndDetectRepo]). So we insert the
+            // Photo row with PLACEHOLDER metadata (type=JPEG, size=0, relativePath=null)
+            // here, and rely on:
+            //   (a) the future [downloadRegistry] call (after vault unlock) to
+            //       populate the dedup cache for future uploads;
+            //   (b) the existing on-demand original-fetch path ([SyncRestorer])
+            //       to correct the type/size when the user actually opens the
+            //       photo (the original's bytes are decrypted with the VMK and
+            //       the type is inferred from the decrypted content).
+            //
+            // TODO(v9-followup): after [downloadRegistry] runs (post-unlock), we
+            //   could UPDATE the Photo rows with the registry's per-hash
+            //   metadata (type, size, albumPath, contentHash) so the gallery
+            //   shows accurate info without needing to fetch the original. For
+            //   now, the placeholder behavior matches the pre-v8 PR4 default.
 
             // Create a DB row for the photo. The original is NOT local — it will be
             // fetched on-demand by SyncRestorer when the user opens the photo.
-            // Type / size / relativePath come from the metadata sidecar when
-            // available (v8); otherwise we default to JPEG / 0 / null — the type
-            // will be corrected when the original is downloaded on-demand.
             val photo = Photo(
                 fileName = "$uuid.$PHOTOK_FILE_EXTENSION",
                 importedAt = System.currentTimeMillis(),
                 lastModified = null,
-                type = metadata?.type ?: PhotoType.JPEG,
-                size = metadata?.size ?: 0L,
+                type = PhotoType.JPEG,
+                size = 0L,
                 uuid = uuid,
                 syncState = SyncState.UPLOADED,
-                relativePath = metadata?.relativePath,
+                relativePath = null,
             )
             try {
                 photoDao.insert(photo)
@@ -593,7 +609,7 @@ class RepoManager @Inject constructor(
                 diag(
                     "restoreThumbnailsAfterLogin: inserted DB row for $uuid " +
                         "(syncState=UPLOADED, type=${photo.type}, size=${photo.size}, " +
-                        "relativePath=${photo.relativePath}, metaSource=${if (metadata != null) "sidecar" else "defaults"})"
+                        "relativePath=${photo.relativePath}, metaSource=defaults)"
                 )
             } catch (e: Exception) {
                 diag(
@@ -611,107 +627,40 @@ class RepoManager @Inject constructor(
     }
 
     /**
-     * Parsed per-photo metadata sidecar (v8 Part 2b). Mirrors the field set
-     * written by [onlasdan.gallery.sync.work.PhotoSyncWorker.uploadMetadataSidecar]:
-     *   - [relativePath] — original local-origin provenance
-     *   - [type] — [PhotoType] enum constant name, parsed back to enum
-     *   - [size] — encrypted original file size in bytes
+     * Download + decrypt the remote dedup registry (`registry.json.crypt`)
+     * into the local Room cache.
      *
-     * `uuid` / `fileName` from the sidecar are intentionally NOT exposed here:
-     * the caller already knows the uuid (it's the thumbnail-filename key) and
-     * uses the internal-storage filename pattern (`<uuid>.<ext>`) for the DB
-     * row's `fileName` field — matching the pre-v8 PR4 behavior. Future
-     * enhancement: use the sidecar's `fileName` to set the human-readable
-     * original filename on the Photo row.
+     * MUST be called AFTER the vault is unlocked (the VMK is required to
+     * decrypt the registry). The natural call site is
+     * [RepoSetupViewModel.submitPassword] right after `sessionRepository.set(session)`,
+     * so the registry cache is populated before the user navigates to the
+     * gallery and potentially enqueues new uploads.
      *
-     * @since v8 — path-consistency metadata sidecar
+     * Behavior:
+     *  - Registry exists on remote → decrypt, parse, REPLACE local cache,
+     *    return entry count.
+     *  - Registry doesn't exist (fresh repo, or pre-v9 repo) → return 0;
+     *    local cache is cleared (it would have been empty anyway).
+     *  - Download/decrypt/parse failure → return 0; local cache state is
+     *    undefined but the failure is non-fatal — uploads will still work,
+     *    they just won't dedup against the (unknown) existing remote content.
+     *
+     * @param vmkBytes raw VMK key bytes from `session.vmk.encoded`
+     * @return count of entries loaded into the local cache (0 if registry
+     *   doesn't exist or failed to load)
+     *
+     * @since v9 dedup + encrypted GCM registry
      */
-    private data class PhotoMetadata(
-        val relativePath: String?,
-        val type: PhotoType,
-        val size: Long,
-    )
-
-    /**
-     * Best-effort download + parse of `photok-backup/metadata/<uuid>.json`.
-     *
-     * Returns `null` if:
-     *   - the sidecar doesn't exist on the remote (photo uploaded before v8)
-     *   - the download fails for any reason (network, rcd error, etc.)
-     *   - the downloaded JSON is unparseable or missing required fields
-     *
-     * The caller ([restoreThumbnailsAfterLogin]) treats `null` as "use defaults".
-     * Failure is logged but never thrown — restore must not block on metadata.
-     *
-     * @since v8 — path-consistency metadata sidecar
-     */
-    private suspend fun tryDownloadPhotoMetadata(remote: String, uuid: String): PhotoMetadata? {
-        val remoteMetaPath = "$remote:$REPO_DIR/${SyncConfig.METADATA_DIR}/$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}"
-        val tempFile = File(app.cacheDir, "photok-meta-dl-$uuid-${System.currentTimeMillis()}${SyncConfig.METADATA_FILENAME_SUFFIX}")
-        return try {
-            diag("restoreThumbnailsAfterLogin: downloading metadata sidecar $remoteMetaPath")
-            val dlResult = rcloneController.downloadFile(remoteMetaPath, tempFile.absolutePath)
-            if (dlResult.isFailure) {
-                // Common case for pre-v8 photos: sidecar simply doesn't exist.
-                // Logged at debug level — not an error.
-                diag(
-                    "restoreThumbnailsAfterLogin: metadata sidecar not available for $uuid " +
-                        "(likely pre-v8 photo): ${dlResult.exceptionOrNull()?.message}"
-                )
-                return null
-            }
-            val json = tempFile.readText()
-            parsePhotoMetadata(json)?.also {
-                diag("restoreThumbnailsAfterLogin: parsed metadata sidecar for $uuid (type=${it.type}, size=${it.size}, relativePath=${it.relativePath})")
-            }
+    suspend fun downloadRegistry(vmkBytes: ByteArray): Int = withContext(Dispatchers.IO) {
+        diag("downloadRegistry: BEGIN (vmkBytes=${vmkBytes.size})")
+        val count = try {
+            hashRegistry.downloadAndCache(vmkBytes)
         } catch (e: Exception) {
-            diag("restoreThumbnailsAfterLogin: metadata sidecar parse FAILED for $uuid: ${e.message}", e)
-            null
-        } finally {
-            tempFile.delete()
+            diag("downloadRegistry: FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
+            0
         }
-    }
-
-    /**
-     * Parse a per-photo metadata sidecar JSON. Mirrors the regex-based,
-     * no-external-dependency style of [parseMarker] / [parseVaultProtection].
-     *
-     * Returns `null` if required fields are missing or unparseable. The `type`
-     * field is parsed via [PhotoType.valueOf] with a fallback to JPEG for
-     * unknown values (forward-compat: a future PhotoType entry the receiver
-     * doesn't know about degrades gracefully to JPEG, same as the pre-v8
-     * default).
-     *
-     * @since v8 — path-consistency metadata sidecar
-     */
-    private fun parsePhotoMetadata(json: String): PhotoMetadata? {
-        return try {
-            // Strings — nullable, captured only if the quoted form is present.
-            val relativePath = Regex("\"relativePath\"\\s*:\\s*\"([^\"]*)\"")
-                .find(json)?.groupValues?.get(1)
-            val typeStr = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"")
-                .find(json)?.groupValues?.get(1)
-            // Numeric (size may be 0, so we accept 0 explicitly).
-            val size = Regex("\"size\"\\s*:\\s*(\\d+)").find(json)
-                ?.groupValues?.get(1)?.toLongOrNull()
-
-            // type is required — without it, the whole sidecar is unusable
-            // (we'd be no better than the pre-v8 default).
-            if (typeStr == null) {
-                diag("parsePhotoMetadata: missing required 'type' field")
-                return null
-            }
-
-            val type = runCatching { PhotoType.valueOf(typeStr) }.getOrDefault(PhotoType.JPEG)
-            PhotoMetadata(
-                relativePath = relativePath,
-                type = type,
-                size = size ?: 0L,
-            )
-        } catch (e: Exception) {
-            diag("parsePhotoMetadata: parse FAILED: ${e.message}", e)
-            null
-        }
+        diag("downloadRegistry: DONE — loaded $count entries into local cache")
+        count
     }
 
     /**

@@ -40,18 +40,41 @@ object SyncConfig {
     //   <remote>:photoz-backup/originals/<uuid>.crypt
     //   <remote>:photoz-backup/thumbnails/<uuid>.crypt.tn
     //   <remote>:photoz-backup/videos/<uuid>.crypt.vp
-    //   <remote>:photoz-backup/metadata/<uuid>.json
+    //   <remote>:photoz-backup/registry.json.crypt        (v9 — dedup registry)
+    //   <remote>:photoz-backup/thumbnails/pack-*.pack     (future — 50MB packs)
     //   <remote>:photoz-backup/repo-config.json
     //   <remote>:photoz-backup/vault-protection/recovery-phrase.json
     //   <remote>:photoz-backup/vault-protection/wrapped-phrase.json
     //
     // @since rebrand + consolidation — moved from remote root to under photoz-backup/
+    // @since v9 — per-photo metadata sidecar (`metadata/<uuid>.json`) is REPLACED
+    //   by the encrypted dedup registry (`registry.json.crypt`). The metadata
+    //   dir is gone; per-photo metadata now lives inside the registry entries.
     const val REPO_DIR: String = "photoz-backup"
     const val remoteOriginalsDir: String = "$REPO_DIR/originals"
     const val remoteThumbnailsDir: String = "$REPO_DIR/thumbnails"
     const val remoteVideosDir: String = "$REPO_DIR/videos"
 
-    // ─── Per-photo metadata sidecar (v8 path-consistency) ───────────────────
-    const val METADATA_DIR: String = "$REPO_DIR/metadata"
-    const val METADATA_FILENAME_SUFFIX: String = ".json"
+    // ─── Dedup + packed thumbnails (v9) ───────────────────────────────────
+    // The dedup registry is a single encrypted JSON artifact at
+    // `<remote>:photoz-backup/registry.json.crypt`. It contains one entry per
+    // content-hash that has ever been uploaded, recording the canonical UUID,
+    // filename, album_path, size, type and (future) packed-thumbnail location.
+    // See [onlasdan.gallery.sync.work.HashRegistry] for the on-wire format.
+    //
+    // Encryption: AES-256-GCM with the VMK as the key, format
+    //   [12-byte nonce][ciphertext + 16-byte auth-tag].
+    //
+    // The packed-thumbnails constants below are RESERVED for a follow-up
+    // enhancement — the current implementation uploads thumbnails individually
+    // (`<remote>:photoz-backup/thumbnails/<uuid>.crypt.tn`) and leaves the
+    // `thumbnail_pack` field in each registry entry as null. The registry
+    // format already supports packs (thumbnail_pack / offset / length), so
+    // the optimization can be added later without a format change.
+    const val REGISTRY_FILENAME = "registry.json.crypt"
+    const val REGISTRY_REMOTE_PATH = "$REPO_DIR/registry.json.crypt"
+    const val THUMBNAIL_PACK_SIZE_BYTES: Long = 50L * 1024 * 1024 // 50 MB per pack
+    const val THUMBNAIL_PACK_DIR = "$REPO_DIR/thumbnails"
+    const val THUMBNAIL_PACK_PREFIX = "pack-"
+    const val THUMBNAIL_PACK_SUFFIX = ".pack"
 }

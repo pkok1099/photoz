@@ -80,6 +80,49 @@ data class Photo(
     @ColumnInfo(name = COL_RELATIVE_PATH, defaultValue = "NULL")
     @Expose
     var relativePath: String? = null,
+
+    /**
+     * SHA-256 hash of the photo's PLAINTEXT bytes (i.e. the unencrypted source
+     * bytes BEFORE they were written through the AES-CBC encryption stream).
+     *
+     * Computed at import time in
+     * [onlasdan.gallery.model.repositories.PhotoRepository.safeImportPhoto]
+     * by feeding the source `InputStream` through a `MessageDigest("SHA-256")`
+     * while it's being copied to the encrypted destination — no extra disk
+     * read, no extra memory beyond the digest's internal state.
+     *
+     * Used by the v9 dedup registry ([onlasdan.gallery.sync.work.HashRegistry])
+     * to decide whether an upload can be SKIPPED because the same content is
+     * already on the remote under a different UUID. `null` for photos imported
+     * before v9 (no hash was computed at the time) — these photos upload
+     * normally and the registry entry is created with whatever hash we can
+     * compute on-demand from the encrypted-at-rest original (or simply left
+     * out of the registry, falling back to the pre-v9 behavior).
+     *
+     * @since v9 — dedup + encrypted GCM registry
+     */
+    @ColumnInfo(name = COL_CONTENT_HASH, defaultValue = "NULL")
+    @Expose
+    var contentHash: String? = null,
+
+    /**
+     * Logical album / folder path this photo belongs to (e.g. `DCIM/Camera`,
+     * `Pictures/Screenshots`). Currently captured at import time as the same
+     * value as [relativePath] (i.e. the original filename) until the
+     * `FileMetaData` model is extended to expose the MediaStore
+     * `RELATIVE_PATH` column.
+     *
+     * Distinct from [relativePath] because the registry's per-hash entry
+     * needs a stable album grouping key for the future packed-thumbnails
+     * optimization (50 MB packs per album) — `relativePath` may evolve to
+     * hold the full original filesystem path for display purposes, while
+     * `albumPath` stays a clean folder key.
+     *
+     * @since v9 — dedup + encrypted GCM registry
+     */
+    @ColumnInfo(name = COL_ALBUM_PATH, defaultValue = "NULL")
+    @Expose
+    var albumPath: String? = null,
 ) {
 
     val internalFileName: String
@@ -104,5 +147,11 @@ data class Photo(
 
         /** Original local-origin provenance path column. @since v8 path-consistency sidecar */
         const val COL_RELATIVE_PATH = "relativePath"
+
+        /** SHA-256 of plaintext bytes — dedup key for the v9 registry. @since v9 dedup */
+        const val COL_CONTENT_HASH = "content_hash"
+
+        /** Logical album/folder key — for packed-thumbnails grouping. @since v9 dedup */
+        const val COL_ALBUM_PATH = "album_path"
     }
 }

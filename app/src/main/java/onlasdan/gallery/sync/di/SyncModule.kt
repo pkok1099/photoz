@@ -25,11 +25,14 @@ import dagger.hilt.components.SingletonComponent
 import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
 import onlasdan.gallery.encryption.domain.VaultProtectionRepository
 import onlasdan.gallery.encryption.domain.crypto.PhraseEscrowWrapper
+import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.model.database.dao.PhotoDao
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.rclone.RepoManager
 import onlasdan.gallery.sync.rclone.RcloneConfigManager
 import onlasdan.gallery.sync.rclone.RcloneController
+import onlasdan.gallery.sync.work.HashRegistry
+import onlasdan.gallery.sync.work.HashRegistryDao
 import javax.inject.Singleton
 
 @Module
@@ -76,6 +79,11 @@ object SyncModule {
         // Already bound by Hilt (RecoveryPhraseStoreImpl has @Inject constructor,
         // bound to RecoveryPhraseStore interface by EncryptionBindingModule).
         recoveryPhraseStore: RecoveryPhraseStore,
+        // @since v9 dedup + encrypted GCM registry — RepoManager.downloadRegistry()
+        // delegates to HashRegistry.downloadAndCache() to populate the local
+        // Room cache from the encrypted remote registry. HashRegistry has
+        // @Singleton @Inject constructor, so Hilt provides it directly.
+        hashRegistry: HashRegistry,
     ) = RepoManager(
         app,
         config,
@@ -85,7 +93,17 @@ object SyncModule {
         vaultProtectionRepository,
         phraseEscrowWrapper,
         recoveryPhraseStore,
+        hashRegistry,
     )
+
+    // @since v9 dedup + encrypted GCM registry — provides the HashRegistryDao
+    // from the PhotoZDatabase singleton. HashRegistry itself has
+    // @Singleton @Inject constructor (auto-bound by Hilt), so it doesn't need an
+    // explicit @Provides — only the DAO does.
+    @Provides
+    @Singleton
+    fun provideHashRegistryDao(database: PhotoZDatabase): HashRegistryDao =
+        database.getHashRegistryDao()
 
     @Provides
     @Singleton

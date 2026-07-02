@@ -32,8 +32,10 @@ import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.model.database.ref.AlbumPhotoCrossRefTable
 import onlasdan.gallery.sort.data.db.SortDao
 import onlasdan.gallery.sort.data.db.model.SortTable
+import onlasdan.gallery.sync.work.HashRegistryDao
+import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 8
+private const val DATABASE_VERSION = 9
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -49,6 +51,10 @@ const val DATABASE_NAME = "photok.db"
         AlbumPhotoCrossRefTable::class,
         SortTable::class,
         VaultProtectionTable::class,
+        // @since v9 dedup + encrypted GCM registry — local cache of the remote
+        // registry.json.crypt (one row per content-hash). Fully rebuilt from
+        // the remote on every successful login by HashRegistry.downloadAndCache.
+        HashRegistryEntry::class,
     ],
     version = DATABASE_VERSION,
     autoMigrations = [
@@ -87,6 +93,21 @@ const val DATABASE_NAME = "photok.db"
             from = 7,
             to = 8,
         ),
+        // v8 → v9: dedup + encrypted GCM registry.
+        //   1. Add `content_hash TEXT DEFAULT NULL` to `photo` (nullable — existing
+        //      photos imported before v9 simply have no hash; the upload worker
+        //      treats null hash as "no dedup, upload normally").
+        //   2. Add `album_path TEXT DEFAULT NULL` to `photo` (nullable — same
+        //      reasoning).
+        //   3. Add the new `hash_registry` table (entity HashRegistryEntry) for
+        //      the local cache of the encrypted remote registry.
+        // All three changes are additive (new nullable columns + new table) —
+        // Room auto-generates the DDL; no AutoMigrationSpec needed.
+        // @since v9 dedup + encrypted GCM registry
+        AutoMigration(
+            from = 8,
+            to = 9,
+        ),
     ]
 )
 @TypeConverters(Converters::class)
@@ -100,6 +121,13 @@ abstract class PhotoZDatabase : RoomDatabase() {
     abstract fun getAlbumDao(): AlbumDao
     abstract fun getSortDao(): SortDao
     abstract fun getVaultProtectionDao(): VaultProtectionDao
+
+    /**
+     * DAO for the local cache of the dedup registry ([HashRegistryEntry]).
+     *
+     * @since v9 dedup + encrypted GCM registry
+     */
+    abstract fun getHashRegistryDao(): HashRegistryDao
 }
 
 @DeleteColumn.Entries(

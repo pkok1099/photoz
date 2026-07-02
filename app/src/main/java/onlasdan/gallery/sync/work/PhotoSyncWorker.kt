@@ -38,6 +38,7 @@ import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import onlasdan.gallery.R
+import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.model.database.dao.PhotoDao
 import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.settings.data.Config
@@ -77,6 +78,21 @@ class PhotoSyncWorker @AssistedInject constructor(
     // started before the app was killed still produces a correct final summary
     // when WorkManager resumes the queued workers.
     private val batchTracker: SyncBatchTracker,
+    // @since v9 dedup — encrypted GCM registry. Used (a) BEFORE uploading the
+    // original to skip the transfer if the same content-hash is already on
+    // the remote under a different UUID, and (b) AFTER a successful upload to
+    // append the new hash → UUID mapping to the local registry cache. The
+    // cache is flushed to the remote by [flushRegistryIfBatchComplete] at the
+    // end of the batch (last worker wins — see [HashRegistry] for the
+    // concurrency model).
+    private val hashRegistry: HashRegistry,
+    // @since v9 dedup — needed to obtain the raw VMK bytes for encrypting the
+    // registry on upload. The VMK is in memory only while the vault is
+    // unlocked; if the worker runs after the vault is locked (e.g. a delayed
+    // retry long after the app was backgrounded), the session may be null and
+    // the registry upload is skipped (logged) — the photo itself is still
+    // uploaded + verified, just not registered for future dedup.
+    private val sessionRepository: SessionRepository,
 ) : CoroutineWorker(appContext, params) {
 
     // ─── Notification update rate-limiting state (v8) ───────────────────────
@@ -251,10 +267,7 @@ class PhotoSyncWorker @AssistedInject constructor(
             // batch counters so the tracker doesn't get stuck waiting for a
             // worker that will never produce a result.
             batchTracker.onWorkerSuccess(0L)
-            if (batchTracker.isBatchComplete()) {
-                showBatchCompleteNotification()
-                batchTracker.reset()
-            }
+            onBatchCompleteIfDone()
             return Result.success()
         }
 
@@ -263,10 +276,7 @@ class PhotoSyncWorker @AssistedInject constructor(
             // Already uploaded — advance the batch counters (no bytes added since
             // we don't actually re-upload) so the tracker stays consistent.
             batchTracker.onWorkerSuccess(0L)
-            if (batchTracker.isBatchComplete()) {
-                showBatchCompleteNotification()
-                batchTracker.reset()
-            }
+            onBatchCompleteIfDone()
             return Result.success()
         }
         // ─── UUID-based no-overwrite design (v8 Part 2b-2) ──────────────────────
@@ -301,10 +311,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                         // Photo deleted during upload — still advance the batch
                         // counters so the tracker doesn't get stuck.
                         batchTracker.onWorkerSuccess(0L)
-                        if (batchTracker.isBatchComplete()) {
-                            showBatchCompleteNotification()
-                            batchTracker.reset()
-                        }
+                        onBatchCompleteIfDone()
                         return Result.success()
                     }
                     SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "upload + verify succeeded")
@@ -320,10 +327,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                 batchTracker.onWorkerSuccess(photo.size)
                 diag("doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
                     "total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}")
-                if (batchTracker.isBatchComplete()) {
-                    showBatchCompleteNotification()
-                    batchTracker.reset()
-                }
+                onBatchCompleteIfDone()
                 if (SyncConfig.deleteLocalAfterUpload) {
                     deleteLocalOriginalAfterUpload(photo)
                 }
@@ -344,10 +348,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                 // failure notification (with batch-failed count) was already shown
                 // inside performUpload() before the exception propagated.
                 batchTracker.onWorkerFailure()
-                if (batchTracker.isBatchComplete()) {
-                    showBatchCompleteNotification()
-                    batchTracker.reset()
-                }
+                onBatchCompleteIfDone()
                 Result.failure()
             }
 
@@ -370,10 +371,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                     // Same as the fatal-failure branch: increment failed counter,
                     // show batch summary if this was the last worker.
                     batchTracker.onWorkerFailure()
-                    if (batchTracker.isBatchComplete()) {
-                        showBatchCompleteNotification()
-                        batchTracker.reset()
-                    }
+                    onBatchCompleteIfDone()
                     Result.failure()
                 } else {
                     Timber.i(
@@ -408,6 +406,51 @@ class PhotoSyncWorker @AssistedInject constructor(
         diag("performUpload: BEGIN uuid=$uuid remote=$remote photoType=${photo.type} syncState=${photo.syncState} " +
             "batchCurrent=${batchState.current} batchTotal=${batchState.total}")
 
+        // ─── v9 dedup: skip upload entirely if content-hash is already on the remote ──
+        // The dedup registry is a local Room cache of the encrypted `registry.json.crypt`
+        // on the remote, populated at login by [HashRegistry.downloadAndCache]. If the
+        // photo's SHA-256 (computed at import time from the plaintext bytes) matches an
+        // existing entry, the original + thumbnail + video-preview are all already on
+        // the remote under the CANONICAL UUID (the first photo that uploaded with this
+        // hash). Re-uploading them under this photo's UUID would just waste bandwidth
+        // and storage on the remote — skip the transfer entirely and transition straight
+        // to UPLOADED.
+        //
+        // Photos with `contentHash == null` (imported before v9, or import-path failure
+        // during hash computation) bypass dedup and upload normally — they'll get a
+        // registry entry created below if the upload succeeds, so future imports of the
+        // same content WILL dedup against them.
+        //
+        // The local thumbnail (created at import time) is NOT deleted — the gallery on
+        // THIS device still shows it. On a fresh-install restore, this duplicate UUID
+        // won't appear in the gallery because there's no thumbnail for it on the remote
+        // (the remote only has the canonical UUID's thumbnail). That's the intended
+        // trade-off: dedup saves bandwidth at the cost of duplicate UUIDs being
+        // device-local only.
+        val contentHash = photo.contentHash
+        if (!contentHash.isNullOrBlank()) {
+            val existing = try {
+                hashRegistry.findExisting(contentHash)
+            } catch (e: Exception) {
+                diag("performUpload: dedup lookup FAILED (non-fatal, will upload normally): ${e.message}", e)
+                null
+            }
+            if (existing != null) {
+                diag("performUpload: DEDUP hit — contentHash=$contentHash already on remote " +
+                    "under canonical uuid=${existing.uuid} (filename=${existing.filename}). " +
+                    "Skipping upload; transitioning straight to UPLOADED.")
+                SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED",
+                    "dedup: content_hash=$contentHash already on remote as ${existing.uuid}")
+                // No registry entry to add — the canonical entry already covers this hash.
+                // Just bail out; the caller (doWorkInternal) will mark UPLOADED.
+                return
+            } else {
+                diag("performUpload: dedup miss — contentHash=$contentHash not in registry; uploading normally")
+            }
+        } else {
+            diag("performUpload: no contentHash on photo (pre-v9 import or hash failure) — skipping dedup, uploading normally")
+        }
+
         // ─── Item 1: precompute batch-style notification text ───────────────
         // Collapsed (single line): "Uploading N of M: filename (size)"
         // Expanded (BigTextStyle): "Uploading N of M photos\nfilename (size)\nZ uploaded so far"
@@ -421,6 +464,13 @@ class PhotoSyncWorker @AssistedInject constructor(
         // Thumbnails are small (a few KB) — fire-and-forget via uploadFile() is
         // fine. No real progress feedback needed; the notification shows
         // indeterminate progress while this runs.
+        //
+        // NOTE (v9): thumbnails are still uploaded INDIVIDUALLY (`<uuid>.crypt.tn`).
+        // The future packed-thumbnails optimization (50 MB packs at
+        // `<remote>:photoz-backup/thumbnails/pack-*.pack`, with per-hash
+        // thumbnail_pack / offset / length recorded in the registry) is a
+        // follow-up enhancement — the registry format already supports it, but
+        // the actual pack upload/download logic isn't implemented yet.
         val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
         if (thumbPath.exists()) {
             val remoteThumb = "$remote:${SyncConfig.remoteThumbnailsDir}/${thumbPath.name}"
@@ -526,20 +576,45 @@ class PhotoSyncWorker @AssistedInject constructor(
             throw e
         }
 
-        // ─── Upload metadata sidecar (v8 Part 2a-4) ────────────────────────
-        // Small JSON artifact at `<remote>:photok-backup/metadata/<uuid>.json`
-        // recording the photo's original local-origin provenance (relativePath +
-        // fileName), type, and size — so a fresh-install restore can populate
-        // the Photo DB row accurately instead of guessing type=JPEG, size=0.
-        // See SyncConfig.METADATA_DIR / METADATA_FILENAME_SUFFIX, and
-        // RepoManager.restoreThumbnailsAfterLogin() for the restore side.
-        try {
-            uploadMetadataSidecar(photo, remote)
-        } catch (e: Exception) {
-            // Metadata sidecar failure is non-fatal — the photo's encrypted
-            // artifacts are already uploaded and verified. Log + continue.
-            diag("performUpload: metadata sidecar upload FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
-            Timber.w(e, "PhotoSyncWorker: metadata sidecar upload failed for %s — photo is still UPLOADED", uuid)
+        // ─── v9 dedup: append to the local registry cache ────────────────────
+        // The original + thumbnail are now on the remote under THIS photo's UUID
+        // (the canonical UUID for this content-hash). Record the hash → UUID
+        // mapping in the local registry cache so:
+        //   (a) future imports of the same content on THIS device dedup against
+        //       this UUID (no remote round-trip needed for the lookup — the
+        //       cache is consulted directly);
+        //   (b) the next [flushRegistryIfBatchComplete] call serializes the
+        //       cache (including this new entry) and uploads it as
+        //       `registry.json.crypt` to the remote, so OTHER devices will
+        //       dedup against this UUID after their next login.
+        //
+        // Failure here is non-fatal — the photo's encrypted artifacts are
+        // already uploaded + verified. We just lose dedup coverage for this
+        // hash until the next successful registry add. Logged + continued.
+        if (!contentHash.isNullOrBlank()) {
+            try {
+                val entry = HashRegistryEntry(
+                    contentHash = contentHash,
+                    uuid = uuid,
+                    filename = photo.fileName,
+                    albumPath = photo.albumPath ?: photo.relativePath,
+                    size = photo.size,
+                    type = photo.type.name,
+                    // thumbnail_pack = null means "individual file, not packed" —
+                    // the thumbnail is at `<remote>:thumbnails/<uuid>.crypt.tn`.
+                    // The future packed-thumbnails optimization will set this to
+                    // `pack-NNN` and fill in offset/length.
+                    thumbnailPack = null,
+                    thumbnailOffset = 0L,
+                    thumbnailLength = thumbPath.takeIf { it.exists() }?.length() ?: 0L,
+                    deleted = false,
+                )
+                hashRegistry.addEntry(entry)
+                diag("performUpload: added registry entry contentHash=$contentHash uuid=$uuid")
+            } catch (e: Exception) {
+                diag("performUpload: registry addEntry FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
+                Timber.w(e, "PhotoSyncWorker: registry addEntry failed for %s — photo is still UPLOADED", uuid)
+            }
         }
 
         // ─── Post-upload success state ────────────────────────────────────
@@ -568,24 +643,27 @@ class PhotoSyncWorker @AssistedInject constructor(
      * Build and upload the per-photo metadata sidecar JSON to
      * `<remote>:photok-backup/metadata/<uuid>.json`.
      *
-     * The sidecar captures fields the encrypted artifacts alone can't recover:
+     * **DEPRECATED in v9** — replaced by the encrypted dedup registry
+     * ([HashRegistry] / `registry.json.crypt`). The registry already records
+     * the same fields (filename, albumPath, size, type) per content-hash, in
+     * a single encrypted artifact instead of N per-photo plaintext sidecars.
+     * The function is KEPT here for backwards compatibility (so older code
+     * paths that might still call it compile), but [performUpload] no longer
+     * invokes it. New code SHOULD NOT call this — add the photo's metadata to
+     * the registry via [HashRegistry.addEntry] instead.
+     *
+     * The original sidecar captured fields the encrypted artifacts alone can't
+     * recover:
      *   - `uuid` — the photo's stable UUID (matches the remote filenames)
      *   - `relativePath` — the photo's original local-origin provenance
-     *     (filename today; full MediaStore `RELATIVE_PATH` in a future enhancement)
-     *   - `fileName` — the original filename as imported (NOT the `<uuid>.crypt`
-     *     internal filename)
+     *   - `fileName` — the original filename as imported
      *   - `type` — the [onlasdan.gallery.model.database.entity.PhotoType]
-     *     enum constant name (e.g. "JPEG", "MP4") — restored via `PhotoType.valueOf`
-     *     on the receiver side, falling back to JPEG if the value is unknown
      *   - `size` — the encrypted original's file size in bytes
      *
-     * On restore ([RepoManager.restoreThumbnailsAfterLogin]), if this sidecar
-     * is present it's used to populate the Photo DB row accurately. If absent
-     * (photo was uploaded before v8), the restore falls back to the existing
-     * `type=JPEG, size=0` defaults.
-     *
      * @since v8 — path-consistency metadata sidecar
+     * @deprecated since v9 — use [HashRegistry.addEntry] instead.
      */
+    @Suppress("UNUSED_PARAMETER", "unused")
     private suspend fun uploadMetadataSidecar(photo: Photo, remote: String) {
         val uuid = photo.uuid
         val sidecarJson: JsonObject = buildJsonObject {
@@ -597,15 +675,79 @@ class PhotoSyncWorker @AssistedInject constructor(
         }
         val sidecarText = metadataJson.encodeToString(JsonObject.serializer(), sidecarJson)
 
-        val tempFile = File(appContext.cacheDir, "photok-meta-$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}")
+        // v9: constants inlined — the SyncConfig.METADATA_DIR / METADATA_FILENAME_SUFFIX
+        // constants were removed when the per-photo sidecar was replaced by the
+        // registry. The literal path is kept here so this deprecated function
+        // still compiles for any legacy caller; do NOT introduce new callers.
+        val legacyMetadataDir = "metadata"
+        val legacyMetadataSuffix = ".json"
+        val tempFile = File(appContext.cacheDir, "photok-meta-$uuid$legacyMetadataSuffix")
         try {
             tempFile.writeText(sidecarText)
-            val remoteMeta = "$remote:${RepoManager.REPO_DIR}/${SyncConfig.METADATA_DIR}/$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}"
+            val remoteMeta = "$remote:${RepoManager.REPO_DIR}/$legacyMetadataDir/$uuid$legacyMetadataSuffix"
             diag("performUpload: uploading metadata sidecar (${tempFile.length()} bytes) → $remoteMeta")
             rcloneController.uploadFile(tempFile.absolutePath, remoteMeta).getOrThrow()
             diag("performUpload: metadata sidecar upload OK")
         } finally {
             tempFile.delete()
+        }
+    }
+
+    /**
+     * End-of-batch hook: if [SyncBatchTracker.isBatchComplete] reports the
+     * batch is done, post the final summary notification, FLUSH the dedup
+     * registry to the remote (v9), and reset the batch tracker.
+     *
+     * Called from every terminal branch of [doWorkInternal] (success, fatal
+     * failure, max-attempts failure, "photo already UPLOADED", "photo not
+     * found", "photo deleted during upload") — six call sites in total.
+     * Consolidating the logic here ensures the registry flush happens exactly
+     * once per batch, on the LAST worker, regardless of which terminal branch
+     * that worker happens to take.
+     *
+     * The registry flush is best-effort: if the vault is locked (no VMK in
+     * memory) or the upload fails for any reason, the local cache is still
+     * correct (it just isn't propagated to the remote yet). The next batch's
+     * flush will pick up these entries; the cache is monotonic.
+     *
+     * @since v9 — added registry flush to the batch-complete hook
+     */
+    private suspend fun onBatchCompleteIfDone() {
+        if (!batchTracker.isBatchComplete()) return
+        showBatchCompleteNotification()
+        // ─── v9 dedup: flush the local registry cache to the remote ──────
+        // Serializes all current entries, encrypts with the VMK (AES-256-GCM),
+        // and uploads as `<remote>:photoz-backup/registry.json.crypt`. Failure
+        // is non-fatal — the local cache stays correct and the next batch will
+        // retry the flush.
+        flushRegistryToRemote()
+        batchTracker.reset()
+    }
+
+    /**
+     * Best-effort flush of the local dedup registry cache to the remote.
+     *
+     * Obtains the VMK from [SessionRepository] — if the vault is locked (e.g.
+     * the worker is running on a delayed retry long after the app was
+     * backgrounded), the flush is skipped (logged). The local cache is
+     * unaffected; the next successful flush will pick up these entries.
+     *
+     * @since v9 dedup + encrypted GCM registry
+     */
+    private suspend fun flushRegistryToRemote() {
+        try {
+            val session = sessionRepository.get()
+            if (session == null) {
+                diag("flushRegistryToRemote: no vault session (vault locked) — skipping registry flush; local cache stays correct, will flush on next batch")
+                return
+            }
+            val vmkBytes = session.vmk.encoded
+            diag("flushRegistryToRemote: flushing registry to remote (vmkBytes=${vmkBytes.size})")
+            hashRegistry.uploadToRemote(vmkBytes)
+            diag("flushRegistryToRemote: OK")
+        } catch (e: Exception) {
+            diag("flushRegistryToRemote: FAILED (non-fatal — local cache stays correct, will retry on next batch): ${e.javaClass.name}: ${e.message}", e)
+            Timber.w(e, "PhotoSyncWorker: registry flush failed — local cache stays correct, will retry on next batch")
         }
     }
 

@@ -408,6 +408,26 @@ class RepoSetupViewModel @Inject constructor(
                 .onSuccess { session ->
                     sessionRepository.set(session)
 
+                    // ─── v9 dedup: download + cache the remote registry ──────────
+                    // Now that the vault is unlocked, the VMK is available to
+                    // decrypt the remote `registry.json.crypt` into the local
+                    // Room cache. The cache is consulted by [PhotoSyncWorker]
+                    // before every upload to skip transfers whose content-hash
+                    // is already on the remote. Failure here is non-fatal — the
+                    // registry simply won't have entries yet (fresh repo or
+                    // pre-v9 repo) and uploads will proceed normally without
+                    // dedup; the cache will be populated by future registry
+                    // flushes from this device.
+                    try {
+                        val loaded = repoManager.downloadRegistry(session.vmk.encoded)
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: downloadRegistry loaded $loaded entries into local cache")
+                    } catch (e: Exception) {
+                        android.util.Log.e("RcloneDiag",
+                            "submitPassword: downloadRegistry FAILED (non-fatal — uploads will still work, just no dedup): ${e.message}", e)
+                        Timber.w(e, "submitPassword: downloadRegistry failed (non-fatal)")
+                    }
+
                     // ─── DATA-LOSS FIX: persist local VaultProtection(Password) ────
                     // After a login-branch unlock, the local Room DB has
                     // VaultProtection(RecoveryPhrase) (downloaded from escrow) but
