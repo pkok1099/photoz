@@ -181,7 +181,30 @@ class PhotoSyncWorker @AssistedInject constructor(
             return Result.failure()
         }
 
-        runCatching { setForeground(getForegroundInfo()) }
+        // ─── Foreground notification (v8 Part 1 + notification-fix round) ──────
+        // setForeground() promotes this worker to a foreground service with a
+        // persistent notification. On Android 12+ this can throw
+        // ForegroundServiceStartNotAllowedException if the app is backgrounded
+        // and not in an exempt state. The prior code wrapped this in a silent
+        // runCatching{} — which meant if setForeground() threw, the worker
+        // kept running but NO notification ever appeared (the foreground
+        // service never started). This was a contributing cause of
+        // "notifications never appear despite permission granted".
+        //
+        // Now: log the result explicitly. If setForeground() fails, the worker
+        // continues (uploads still work without a foreground notification —
+        // WorkManager just runs it as a normal background job), but we log
+        // the exception so it's visible in sync_log.txt + logcat.
+        try {
+            val fgInfo = getForegroundInfo()
+            setForeground(fgInfo)
+            diag("setForeground: OK — foreground notification posted (id=$NOTIFICATION_ID, type=FOREGROUND_SERVICE_TYPE_DATA_SYNC)")
+        } catch (e: Exception) {
+            diag("setForeground: FAILED — ${e.javaClass.name}: ${e.message}", e)
+            diag("setForeground: worker will continue as background job — uploads still work, just no visible notification")
+            // Don't rethrow — uploads are functional without the notification.
+            // The notification is UX-only, not a functional dependency.
+        }
 
         val photo = try {
             photoDao.get(uuid)
@@ -488,8 +511,19 @@ class PhotoSyncWorker @AssistedInject constructor(
     }
 
     private fun ensureChannel() {
-        val nm = appContext.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+        val nm = appContext.getSystemService(NotificationManager::class.java) ?: run {
+            diag("ensureChannel: NotificationManager service unavailable — notifications will not work")
+            return
+        }
+        if (nm.getNotificationChannel(CHANNEL_ID) != null) {
+            // Channel already exists — log its current importance for diagnostics.
+            // Channel importance is immutable once created; if it was created at
+            // IMPORTANCE_NONE (e.g. user disabled the channel in Settings),
+            // notifications will never appear regardless of POST_NOTIFICATIONS permission.
+            val ch = nm.getNotificationChannel(CHANNEL_ID)
+            diag("ensureChannel: channel $CHANNEL_ID already exists (importance=${ch?.importance})")
+            return
+        }
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
@@ -500,6 +534,7 @@ class PhotoSyncWorker @AssistedInject constructor(
                 setShowBadge(false)
             }
         )
+        diag("ensureChannel: created channel $CHANNEL_ID (importance=IMPORTANCE_LOW)")
     }
 
     private fun buildNotification(text: String): Notification =
@@ -597,8 +632,37 @@ class PhotoSyncWorker @AssistedInject constructor(
         lastNotificationText = text
 
         ensureChannel()
-        val nm = appContext.getSystemService(NotificationManager::class.java) ?: return
-        nm.notify(NOTIFICATION_ID, buildNotificationInternal(text, progress, ongoing))
+        val nm = appContext.getSystemService(NotificationManager::class.java)
+        if (nm == null) {
+            diag("updateNotification: NotificationManager unavailable — cannot post notification")
+            return
+        }
+
+        // Check app-level notification permission (POST_NOTIFICATIONS since API 33)
+        val appEnabled = androidx.core.app.NotificationManagerCompat.from(appContext).areNotificationsEnabled()
+        if (!appEnabled) {
+            diag("updateNotification: app-level notifications DISABLED — POST_NOTIFICATIONS not granted or app-level toggle off")
+        }
+
+        // Check channel-level importance (independent of app-level).
+        // importance == IMPORTANCE_NONE means the channel is blocked by the user.
+        val channel = nm.getNotificationChannel(CHANNEL_ID)
+        if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+            diag("updateNotification: channel $CHANNEL_ID importance=NONE (blocked by user) — notification will not appear")
+        }
+
+        try {
+            val notification = buildNotificationInternal(text, progress, ongoing)
+            nm.notify(NOTIFICATION_ID, notification)
+            // Only log the first notification post + state changes (avoids log spam
+            // from progress ticks). The rate-limiter above already collapses most
+            // redundant calls.
+            if (isStateChange || isComplete) {
+                diag("updateNotification: posted id=$NOTIFICATION_ID text=\"$text\" progress=$progress ongoing=$ongoing appEnabled=$appEnabled channelImportance=${channel?.importance}")
+            }
+        } catch (e: Exception) {
+            diag("updateNotification: nm.notify() THREW ${e.javaClass.name}: ${e.message}", e)
+        }
     }
 
     /**
