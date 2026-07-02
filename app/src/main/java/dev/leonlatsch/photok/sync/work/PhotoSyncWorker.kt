@@ -699,6 +699,15 @@ class PhotoSyncWorker @AssistedInject constructor(
             .setContentTitle(appContext.getString(R.string.sync_notification_title))
             .setContentText(text)
             .setOngoing(ongoing)
+            // ─── KEY FIX: bypass Android 12+ 10-second FGS notification delay ──
+            // Android 12+ delays foreground-service notifications by up to 10
+            // seconds by default (so short FGS tasks don't clutter the shade).
+            // FOREGROUND_SERVICE_IMMEDIATE opts out of this delay — the
+            // notification appears IMMEDIATELY when setForeground() is called.
+            // This was the root cause of the "1-3 second notification delay"
+            // reported by the user.
+            // See: https://stackoverflow.com/questions/73074639/android-foreground-service-notification-delayed
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             // setOnlyAlertOnce: prevent sound/vibration on every in-place update.
             // Combined with the rate-limit in updateNotification(), this keeps the
             // notification stable (no flicker, no buzz) as progress ticks arrive.
