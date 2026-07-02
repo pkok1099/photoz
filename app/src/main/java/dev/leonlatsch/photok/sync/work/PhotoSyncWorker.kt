@@ -46,8 +46,13 @@ import dev.leonlatsch.photok.sync.debug.SyncLogger
 import dev.leonlatsch.photok.sync.domain.SyncConfig
 import dev.leonlatsch.photok.sync.domain.SyncState
 import dev.leonlatsch.photok.sync.rclone.RcloneController
+import dev.leonlatsch.photok.sync.rclone.RepoManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import timber.log.Timber
 import java.io.File
 import java.security.MessageDigest
@@ -66,6 +71,20 @@ class PhotoSyncWorker @AssistedInject constructor(
     private val rcloneController: RcloneController,
     private val config: Config,
 ) : CoroutineWorker(appContext, params) {
+
+    // ─── Notification update rate-limiting state (v8) ───────────────────────
+    // Tracks the last in-place notification update so we cap UI refreshes at
+    // 2/sec max. Without this, the progress callback (fires every ~500ms from
+    // RcloneController.uploadFileWithProgress) plus setProgress() calls would
+    // cause visible flicker / sound / vibration on every tick. The
+    // [lastNotificationText] tracks the current "state" so that genuine state
+    // changes ("Uploading: foo" → "Uploaded: foo") bypass the rate limit even
+    // if they happen within the 500ms window.
+    // @since v8 — stable upload notification with real progress percentage
+    private var lastNotificationUpdateMs: Long = 0L
+    private var lastNotificationText: String? = null
+
+    private val metadataJson = Json { ignoreUnknownKeys = true }
 
     // ─── init block: fires when HiltWorkerFactory constructs this instance ──
     // If this log doesn't appear, Hilt failed to construct the worker (injection
@@ -175,6 +194,18 @@ class PhotoSyncWorker @AssistedInject constructor(
             Timber.d("PhotoSyncWorker: %s already UPLOADED — skipping", uuid)
             return Result.success()
         }
+        // ─── UUID-based no-overwrite design (v8 Part 2b-2) ──────────────────────
+        // The remote layout is UUID-keyed:
+        //   <remote>:originals/<uuid>.crypt
+        //   <remote>:thumbnails/<uuid>.crypt.tn
+        //   <remote>:videos/<uuid>.crypt.vp (if video)
+        //   <remote>:photok-backup/metadata/<uuid>.json (v8 sidecar)
+        // A re-upload of the same photo (same UUID) overwrites the same remote
+        // paths — by design. The UUID is stable for a given photo, so a re-upload
+        // is naturally idempotent at the storage layer. The above `syncState ==
+        // UPLOADED` check is the FIRST line of defense: it makes re-enqueue a
+        // no-op without even touching the network. This is the only place such a
+        // guard exists — the upload paths below do NOT check before overwriting.
 
         try {
             photoDao.updateSyncState(uuid, SyncState.UPLOAD_PENDING)
@@ -256,15 +287,23 @@ class PhotoSyncWorker @AssistedInject constructor(
         diag("performUpload: BEGIN uuid=$uuid remote=$remote photoType=${photo.type} syncState=${photo.syncState}")
 
         // ─── Upload thumbnail ──────────────────────────────────────────────
+        // Thumbnails are small (a few KB) — fire-and-forget via uploadFile() is
+        // fine. No real progress feedback needed; the notification shows
+        // indeterminate progress while this runs.
         val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
         if (thumbPath.exists()) {
             val remoteThumb = "$remote:${SyncConfig.remoteThumbnailsDir}/${thumbPath.name}"
             diag("performUpload: uploading thumbnail ${thumbPath.absolutePath} (size=${thumbPath.length()}) → $remoteThumb")
+            updateNotification(
+                progress = null,
+                text = "Uploading: ${photo.fileName}",
+            )
             try {
                 rcloneController.uploadFile(thumbPath.absolutePath, remoteThumb).getOrThrow()
                 diag("performUpload: thumbnail upload OK")
             } catch (e: Exception) {
                 diag("performUpload: thumbnail upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+                reportUploadFailureNotification(photo.fileName)
                 throw e
             }
         } else {
@@ -272,25 +311,37 @@ class PhotoSyncWorker @AssistedInject constructor(
         }
 
         // ─── Upload video preview (if video) ───────────────────────────────
+        // Same as thumbnail — small file, fire-and-forget.
         if (photo.type.isVideo) {
             val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
             if (vpPath.exists()) {
                 val remoteVp = "$remote:${SyncConfig.remoteVideosDir}/${vpPath.name}"
                 diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
+                updateNotification(
+                    progress = null,
+                    text = "Uploading: ${photo.fileName}",
+                )
                 try {
                     rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
                     diag("performUpload: video preview upload OK")
                 } catch (e: Exception) {
                     diag("performUpload: video preview upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+                    reportUploadFailureNotification(photo.fileName)
                     throw e
                 }
             }
         }
 
-        // ─── Upload original ───────────────────────────────────────────────
+        // ─── Upload original (with real progress feedback) ────────────────
+        // The original is the largest artifact — use uploadFileWithProgress()
+        // so the foreground notification shows a real 0–100% progress bar
+        // driven by rclone's core/stats. Thumbnails / video previews above
+        // use plain uploadFile() because they're small and progress would
+        // just flicker.
         val origPath = appContext.getFileStreamPath(photo.internalFileName)
         if (!origPath.exists()) {
             diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
+            reportUploadFailureNotification(photo.fileName)
             throw FatalSyncException(
                 "Local original file missing for $uuid before upload. " +
                     "Photo may have been deleted out-of-band."
@@ -298,11 +349,28 @@ class PhotoSyncWorker @AssistedInject constructor(
         }
         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
         diag("performUpload: uploading original ${origPath.absolutePath} (size=${origPath.length()}) → $remoteOrig")
+        // Pre-upload state: indeterminate progress while rclone spins up the transfer.
+        updateNotification(
+            progress = null,
+            text = "Uploading: ${photo.fileName}",
+        )
         try {
-            rcloneController.uploadFile(origPath.absolutePath, remoteOrig).getOrThrow()
+            rcloneController.uploadFileWithProgress(
+                localPath = origPath.absolutePath,
+                remotePath = remoteOrig,
+            ) { percent ->
+                // Real progress tick from rclone's core/stats. updateNotification
+                // is internally rate-limited to 2/sec — safe to call from here
+                // even though this fires every ~500ms.
+                updateNotification(
+                    progress = percent,
+                    text = "Uploading: ${photo.fileName}",
+                )
+            }.getOrThrow()
             diag("performUpload: original upload OK")
         } catch (e: Exception) {
             diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+            reportUploadFailureNotification(photo.fileName)
             throw e
         }
 
@@ -314,6 +382,7 @@ class PhotoSyncWorker @AssistedInject constructor(
             diag("performUpload: verifyFileExists OK")
         } catch (e: Exception) {
             diag("performUpload: verifyFileExists FAILED: ${e.javaClass.name}: ${e.message}", e)
+            reportUploadFailureNotification(photo.fileName)
             throw e
         }
 
@@ -330,10 +399,82 @@ class PhotoSyncWorker @AssistedInject constructor(
                 "hash skipped (unsupported), size verified OK")
         } catch (e: Exception) {
             diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+            reportUploadFailureNotification(photo.fileName)
             throw e
         }
 
+        // ─── Upload metadata sidecar (v8 Part 2a-4) ────────────────────────
+        // Small JSON artifact at `<remote>:photok-backup/metadata/<uuid>.json`
+        // recording the photo's original local-origin provenance (relativePath +
+        // fileName), type, and size — so a fresh-install restore can populate
+        // the Photo DB row accurately instead of guessing type=JPEG, size=0.
+        // See SyncConfig.METADATA_DIR / METADATA_FILENAME_SUFFIX, and
+        // RepoManager.restoreThumbnailsAfterLogin() for the restore side.
+        try {
+            uploadMetadataSidecar(photo, remote)
+        } catch (e: Exception) {
+            // Metadata sidecar failure is non-fatal — the photo's encrypted
+            // artifacts are already uploaded and verified. Log + continue.
+            diag("performUpload: metadata sidecar upload FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
+            Timber.w(e, "PhotoSyncWorker: metadata sidecar upload failed for %s — photo is still UPLOADED", uuid)
+        }
+
+        // ─── Post-upload success state ────────────────────────────────────
+        // Brief "Uploaded" state. The worker returns Result.success() right
+        // after this, WorkManager cancels the foreground notification, and
+        // the user sees the notification disappear (or transition to whatever
+        // the next queued worker shows).
+        updateNotification(
+            progress = 100f,
+            text = "Uploaded: ${photo.fileName}",
+        )
+
         diag("performUpload: DONE — all uploads + verifications succeeded for $uuid")
+    }
+
+    /**
+     * Build and upload the per-photo metadata sidecar JSON to
+     * `<remote>:photok-backup/metadata/<uuid>.json`.
+     *
+     * The sidecar captures fields the encrypted artifacts alone can't recover:
+     *   - `uuid` — the photo's stable UUID (matches the remote filenames)
+     *   - `relativePath` — the photo's original local-origin provenance
+     *     (filename today; full MediaStore `RELATIVE_PATH` in a future enhancement)
+     *   - `fileName` — the original filename as imported (NOT the `<uuid>.crypt`
+     *     internal filename)
+     *   - `type` — the [dev.leonlatsch.photok.model.database.entity.PhotoType]
+     *     enum constant name (e.g. "JPEG", "MP4") — restored via `PhotoType.valueOf`
+     *     on the receiver side, falling back to JPEG if the value is unknown
+     *   - `size` — the encrypted original's file size in bytes
+     *
+     * On restore ([RepoManager.restoreThumbnailsAfterLogin]), if this sidecar
+     * is present it's used to populate the Photo DB row accurately. If absent
+     * (photo was uploaded before v8), the restore falls back to the existing
+     * `type=JPEG, size=0` defaults.
+     *
+     * @since v8 — path-consistency metadata sidecar
+     */
+    private suspend fun uploadMetadataSidecar(photo: Photo, remote: String) {
+        val uuid = photo.uuid
+        val sidecarJson: JsonObject = buildJsonObject {
+            put("uuid", uuid)
+            put("relativePath", photo.relativePath ?: photo.fileName)
+            put("fileName", photo.fileName)
+            put("type", photo.type.name)
+            put("size", photo.size)
+        }
+        val sidecarText = metadataJson.encodeToString(JsonObject.serializer(), sidecarJson)
+
+        val tempFile = File(appContext.cacheDir, "photok-meta-$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}")
+        try {
+            tempFile.writeText(sidecarText)
+            val remoteMeta = "$remote:${RepoManager.REPO_DIR}/${SyncConfig.METADATA_DIR}/$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}"
+            diag("performUpload: uploading metadata sidecar (${tempFile.length()} bytes) → $remoteMeta")
+            rcloneController.uploadFile(tempFile.absolutePath, remoteMeta).getOrThrow()
+            diag("performUpload: metadata sidecar upload OK")
+        } finally {
+            tempFile.delete()
+        }
     }
 
     private fun deleteLocalOriginalAfterUpload(photo: Photo) {
@@ -361,7 +502,27 @@ class PhotoSyncWorker @AssistedInject constructor(
         )
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildNotification(text: String): Notification =
+        buildNotificationInternal(text = text, progress = null, ongoing = true)
+
+    /**
+     * Build a notification with configurable progress + ongoing flag.
+     *
+     * @param text content text
+     * @param progress 0f..100f for a determinate progress bar, or `null` for an
+     *   indeterminate (spinning) progress bar. At 100f the bar shows full.
+     * @param ongoing `true` for a foreground-service-style notification that
+     *   disappears when the worker ends; `false` for a "left-behind" notification
+     *   that stays visible after the worker ends (used for the upload-failed
+     *   state so the user can see something went wrong).
+     *
+     * @since v8 — stable upload notification with real progress percentage
+     */
+    private fun buildNotificationInternal(
+        text: String,
+        progress: Float?,
+        ongoing: Boolean,
+    ): Notification {
         val launchIntent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
         val pi = launchIntent?.let {
             PendingIntent.getActivity(
@@ -371,14 +532,88 @@ class PhotoSyncWorker @AssistedInject constructor(
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         }
-        return NotificationCompat.Builder(appContext, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(appContext.getString(R.string.sync_notification_title))
             .setContentText(text)
-            .setOngoing(true)
+            .setOngoing(ongoing)
+            // setOnlyAlertOnce: prevent sound/vibration on every in-place update.
+            // Combined with the rate-limit in updateNotification(), this keeps the
+            // notification stable (no flicker, no buzz) as progress ticks arrive.
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
-            .build()
+
+        if (progress != null) {
+            // Determinate progress: 0..100. coerceIn guards against rclone's
+            // core/stats momentarily reporting >100% (rounding, post-complete
+            // stats lag, etc.).
+            builder.setProgress(100, progress.toInt().coerceIn(0, 100), false)
+        } else {
+            // Indeterminate (spinning) progress: shown before the first real
+            // progress tick arrives, or for uploads that don't emit progress
+            // (thumbnails, video previews, metadata sidecar).
+            builder.setProgress(0, 0, true)
+        }
+
+        return builder.build()
+    }
+
+    /**
+     * Update the foreground notification in-place at [NOTIFICATION_ID].
+     *
+     * Rate-limited to max ~2 updates/sec to avoid notification flicker:
+     *   - Calls within [NOTIFICATION_UPDATE_MIN_INTERVAL_MS] of the last update
+     *     are dropped, UNLESS:
+     *       (a) `progress` is exactly 100f (terminal state — always shown), OR
+     *       (b) `text` differs from the last text (genuine state change — always shown).
+     *   - This is safe to call from [RcloneController.uploadFileWithProgress]'s
+     *     ~500ms progress callback, because the rate limiter collapses redundant
+     *     ticks to at most one update per polling interval.
+     *
+     * @param progress 0f..100f for a determinate progress bar, or `null` for
+     *   indeterminate (spinning) progress.
+     * @param text content text — drives the state-change detection.
+     * @param ongoing `true` for ongoing (foreground-style); `false` for a
+     *   non-ongoing "left-behind" notification (used by [reportUploadFailureNotification]).
+     *
+     * @since v8 — stable upload notification with real progress percentage
+     */
+    private fun updateNotification(
+        progress: Float?,
+        text: String,
+        ongoing: Boolean = true,
+    ) {
+        val now = System.currentTimeMillis()
+        val isStateChange = text != lastNotificationText
+        val isComplete = progress != null && progress >= 100f
+        if (!isStateChange && !isComplete &&
+            now - lastNotificationUpdateMs < NOTIFICATION_UPDATE_MIN_INTERVAL_MS
+        ) {
+            // Rate-limited: drop this update. The next tick (≥500ms later, or a
+            // state change, or completion) will get through.
+            return
+        }
+        lastNotificationUpdateMs = now
+        lastNotificationText = text
+
+        ensureChannel()
+        val nm = appContext.getSystemService(NotificationManager::class.java) ?: return
+        nm.notify(NOTIFICATION_ID, buildNotificationInternal(text, progress, ongoing))
+    }
+
+    /**
+     * Show the "Upload failed: <filename>" notification as NON-ongoing so it
+     * stays visible in the system tray after the worker ends (the user can
+     * dismiss it manually). Used at every error-exit point in [performUpload].
+     *
+     * @since v8 — stable upload notification with real progress percentage
+     */
+    private fun reportUploadFailureNotification(fileName: String) {
+        updateNotification(
+            progress = null,
+            text = "Upload failed: $fileName",
+            ongoing = false,
+        )
     }
 
     private fun isFatalFailure(t: Throwable?): Boolean = when (t) {
@@ -407,7 +642,32 @@ class PhotoSyncWorker @AssistedInject constructor(
         const val KEY_PHOTO_UUID = "photoUuid"
         const val UNIQUE_WORK_PREFIX = "photok-sync-"
         private const val CHANNEL_ID = "photok-sync"
+
+        // ─── Notification ID (v8 Part 1b) ───────────────────────────────────
+        // FIXED constant — all in-place updates from updateNotification() go to
+        // the SAME notification slot. This is what makes the progress bar appear
+        // "stable" (the system replaces the existing notification rather than
+        // posting a new one).
+        //
+        // BATCH UPLOADS CAVEAT: each PhotoSyncWorker instance is a separate
+        // WorkManager job with its own UUID, but they ALL share this single
+        // NOTIFICATION_ID. If multiple workers run concurrently (which
+        // WorkManager generally won't do for expedited foreground work, but
+        // theoretically could), the LAST one to call updateNotification() wins
+        // — its text/progress overwrites whatever the other workers posted.
+        // This is acceptable for now: the in-app top-bar queue indicator
+        // (separate from this notification) shows the real queue count, and a
+        // single "currently uploading" notification is a reasonable UX even
+        // under concurrency. If we ever want per-worker notifications, give
+        // each worker a NOTIFICATION_ID derived from its UUID hashCode.
+        // @since v8 — stable upload notification with real progress percentage
         private const val NOTIFICATION_ID = 4242
+
+        // Minimum interval between in-place notification updates (v8 Part 1b).
+        // Caps UI refreshes at ~2/sec — fast enough to feel responsive, slow
+        // enough to avoid notification-manager thrash / flicker. State changes
+        // and 100%-complete updates bypass this limit (see updateNotification).
+        private const val NOTIFICATION_UPDATE_MIN_INTERVAL_MS = 500L
 
         fun enqueue(context: Context, photo: Photo) {
             val uniqueWorkName = UNIQUE_WORK_PREFIX + photo.uuid

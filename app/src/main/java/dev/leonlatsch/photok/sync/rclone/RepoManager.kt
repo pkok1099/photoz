@@ -562,26 +562,39 @@ class RepoManager @Inject constructor(
                 continue
             }
 
+            // ─── Best-effort metadata sidecar download (v8 Part 2b) ──────────
+            // Try to fetch `photok-backup/metadata/<uuid>.json` — if present, use
+            // its relativePath / type / size fields to populate the Photo row
+            // accurately (instead of guessing type=JPEG, size=0). If the sidecar
+            // is absent (photo was uploaded before v8) or download fails, fall
+            // back to the existing defaults. Failure here is non-fatal — the
+            // thumbnail was already downloaded successfully; we just lose the
+            // extra metadata accuracy.
+            val metadata = tryDownloadPhotoMetadata(remote, uuid)
+
             // Create a DB row for the photo. The original is NOT local — it will be
             // fetched on-demand by SyncRestorer when the user opens the photo.
-            // TODO: PhotoType cannot be inferred from the thumbnail filename alone.
-            //   Defaulting to JPEG (most common). The correct type should be persisted
-            //   in the repo-config.json marker file during registerRepo() and read
-            //   back here. For now, the type will be corrected when the original is
-            //   downloaded on-demand. Tracked as a follow-up.
+            // Type / size / relativePath come from the metadata sidecar when
+            // available (v8); otherwise we default to JPEG / 0 / null — the type
+            // will be corrected when the original is downloaded on-demand.
             val photo = Photo(
                 fileName = "$uuid.$PHOTOK_FILE_EXTENSION",
                 importedAt = System.currentTimeMillis(),
                 lastModified = null,
-                type = PhotoType.JPEG,
-                size = 0L,
+                type = metadata?.type ?: PhotoType.JPEG,
+                size = metadata?.size ?: 0L,
                 uuid = uuid,
                 syncState = SyncState.UPLOADED,
+                relativePath = metadata?.relativePath,
             )
             try {
                 photoDao.insert(photo)
                 restored++
-                diag("restoreThumbnailsAfterLogin: inserted DB row for $uuid (syncState=UPLOADED)")
+                diag(
+                    "restoreThumbnailsAfterLogin: inserted DB row for $uuid " +
+                        "(syncState=UPLOADED, type=${photo.type}, size=${photo.size}, " +
+                        "relativePath=${photo.relativePath}, metaSource=${if (metadata != null) "sidecar" else "defaults"})"
+                )
             } catch (e: Exception) {
                 diag(
                     "restoreThumbnailsAfterLogin: insert FAILED for $uuid: ${e.message}",
@@ -595,6 +608,110 @@ class RepoManager @Inject constructor(
 
         diag("restoreThumbnailsAfterLogin: DONE — restored $restored thumbnails")
         restored
+    }
+
+    /**
+     * Parsed per-photo metadata sidecar (v8 Part 2b). Mirrors the field set
+     * written by [dev.leonlatsch.photok.sync.work.PhotoSyncWorker.uploadMetadataSidecar]:
+     *   - [relativePath] — original local-origin provenance
+     *   - [type] — [PhotoType] enum constant name, parsed back to enum
+     *   - [size] — encrypted original file size in bytes
+     *
+     * `uuid` / `fileName` from the sidecar are intentionally NOT exposed here:
+     * the caller already knows the uuid (it's the thumbnail-filename key) and
+     * uses the internal-storage filename pattern (`<uuid>.<ext>`) for the DB
+     * row's `fileName` field — matching the pre-v8 PR4 behavior. Future
+     * enhancement: use the sidecar's `fileName` to set the human-readable
+     * original filename on the Photo row.
+     *
+     * @since v8 — path-consistency metadata sidecar
+     */
+    private data class PhotoMetadata(
+        val relativePath: String?,
+        val type: PhotoType,
+        val size: Long,
+    )
+
+    /**
+     * Best-effort download + parse of `photok-backup/metadata/<uuid>.json`.
+     *
+     * Returns `null` if:
+     *   - the sidecar doesn't exist on the remote (photo uploaded before v8)
+     *   - the download fails for any reason (network, rcd error, etc.)
+     *   - the downloaded JSON is unparseable or missing required fields
+     *
+     * The caller ([restoreThumbnailsAfterLogin]) treats `null` as "use defaults".
+     * Failure is logged but never thrown — restore must not block on metadata.
+     *
+     * @since v8 — path-consistency metadata sidecar
+     */
+    private suspend fun tryDownloadPhotoMetadata(remote: String, uuid: String): PhotoMetadata? {
+        val remoteMetaPath = "$remote:$REPO_DIR/${SyncConfig.METADATA_DIR}/$uuid${SyncConfig.METADATA_FILENAME_SUFFIX}"
+        val tempFile = File(app.cacheDir, "photok-meta-dl-$uuid-${System.currentTimeMillis()}${SyncConfig.METADATA_FILENAME_SUFFIX}")
+        return try {
+            diag("restoreThumbnailsAfterLogin: downloading metadata sidecar $remoteMetaPath")
+            val dlResult = rcloneController.downloadFile(remoteMetaPath, tempFile.absolutePath)
+            if (dlResult.isFailure) {
+                // Common case for pre-v8 photos: sidecar simply doesn't exist.
+                // Logged at debug level — not an error.
+                diag(
+                    "restoreThumbnailsAfterLogin: metadata sidecar not available for $uuid " +
+                        "(likely pre-v8 photo): ${dlResult.exceptionOrNull()?.message}"
+                )
+                return null
+            }
+            val json = tempFile.readText()
+            parsePhotoMetadata(json)?.also {
+                diag("restoreThumbnailsAfterLogin: parsed metadata sidecar for $uuid (type=${it.type}, size=${it.size}, relativePath=${it.relativePath})")
+            }
+        } catch (e: Exception) {
+            diag("restoreThumbnailsAfterLogin: metadata sidecar parse FAILED for $uuid: ${e.message}", e)
+            null
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    /**
+     * Parse a per-photo metadata sidecar JSON. Mirrors the regex-based,
+     * no-external-dependency style of [parseMarker] / [parseVaultProtection].
+     *
+     * Returns `null` if required fields are missing or unparseable. The `type`
+     * field is parsed via [PhotoType.valueOf] with a fallback to JPEG for
+     * unknown values (forward-compat: a future PhotoType entry the receiver
+     * doesn't know about degrades gracefully to JPEG, same as the pre-v8
+     * default).
+     *
+     * @since v8 — path-consistency metadata sidecar
+     */
+    private fun parsePhotoMetadata(json: String): PhotoMetadata? {
+        return try {
+            // Strings — nullable, captured only if the quoted form is present.
+            val relativePath = Regex("\"relativePath\"\\s*:\\s*\"([^\"]*)\"")
+                .find(json)?.groupValues?.get(1)
+            val typeStr = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"")
+                .find(json)?.groupValues?.get(1)
+            // Numeric (size may be 0, so we accept 0 explicitly).
+            val size = Regex("\"size\"\\s*:\\s*(\\d+)").find(json)
+                ?.groupValues?.get(1)?.toLongOrNull()
+
+            // type is required — without it, the whole sidecar is unusable
+            // (we'd be no better than the pre-v8 default).
+            if (typeStr == null) {
+                diag("parsePhotoMetadata: missing required 'type' field")
+                return null
+            }
+
+            val type = runCatching { PhotoType.valueOf(typeStr) }.getOrDefault(PhotoType.JPEG)
+            PhotoMetadata(
+                relativePath = relativePath,
+                type = type,
+                size = size ?: 0L,
+            )
+        } catch (e: Exception) {
+            diag("parsePhotoMetadata: parse FAILED: ${e.message}", e)
+            null
+        }
     }
 
     /**

@@ -61,6 +61,25 @@ data class Photo(
      */
     @ColumnInfo(name = COL_SYNC_STATE, defaultValue = "'LOCAL_ONLY'")
     var syncState: SyncState = SyncState.LOCAL_ONLY,
+
+    /**
+     * Original local-origin provenance path for this photo, captured at import time.
+     *
+     * This is a metadata-only field — Photok's vault is its own managed encrypted storage
+     * and does NOT mirror the device's public filesystem. The restored photo still lives
+     * in Photok's vault (as it always has); this column merely records where the photo
+     * came from for the user's reference (filename, or in a future enhancement, the full
+     * MediaStore `RELATIVE_PATH` such as `DCIM/Camera`).
+     *
+     * Uploaded as part of the per-photo metadata sidecar JSON to
+     * `photok-backup/metadata/<uuid>.json` and used on restore to populate the Photo
+     * row more accurately (instead of guessing `type=JPEG`, `size=0`).
+     *
+     * @since v8 — path-consistency metadata sidecar
+     */
+    @ColumnInfo(name = COL_RELATIVE_PATH, defaultValue = "NULL")
+    @Expose
+    var relativePath: String? = null,
 ) {
 
     val internalFileName: String
@@ -82,5 +101,8 @@ data class Photo(
 
         /** Cloud sync state column. @since PR1 sync feature */
         const val COL_SYNC_STATE = "syncState"
+
+        /** Original local-origin provenance path column. @since v8 path-consistency sidecar */
+        const val COL_RELATIVE_PATH = "relativePath"
     }
 }

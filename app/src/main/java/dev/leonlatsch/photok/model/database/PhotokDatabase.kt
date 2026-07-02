@@ -33,7 +33,7 @@ import dev.leonlatsch.photok.model.database.ref.AlbumPhotoCrossRefTable
 import dev.leonlatsch.photok.sort.data.db.SortDao
 import dev.leonlatsch.photok.sort.data.db.model.SortTable
 
-private const val DATABASE_VERSION = 7
+private const val DATABASE_VERSION = 8
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -78,6 +78,14 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 6,
             to = 7,
+        ),
+        // v7 → v8: add `relativePath TEXT DEFAULT NULL` to `photo`.
+        // Nullable column with default NULL — Room auto-generates the ALTER TABLE
+        // ADD COLUMN statement; no AutoMigrationSpec needed.
+        // @since v8 path-consistency metadata sidecar
+        AutoMigration(
+            from = 7,
+            to = 8,
         ),
     ]
 )

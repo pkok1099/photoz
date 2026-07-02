@@ -36,4 +36,19 @@ object SyncConfig {
     const val remoteOriginalsDir: String = "originals"
     const val remoteThumbnailsDir: String = "thumbnails"
     const val remoteVideosDir: String = "videos"
+
+    // ─── Per-photo metadata sidecar (v8 path-consistency) ───────────────────
+    // A small JSON file uploaded alongside each photo's encrypted artifacts,
+    // capturing the photo's original local-origin provenance (relativePath +
+    // fileName), type, and size — so a fresh-install restore can populate the
+    // Photo DB row accurately instead of guessing `type=JPEG, size=0`.
+    //
+    // Remote layout (note the `photok-backup/` prefix — the metadata dir lives
+    // UNDER the repo root, alongside `vault-protection/`. The encrypted
+    // originals/thumbnails/videos live at the REMOTE ROOT — no prefix — for
+    // backwards compat with PR1/PR4 installs):
+    //   <remote>:photok-backup/metadata/<uuid>.json
+    // @since v8 — path-consistency metadata sidecar
+    const val METADATA_DIR: String = "metadata"
+    const val METADATA_FILENAME_SUFFIX: String = ".json"
 }

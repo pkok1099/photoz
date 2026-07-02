@@ -119,6 +119,21 @@ class PhotoRepository @Inject constructor(
             lastModified = metaData.lastModified,
             type = type,
             size = metaData.size ?: 0,
+            // ─── Path-consistency metadata (v8) ───────────────────────────────
+            // Capture the photo's original local-origin provenance for the user's
+            // reference. The vault is its own managed encrypted storage — this field
+            // is metadata only, NOT a filesystem path the photo gets written to.
+            //
+            // TODO(v8-followup): For gallery-sourced imports (ImportSource.InApp
+            //   with a `content://media/...` URI), we could query the MediaStore
+            //   `RELATIVE_PATH` column (e.g. `DCIM/Camera`, `Pictures/Screenshots`)
+            //   to capture the full original subfolder rather than just the
+            //   filename. The current `FileMetaData` from `getMetadataFor()` only
+            //   exposes `DISPLAY_NAME`/`SIZE`/`COLUMN_LAST_MODIFIED` — it doesn't
+            //   read `RELATIVE_PATH`. Until that's extended, the filename itself
+            //   is the most meaningful provenance we have.
+            //   See dev.leonlatsch.photok.other.getMetadataFor.
+            relativePath = metaData.fileName,
         )
 
         val created = safeCreatePhoto(photo, inputStream, sourceUri)

@@ -21,6 +21,8 @@ import android.util.Base64
 import dev.leonlatsch.photok.sync.debug.SyncLogger
 import dev.leonlatsch.photok.sync.domain.SyncConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import timber.log.Timber
@@ -120,6 +123,130 @@ class RcloneController @Inject constructor(
                 Unit
             }
         }
+
+    /**
+     * Upload a file with periodic progress callbacks.
+     *
+     * rclone's `operations/copyfile` is synchronous (it returns only when the upload is
+     * done), so unlike rclone's async `operations/operations/transfers` rc calls there's
+     * no job ID to poll. Instead, we fire `operations/copyfile` in a child coroutine and
+     * concurrently poll `core/stats` every [PROGRESS_POLL_INTERVAL_MS] ms. The rcd
+     * process maintains cumulative transfer stats for the in-flight transfer in its
+     * `transferring` array — we read `bytes` / `totalBytes` from the first entry and
+     * report `bytes / totalBytes * 100f` (clamped 0–100) via [onProgress].
+     *
+     * Stats polling is best-effort:
+     *   - If `transferring` is empty (upload hasn't registered yet, or already finished),
+     *     [onProgress] is NOT called for that poll.
+     *   - If `totalBytes` is 0 or missing (divide-by-zero risk), [onProgress] is NOT called.
+     *   - If the stats HTTP call itself fails, the poll is skipped (logged) — the upload
+     *     itself is unaffected.
+     *
+     * Concurrency model: the `copyfile` call holds [callMutex] for its full duration
+     * (preserving serialization with other uploaders), but the `core/stats` polls bypass
+     * [callMutex] and call [invokeRc] directly. This is safe because:
+     *   1. `invokeRc` is a single stateless HTTP POST — the rcd handles concurrent HTTP
+     *      requests fine.
+     *   2. `core/stats` is read-only and doesn't mutate rcd state.
+     *   3. Without bypassing [callMutex], the stats poll would block forever waiting
+     *      for the copyfile call to release the mutex (defeating the entire point).
+     *
+     * The existing [uploadFile] is unchanged — callers that don't need progress feedback
+     * (e.g. thumbnail uploads, video-preview uploads) should continue to use it.
+     *
+     * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as the upload.
+     *   May be called zero or more times; never called with a value outside `0f..100f`.
+     *   Implementors are responsible for rate-limiting UI updates triggered from this
+     *   callback (see [dev.leonlatsch.photok.sync.work.PhotoSyncWorker.updateNotification]
+     *   for the rate-limited notification pattern).
+     *
+     * @since v8 — stable upload notification with real progress percentage
+     */
+    suspend fun uploadFileWithProgress(
+        localPath: String,
+        remotePath: String,
+        onProgress: (Float) -> Unit,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val localFile = File(localPath)
+            require(localFile.exists() && localFile.isFile) {
+                "Local file missing or not a regular file: $localPath"
+            }
+
+            awaitRcdReady().getOrThrow()
+
+            coroutineScope {
+                // Launch the copyfile call in a child coroutine. It holds callMutex
+                // for its full duration — same serialization contract as uploadFile().
+                val uploadDeferred = async(Dispatchers.IO) {
+                    callMutex.withLock {
+                        invokeRc(
+                            op = "operations/copyfile",
+                            params = buildJsonObject {
+                                put("srcFs", localFile.parentFile?.absolutePath ?: "")
+                                put("srcRemote", localFile.name)
+                                val idx = remotePath.indexOf(':')
+                                put("dstFs", if (idx < 0) "" else remotePath.substring(0, idx + 1))
+                                put("dstRemote", remotePath.substringAfter(':'))
+                            },
+                        ).getOrThrow()
+                    }
+                }
+
+                // Poll core/stats until the upload completes. Bypasses callMutex
+                // (see concurrency-model note in the function kdoc).
+                while (!uploadDeferred.isCompleted) {
+                    try {
+                        val stats = invokeRc(
+                            op = "core/stats",
+                            params = buildJsonObject {},
+                        ).getOrNull()
+                        if (stats != null) {
+                            val percent = computeUploadProgressPercent(stats)
+                            if (percent != null) {
+                                onProgress(percent)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Stats polling failure is non-fatal — keep polling. The
+                        // upload itself is unaffected; we just lose one progress tick.
+                        diag("uploadFileWithProgress: stats poll skipped: ${e.javaClass.name}: ${e.message}")
+                    }
+                    delay(PROGRESS_POLL_INTERVAL_MS)
+                }
+
+                // Await the upload result — propagates any exception thrown inside
+                // the async block (CancellationException flows naturally).
+                uploadDeferred.await()
+                Unit
+            }
+        }
+    }
+
+    /**
+     * Parse a `core/stats` response and return the current upload progress as a
+     * percentage `0f..100f`, or `null` if no usable progress info is available.
+     *
+     * Returns null when:
+     *   - `transferring` is missing or not an array (no transfer section in response)
+     *   - `transferring` is empty (upload hasn't registered yet, or already finished)
+     *   - The first entry is missing `bytes` or `totalBytes`
+     *   - `totalBytes` is 0 (divide-by-zero guard)
+     *
+     * @since v8 — stable upload notification with real progress percentage
+     */
+    private fun computeUploadProgressPercent(stats: JsonObject): Float? {
+        val transferring = stats["transferring"] as? JsonArray ?: return null
+        if (transferring.isEmpty()) return null
+        val entry = transferring[0] as? JsonObject ?: return null
+        val bytes = (entry["bytes"] as? JsonPrimitive)?.content?.toLongOrNull()
+            ?: return null
+        val totalBytes = (entry["totalBytes"] as? JsonPrimitive)?.content?.toLongOrNull()
+            ?: return null
+        if (totalBytes <= 0L) return null
+        val percent = (bytes.toFloat() / totalBytes.toFloat()) * 100f
+        return percent.coerceIn(0f, 100f)
+    }
 
     suspend fun downloadFile(remotePath: String, localPath: String): Result<Unit> =
         withContext(Dispatchers.IO) {
@@ -916,5 +1043,9 @@ class RcloneController @Inject constructor(
         private const val PING_TIMEOUT_MS = 2_000L
         private const val RC_CALL_CONNECT_TIMEOUT_MS = 30_000L
         private const val RC_CALL_READ_TIMEOUT_MS = 600_000L
+
+        // Polling interval for uploadFileWithProgress()'s core/stats polls.
+        // @since v8 — stable upload notification with real progress percentage
+        private const val PROGRESS_POLL_INTERVAL_MS = 500L
     }
 }
