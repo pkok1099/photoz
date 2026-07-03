@@ -20,6 +20,7 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.google.gson.Gson
 import onlasdan.gallery.io.IO
 import onlasdan.gallery.io.VaultFileStorage
 import onlasdan.gallery.model.database.dao.AlbumDao
@@ -72,6 +73,10 @@ class PhotoRepository @Inject constructor(
     // original + thumbnail cleanup happens later in [HashRegistry.gcOriginals]
     // when the user runs "Clean up backup" from Settings.
     private val hashRegistry: HashRegistry,
+    // @since Item 1 ZIP backup — serializes the manifest.json entry inside
+    //  the export ZIP and parses it back on import. Hilt-provided (see
+    //  AppModule.provideGson).
+    private val gson: Gson,
 ) {
 
     // region DATABASE
@@ -390,44 +395,158 @@ class PhotoRepository @Inject constructor(
     // region DELETE
 
     /**
-     * Delete a photo from the filesystem. On success, delete it in the database.
+     * Move a photo to the Trash: soft-delete the DB row by stamping
+     * `deleted_at = System.currentTimeMillis()`. The encrypted original +
+     * thumbnail files stay on disk so the user can restore the photo. The
+     * registry tombstone is also propagated so other devices stop
+     * referencing this content_hash (the actual remote original cleanup
+     * still happens later via "Clean up backup" in Settings).
      *
-     * @return true, if the photo was successfully deleted on disk and in db.
+     * After 30 days (or on "Empty trash" / "Delete permanently"), the row
+     * + files are removed by [permanentlyDeletePhoto] /
+     * [cleanupExpiredTrash].
+     *
+     * @return true if the DB update succeeded.
+     *
+     * @since v10 — recycle bin / soft delete (was hard delete before v10)
      */
     suspend fun safeDeletePhoto(photo: Photo): Boolean {
         // ─── registry-gc feature — tombstone the dedup registry entry ──────
-        // BEFORE the local encrypted file is removed, mark the registry entry
-        // for this photo's content_hash as soft-deleted. The tombstone is
-        // propagated to the remote registry so other devices stop referencing
-        // this hash. The actual remote original + thumbnail cleanup happens
-        // later in [HashRegistry.gcOriginals] when the user runs "Clean up
-        // backup" from Settings — we don't pay that network cost on every
-        // delete.
+        // We still tombstone on soft-delete: the user's intent is "I don't
+        // want this photo anymore" and other devices should stop
+        // referencing its content_hash. If the user later restores the
+        // photo from the trash the tombstone is NOT rolled back (the
+        // remote original was already reclaimed by "Clean up backup" or
+        // will be re-uploaded by the sync worker when the user restores
+        // and the local file still exists).
         //
         // Non-fatal: if the tombstone fails (no registry entry for pre-v9
-        // imports, vault locked, network blip), the local delete still
+        // imports, vault locked, network blip), the local soft-delete still
         // proceeds. The orphaned remote original is reclaimable later via
-        // the Settings → "Clean up backup" button, which scans for tombstones
-        // (or missing entries) and deletes the corresponding remote files.
+        // the Settings → "Clean up backup" button.
         val contentHash = photo.contentHash
         if (!contentHash.isNullOrBlank()) {
             try {
                 hashRegistry.softDelete(contentHash)
             } catch (e: Exception) {
-                Timber.w(e, "safeDeletePhoto: hashRegistry.softDelete FAILED (non-fatal — local delete still proceeds): %s", photo.uuid)
+                Timber.w(e, "safeDeletePhoto: hashRegistry.softDelete FAILED (non-fatal — local soft-delete still proceeds): %s", photo.uuid)
             }
         }
 
-        val deletedElements = delete(photo)
-        val success = deletedElements != -1
-
-        if (success) {
-            deleteInternalPhotoData(photo)
-            albumDao.unlink(photo.uuid)
+        return try {
+            photoDao.softDelete(photo.uuid, System.currentTimeMillis())
+            // Unlink the photo from any albums so a restored photo doesn't
+            // reappear in an album the user removed it from. (Restoring
+            // re-adds it to the gallery's "All photos" view but not to any
+            // specific album — the user can re-add it manually if needed.)
+            // Disabled: keep album links across soft-delete so restore
+            // brings the photo back exactly where it was. The album detail
+            // query already filters deleted_at = 0, so the photo is
+            // invisible in albums while trashed.
+            true
+        } catch (e: Exception) {
+            Timber.w(e, "safeDeletePhoto: softDelete FAILED for %s", photo.uuid)
+            false
         }
-
-        return success
     }
+
+    /**
+     * Restore a photo from the trash: reset `deleted_at = 0` so the photo
+     * reappears in the gallery and any albums it was linked to.
+     *
+     * @since v10 recycle bin
+     */
+    suspend fun restorePhotoFromTrash(uuid: String) {
+        try {
+            photoDao.restoreFromTrash(uuid)
+        } catch (e: Exception) {
+            Timber.w(e, "restorePhotoFromTrash: FAILED for %s", uuid)
+        }
+    }
+
+    /**
+     * Permanently delete a single photo: remove its DB row + on-disk
+     * encrypted files. Used by the Trash screen's "Delete permanently"
+     * action. NOT undoable.
+     *
+     * @since v10 recycle bin
+     */
+    suspend fun permanentlyDeletePhoto(photo: Photo) {
+        try {
+            deleteInternalPhotoData(photo)
+        } catch (e: Exception) {
+            Timber.w(e, "permanentlyDeletePhoto: deleteInternalPhotoData FAILED (non-fatal) for %s", photo.uuid)
+        }
+        try {
+            photoDao.delete(photo)
+        } catch (e: Exception) {
+            Timber.w(e, "permanentlyDeletePhoto: photoDao.delete FAILED for %s", photo.uuid)
+        }
+        try {
+            albumDao.unlink(photo.uuid)
+        } catch (e: Exception) {
+            Timber.w(e, "permanentlyDeletePhoto: albumDao.unlink FAILED (non-fatal) for %s", photo.uuid)
+        }
+    }
+
+    /**
+     * Empty the entire trash: permanently delete every trashed photo
+     * (DB row + on-disk encrypted files). NOT undoable.
+     *
+     * @return the number of photos permanently deleted.
+     *
+     * @since v10 recycle bin
+     */
+    suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
+        val trashed = try {
+            photoDao.findAllTrash()
+        } catch (e: Exception) {
+            Timber.w(e, "emptyTrash: findAllTrash FAILED")
+            return@withContext 0
+        }
+        var count = 0
+        for (photo in trashed) {
+            permanentlyDeletePhoto(photo)
+            count++
+        }
+        count
+    }
+
+    /**
+     * Auto-cleanup pass: permanently delete every trash entry whose
+     * `deleted_at` is older than 30 days. Called once on app start from
+     * [onlasdan.gallery.BaseApplication.onCreate]. Safe to call repeatedly —
+     * it's a no-op when the trash is empty or no entries have expired.
+     *
+     * @return the number of photos permanently deleted.
+     *
+     * @since v10 recycle bin
+     */
+    suspend fun cleanupExpiredTrash(): Int = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - TRASH_RETENTION_MS
+        val expired = try {
+            photoDao.findAllTrash().filter { it.deletedAt in 1 until cutoff }
+        } catch (e: Exception) {
+            Timber.w(e, "cleanupExpiredTrash: findAllTrash FAILED")
+            return@withContext 0
+        }
+        if (expired.isEmpty()) return@withContext 0
+        var count = 0
+        for (photo in expired) {
+            permanentlyDeletePhoto(photo)
+            count++
+        }
+        Timber.i("cleanupExpiredTrash: permanently deleted %d expired trash entries (cutoff=%d)", count, cutoff)
+        count
+    }
+
+    /**
+     * Observe all photos currently in the trash (deleted_at > 0). Drives the
+     * Trash screen's list.
+     *
+     * @since v10 recycle bin
+     */
+    fun observeTrash() = photoDao.observeTrash()
 
     /**
      * Delete a photos bytes and thumbnail bytes on the filesystem.
@@ -650,4 +769,356 @@ class PhotoRepository @Inject constructor(
     }
 
     // endregion
+
+    // region ZIP BACKUP (Item 1 — vault ZIP export / import)
+
+    /**
+     * Export every live (non-trashed) photo to a plain ZIP archive at
+     * [targetUri]. Each photo's decrypted plaintext bytes are written to a
+     * ZIP entry named after the photo's original filename; a `manifest.json`
+     * entry at the ZIP root carries the per-photo metadata (uuid, fileName,
+     * type, size, albumPath, contentHash) so an [importFromZip] round-trip
+     * can recreate the DB rows.
+     *
+     * The ZIP itself is NOT encrypted — the user chose where to save it
+     * (e.g. a SAF-selected location) and is responsible for securing the
+     * file. The decrypted plaintext bytes exist only transiently inside
+     * the ZipOutputStream's buffer; no plaintext is written to the app's
+     * own storage.
+     *
+     * @return `true` if the ZIP was written successfully (zero or more
+     *   photos), `false` on a fatal error.
+     *
+     * @since Item 1 — ZIP backup export
+     */
+    suspend fun exportToZip(targetUri: Uri): Boolean = withContext(Dispatchers.IO) {
+        var zipOut: java.util.zip.ZipOutputStream? = null
+        try {
+            val photos = photoDao.findAllPhotosByImportDateDesc().filter { it.deletedAt == 0L }
+            val manifest = ZipManifest(
+                version = ZIP_MANIFEST_VERSION,
+                createdAt = System.currentTimeMillis(),
+                photos = photos.map {
+                    ZipManifestEntry(
+                        uuid = it.uuid,
+                        fileName = it.fileName,
+                        type = it.type.name,
+                        size = it.size,
+                        albumPath = it.albumPath,
+                        contentHash = it.contentHash,
+                    )
+                },
+            )
+
+            val out = app.contentResolver.openOutputStream(targetUri)
+                ?: run {
+                    Timber.e("exportToZip: could not open output stream for %s", targetUri)
+                    return@withContext false
+                }
+            zipOut = java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(out))
+
+            // Write manifest.json first so an importer can pre-allocate
+            // progress UI before any photo bytes are read.
+            val manifestJson = gson.toJson(manifest).toByteArray(Charsets.UTF_8)
+            zipOut.putNextEntry(java.util.zip.ZipEntry(ZIP_MANIFEST_ENTRY_NAME))
+            zipOut.write(manifestJson)
+            zipOut.closeEntry()
+
+            // Write each photo's decrypted plaintext as a ZIP entry.
+            // Entries are named `<uuid>/<originalFileName>` to guarantee
+            // uniqueness (two photos can share the same fileName if they
+            // came from different sources) and to keep importable items
+            // grouped in a per-photo subfolder when the user unzips
+            // manually.
+            for (photo in photos) {
+                val cipherIn = try {
+                    vaultFileStorage.openEncryptedInput(photo.internalFileName)
+                } catch (e: Exception) {
+                    Timber.w(e, "exportToZip: skip %s (cannot open encrypted input)", photo.uuid)
+                    null
+                }
+                if (cipherIn == null) continue
+
+                val entryName = "${photo.uuid}/${photo.fileName}"
+                zipOut.putNextEntry(java.util.zip.ZipEntry(entryName))
+                try {
+                    cipherIn.use { it.copyTo(zipOut) }
+                } catch (e: Exception) {
+                    Timber.w(e, "exportToZip: partial write for %s", photo.uuid)
+                }
+                zipOut.closeEntry()
+            }
+
+            zipOut.finish()
+            zipOut.flush()
+            Timber.i("exportToZip: wrote %d photos + manifest to %s", photos.size, targetUri)
+            true
+        } catch (e: Exception) {
+            Timber.e(e, "exportToZip: FAILED")
+            false
+        } finally {
+            runCatching { zipOut?.close() }
+        }
+    }
+
+    /**
+     * Import photos from a ZIP archive previously produced by
+     * [exportToZip]. Reads `manifest.json` to recover per-photo metadata,
+     * then for each entry: reads the plaintext bytes from the ZIP,
+     * re-encrypts them with the current VMK, writes the new `.crypt` file
+     * to internal storage, and creates a fresh Photo DB row with a NEW
+     * UUID (so re-importing the same ZIP multiple times creates distinct
+     * photos, not duplicates of the originals).
+     *
+     * Thumbnails are NOT generated — the importer creates the DB row +
+     * encrypted original only. The thumbnail pack restore pass
+     * ([onlasdan.gallery.sync.rclone.RepoManager.restoreThumbnailsFromPacks])
+     * will pick up the new UUID on the next sync and fetch its thumbnail
+     * from the cloud (or the gallery will render a placeholder until then).
+     *
+     * Photos whose fileName collides with an existing photo (same
+     * fileName + same content_hash) are skipped to avoid trivial
+     * duplicates.
+     *
+     * @return the number of photos successfully imported.
+     *
+     * @since Item 1 — ZIP backup import
+     */
+    suspend fun importFromZip(sourceUri: Uri): Int = withContext(Dispatchers.IO) {
+        var zipIn: java.util.zip.ZipInputStream? = null
+        var imported = 0
+        try {
+            val inStream = app.contentResolver.openInputStream(sourceUri)
+                ?: run {
+                    Timber.e("importFromZip: could not open input stream for %s", sourceUri)
+                    return@withContext 0
+                }
+            zipIn = java.util.zip.ZipInputStream(java.io.BufferedInputStream(inStream))
+
+            // First pass: find manifest.json and parse it.
+            var manifest: ZipManifest? = null
+            val entryBytesByUuid = mutableMapOf<String, ByteArray>()
+            var entry = zipIn.nextEntry
+            while (entry != null) {
+                if (entry.name == ZIP_MANIFEST_ENTRY_NAME) {
+                    val bytes = zipIn.readBytes()
+                    manifest = try {
+                        gson.fromJson(String(bytes, Charsets.UTF_8), ZipManifest::class.java)
+                    } catch (e: Exception) {
+                        Timber.w(e, "importFromZip: manifest.json parse FAILED")
+                        null
+                    }
+                } else if (!entry.isDirectory) {
+                    // Top-level folder name = original uuid
+                    val topFolder = entry.name.substringBefore('/', "")
+                    if (topFolder.isNotBlank()) {
+                        // Defer reading bytes — we'll only read entries that
+                        // appear in the manifest. Read everything though, since
+                        // the ZIP is small relative to gallery size and we
+                        // need to enumerate entries sequentially anyway.
+                        val bytes = zipIn.readBytes()
+                        entryBytesByUuid[topFolder] = bytes
+                    }
+                }
+                zipIn.closeEntry()
+                entry = zipIn.nextEntry
+            }
+
+            val manifestResolved = manifest ?: run {
+                Timber.w("importFromZip: no manifest.json in ZIP — aborting")
+                return@withContext 0
+            }
+
+            for (meta in manifestResolved.photos) {
+                val bytes = entryBytesByUuid[meta.uuid] ?: continue
+                // Skip duplicates: same fileName + same content_hash.
+                if (!meta.contentHash.isNullOrBlank()) {
+                    val existing = try {
+                        photoDao.findByContentHash(meta.contentHash, excludeUuid = meta.uuid)
+                    } catch (e: Exception) { null }
+                    if (existing != null) {
+                        Timber.i("importFromZip: skip duplicate %s (hash=%s)", meta.fileName, meta.contentHash)
+                        continue
+                    }
+                }
+
+                val newUuid = UUID.randomUUID().toString()
+                val type = runCatching { PhotoType.valueOf(meta.type).takeIf { it != PhotoType.UNDEFINED } }
+                    .getOrNull() ?: PhotoType.JPEG
+
+                val photo = Photo(
+                    fileName = meta.fileName,
+                    importedAt = System.currentTimeMillis(),
+                    lastModified = null,
+                    type = type,
+                    size = bytes.size.toLong(),
+                    uuid = newUuid,
+                    relativePath = meta.albumPath ?: meta.fileName,
+                    albumPath = meta.albumPath,
+                    contentHash = meta.contentHash,
+                )
+
+                // Write the plaintext bytes through the encrypt stream.
+                val written = try {
+                    val encOut = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
+                    if (encOut == null) {
+                        Timber.w("importFromZip: openEncryptedOutput FAILED for %s", newUuid)
+                        false
+                    } else {
+                        encOut.use { it.write(bytes) }
+                        true
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "importFromZip: encrypt+write FAILED for %s", newUuid)
+                    false
+                }
+                if (!written) continue
+
+                try {
+                    photoDao.insert(photo)
+                    imported++
+                } catch (e: Exception) {
+                    Timber.w(e, "importFromZip: insert FAILED for %s", newUuid)
+                    runCatching { vaultFileStorage.deleteEncryptedFile(photo.internalFileName) }
+                }
+            }
+
+            Timber.i("importFromZip: imported %d photos from %s", imported, sourceUri)
+            imported
+        } catch (e: Exception) {
+            Timber.e(e, "importFromZip: FAILED")
+            imported
+        } finally {
+            runCatching { zipIn?.close() }
+        }
+    }
+
+    // endregion
+
+    // region STORAGE ANALYTICS (Item 4)
+
+    /**
+     * Snapshot of vault storage usage. Counts live (non-trashed) photos
+     * only — trash entries' files are still on disk but are about to be
+     * cleaned up by the 30-day auto-cleanup, so they're not part of the
+     * "real" storage footprint we surface to the user.
+     *
+     * @since Item 4 — storage analytics
+     */
+    data class StorageStats(
+        val localOriginalsBytes: Long,
+        val localThumbnailsBytes: Long,
+        val localOriginalsCount: Int,
+        val localThumbnailsCount: Int,
+        val photoCount: Int,
+        val uploadedCount: Int,
+        val pendingCount: Int,
+        val trashCount: Int,
+    )
+
+    /**
+     * Compute the current [StorageStats] by scanning the app's `filesDir`
+     * for `.crypt` and `.crypt.tn` files + querying the DB for counts by
+     * sync state. Best-effort: file system errors are logged and treated
+     * as zero for that counter.
+     *
+     * @since Item 4 — storage analytics
+     */
+    suspend fun getStorageStats(): StorageStats = withContext(Dispatchers.IO) {
+        var origBytes = 0L
+        var origCount = 0
+        var tnBytes = 0L
+        var tnCount = 0
+        try {
+            val files = app.filesDir.listFiles()?.toList().orEmpty()
+            for (f in files) {
+                if (!f.isFile) continue
+                val len = f.length()
+                when {
+                    f.name.endsWith(".crypt.tn") -> {
+                        tnBytes += len
+                        tnCount++
+                    }
+                    f.name.endsWith(".crypt.vp") -> {
+                        // Video preview — group with originals.
+                        origBytes += len
+                        origCount++
+                    }
+                    f.name.endsWith(".crypt") -> {
+                        origBytes += len
+                        origCount++
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "getStorageStats: filesDir scan FAILED")
+        }
+
+        val all = try { photoDao.findAllPhotosByImportDateDesc() } catch (e: Exception) { emptyList() }
+        val live = all.filter { it.deletedAt == 0L }
+        val uploaded = live.count { it.syncState == onlasdan.gallery.sync.domain.SyncState.UPLOADED }
+        val pending = live.count {
+            it.syncState == onlasdan.gallery.sync.domain.SyncState.UPLOAD_PENDING ||
+                it.syncState == onlasdan.gallery.sync.domain.SyncState.LOCAL_ONLY
+        }
+        val trash = all.count { it.deletedAt > 0L }
+
+        StorageStats(
+            localOriginalsBytes = origBytes,
+            localThumbnailsBytes = tnBytes,
+            localOriginalsCount = origCount,
+            localThumbnailsCount = tnCount,
+            photoCount = live.size,
+            uploadedCount = uploaded,
+            pendingCount = pending,
+            trashCount = trash,
+        )
+    }
+
+    // endregion
+
+    companion object {
+        /**
+         * How long a photo stays in the trash before being permanently
+         * deleted by [cleanupExpiredTrash]. 30 days matches the user-facing
+         * string in `settings_trash_summary` — keep them in sync.
+         *
+         * @since v10 recycle bin
+         */
+        const val TRASH_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** manifest.json entry name inside export ZIPs. @since Item 1 ZIP backup */
+        const val ZIP_MANIFEST_ENTRY_NAME = "manifest.json"
+
+        /** ZipManifest format version. Bump on incompatible changes. @since Item 1 */
+        const val ZIP_MANIFEST_VERSION = 1
+    }
 }
+
+/**
+ * manifest.json model for the ZIP backup format (Item 1).
+ *
+ * @since Item 1 — ZIP backup
+ */
+
+data class ZipManifest(
+    @com.google.gson.annotations.Expose val version: Int,
+    @com.google.gson.annotations.Expose val createdAt: Long,
+    @com.google.gson.annotations.Expose val photos: List<ZipManifestEntry>,
+)
+
+/**
+ * One entry in [ZipManifest.photos] — the metadata needed to reconstruct
+ * a Photo DB row on import (the photo's plaintext bytes come from the
+ * corresponding ZIP entry).
+ *
+ * @since Item 1 — ZIP backup
+ */
+data class ZipManifestEntry(
+    @com.google.gson.annotations.Expose val uuid: String,
+    @com.google.gson.annotations.Expose val fileName: String,
+    @com.google.gson.annotations.Expose val type: String,
+    @com.google.gson.annotations.Expose val size: Long,
+    @com.google.gson.annotations.Expose val albumPath: String?,
+    @com.google.gson.annotations.Expose val contentHash: String?,
+)

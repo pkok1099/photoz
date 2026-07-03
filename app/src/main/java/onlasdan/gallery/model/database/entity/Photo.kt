@@ -123,6 +123,22 @@ data class Photo(
     @ColumnInfo(name = COL_ALBUM_PATH, defaultValue = "NULL")
     @Expose
     var albumPath: String? = null,
+
+    /**
+     * Soft-delete timestamp. `0` means the photo is live (visible in the
+     * gallery). A non-zero value is the epoch-ms at which the user moved the
+     * photo to the Trash. Trash items are excluded from the gallery and
+     * albums (see [PhotoDao.observeAllSorted] and
+     * [AlbumDao.createSortedPhotosQuery]), and surfaced in the Trash screen
+     * instead. Photos whose `deletedAt` is older than 30 days are
+     * permanently deleted on app start by
+     * [onlasdan.gallery.BaseApplication.onCreate] (via
+     * [PhotoRepository.cleanupExpiredTrash]).
+     *
+     * @since v10 — recycle bin / soft delete
+     */
+    @ColumnInfo(name = COL_DELETED_AT, defaultValue = "0")
+    var deletedAt: Long = 0L,
 ) {
 
     val internalFileName: String
@@ -153,5 +169,8 @@ data class Photo(
 
         /** Logical album/folder key — for packed-thumbnails grouping. @since v9 dedup */
         const val COL_ALBUM_PATH = "album_path"
+
+        /** Soft-delete timestamp column. 0 = live, non-zero = in trash. @since v10 recycle bin */
+        const val COL_DELETED_AT = "deleted_at"
     }
 }

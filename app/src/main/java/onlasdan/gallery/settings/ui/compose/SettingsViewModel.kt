@@ -28,6 +28,7 @@ import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.encryption.domain.VaultService
 import onlasdan.gallery.encryption.domain.models.CreateRequest
+import onlasdan.gallery.settings.ui.SettingsFragment
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.encryption.ui.UserCanceledBiometricsException
 import onlasdan.gallery.gallery.albums.domain.AlbumRepository
@@ -47,16 +48,34 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 
 data class SettingsUiState(
     val screenConfig: PreferenceScreenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
     val preferencesValues: Map<String, *> = emptyMap<String, String>(),
+    /**
+     * Runtime-computed subtitles for `Preference.Info` rows, keyed by the
+     * preference's `key`. Currently populated for the three Storage rows
+     * (originals / thumbnails / photos) by [SettingsViewModel.refreshStorageStats].
+     *
+     * @since Item 4 — storage analytics
+     */
+    val infoSummaries: Map<String, String> = emptyMap(),
+    /**
+     * Live count of photos currently in the trash (deleted_at > 0). `null`
+     * while the first DB read is in flight. Drives the subtitle of the
+     * "Trash" row in Settings.
+     *
+     * @since v10 recycle bin
+     */
+    val trashCount: Int? = null,
 )
 
 sealed interface SettingsUiEvent {
@@ -91,13 +110,32 @@ class SettingsViewModel @Inject constructor(
     private val hashRegistry: HashRegistry,
 ) : ViewModel() {
 
+    private val infoSummariesFlow = MutableStateFlow<Map<String, String>>(emptyMap())
+    val infoSummaries: StateFlow<Map<String, String>> = infoSummariesFlow.asStateFlow()
 
-    val uiState = config.valuesFlow.map {  values ->
+    private val _trashCount = MutableStateFlow<Int?>(null)
+    val trashCount: StateFlow<Int?> = _trashCount.asStateFlow()
+
+    val uiState = combine(
+        config.valuesFlow,
+        infoSummariesFlow,
+        _trashCount,
+    ) { values, infoSummaries, trashCount ->
         SettingsUiState(
             screenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
             preferencesValues = values,
+            infoSummaries = infoSummaries,
+            trashCount = trashCount,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), SettingsUiState(preferencesValues = config.values))
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(),
+        SettingsUiState(
+            preferencesValues = config.values,
+            infoSummaries = infoSummariesFlow.value,
+            trashCount = _trashCount.value,
+        ),
+    )
 
     /**
      * Current rclone config status, drives the subtitle of the "Cloud Sync" settings row.
@@ -108,6 +146,8 @@ class SettingsViewModel @Inject constructor(
 
     init {
         refreshSyncConfigStatus()
+        refreshStorageStats()
+        refreshTrashCount()
     }
 
     private fun refreshSyncConfigStatus() {
@@ -180,6 +220,8 @@ class SettingsViewModel @Inject constructor(
                     is Preference.Switch -> config.putBoolean(event.preference.key, event.value as Boolean)
                     is Preference.Simple -> Unit
                     is Preference.DynamicSummary -> Unit
+                    is Preference.Info -> Unit
+                    else -> Unit
                 }
             }
         }
@@ -358,6 +400,141 @@ class SettingsViewModel @Inject constructor(
                 ),
             )
             0 to 0L
+        }
+    }
+
+    /**
+     * Export every live (non-trashed) photo to a plain ZIP archive at [uri].
+     * The ZIP contains each photo's decrypted plaintext bytes + a manifest.json
+     * entry with per-photo metadata. The ZIP itself is NOT encrypted — the
+     * user picked where to save it and is responsible for securing the file.
+     *
+     * Surfaces the result via toast — started / success / failed.
+     *
+     * @since Item 1 — ZIP backup export
+     */
+    fun exportVaultToZip(uri: android.net.Uri) {
+        Dialogs.showLongToast(app, app.getString(R.string.settings_backup_export_zip_toast_started))
+        viewModelScope.launch {
+            val ok = try {
+                photoRepository.exportToZip(uri)
+            } catch (e: Exception) {
+                Timber.e(e, "exportVaultToZip: FAILED")
+                false
+            }
+            val msgRes = if (ok) {
+                R.string.settings_backup_export_zip_toast_success
+            } else {
+                R.string.settings_backup_export_zip_toast_failed
+            }
+            Dialogs.showLongToast(app, app.getString(msgRes))
+        }
+    }
+
+    /**
+     * Import photos from a ZIP archive at [uri] previously produced by
+     * [exportVaultToZip]. Reads manifest.json, re-encrypts each entry with
+     * the current VMK, and creates fresh Photo DB rows (new UUIDs).
+     *
+     * Surfaces the result via toast — started / success (with count) /
+     * failed.
+     *
+     * @since Item 1 — ZIP backup import
+     */
+    fun importVaultFromZip(uri: android.net.Uri) {
+        Dialogs.showLongToast(app, app.getString(R.string.settings_backup_import_zip_toast_started))
+        viewModelScope.launch {
+            val count = try {
+                photoRepository.importFromZip(uri)
+            } catch (e: Exception) {
+                Timber.e(e, "importVaultFromZip: FAILED")
+                -1
+            }
+            val msgRes = when {
+                count < 0 -> R.string.settings_backup_import_zip_toast_failed
+                count == 0 -> R.string.settings_backup_import_zip_toast_nothing
+                else -> R.string.settings_backup_import_zip_toast_success
+            }
+            val msg = if (count > 0) {
+                app.getString(msgRes, count)
+            } else {
+                app.getString(msgRes)
+            }
+            Dialogs.showLongToast(app, msg)
+            // Importing may have changed storage totals — refresh.
+            refreshStorageStats()
+            refreshTrashCount()
+        }
+    }
+
+    /**
+     * Re-compute [PhotoRepository.getStorageStats] and publish the formatted
+     * per-row subtitles to [infoSummariesFlow]. Also refreshes the trash
+     * count via [refreshTrashCount] since both come from the same DB scan.
+     *
+     * Called on init and from the "Refresh storage stats" action.
+     *
+     * @since Item 4 — storage analytics
+     */
+    fun refreshStorageStats() {
+        viewModelScope.launch {
+            val stats = try {
+                photoRepository.getStorageStats()
+            } catch (e: Exception) {
+                Timber.w(e, "refreshStorageStats: getStorageStats FAILED")
+                null
+            }
+            if (stats == null) {
+                infoSummariesFlow.value = emptyMap()
+                return@launch
+            }
+            val map = buildMap {
+                put(
+                    SettingsFragment.KEY_INFO_STORAGE_ORIGINALS,
+                    app.getString(
+                        R.string.settings_storage_originals_summary,
+                        Formatter.formatFileSize(app, stats.localOriginalsBytes),
+                        stats.localOriginalsCount,
+                    ),
+                )
+                put(
+                    SettingsFragment.KEY_INFO_STORAGE_THUMBNAILS,
+                    app.getString(
+                        R.string.settings_storage_thumbnails_summary,
+                        Formatter.formatFileSize(app, stats.localThumbnailsBytes),
+                        stats.localThumbnailsCount,
+                    ),
+                )
+                put(
+                    SettingsFragment.KEY_INFO_STORAGE_PHOTOS,
+                    app.getString(
+                        R.string.settings_storage_photos_summary,
+                        stats.photoCount,
+                        stats.uploadedCount,
+                        stats.pendingCount,
+                    ),
+                )
+            }
+            infoSummariesFlow.value = map
+        }
+    }
+
+    /**
+     * Refresh the live trash count from the DB. Called on init and after
+     * any action that may change it (e.g. import, restore, empty trash).
+     *
+     * @since v10 recycle bin
+     */
+    fun refreshTrashCount() {
+        viewModelScope.launch {
+            _trashCount.value = try {
+                // Reuse the storage stats snapshot — it already includes
+                // a `trashCount` field from the same DB scan.
+                photoRepository.getStorageStats().trashCount
+            } catch (e: Exception) {
+                Timber.w(e, "refreshTrashCount: FAILED")
+                null
+            }
         }
     }
 }

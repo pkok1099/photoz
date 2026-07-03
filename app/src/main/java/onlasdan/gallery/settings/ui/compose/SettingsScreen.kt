@@ -128,6 +128,24 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
             ).show(fragment.parentFragmentManager)
         }
 
+    // SAF picker for ZIP vault export. The user picks the output .zip path
+    // (SAF CreateDocument — file is created at the chosen location).
+    // @since Item 1 ZIP backup
+    val exportZipLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            viewModel.exportVaultToZip(uri)
+        }
+
+    // SAF picker for ZIP vault import. The user picks an existing .zip to
+    // import photos from.
+    // @since Item 1 ZIP backup
+    val importZipLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            viewModel.importVaultFromZip(uri)
+        }
+
     // SAF picker for rclone.conf import. @since PR1 sync addendum (Settings UI)
     val rcloneConfigLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -240,6 +258,47 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
         // surfaces the result (count + bytes freed) via toast.
         viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS) {
             settingsScope.launch { viewModel.cleanCachedOriginals() }
+            false
+        }
+
+        // @since Item 1 ZIP backup — "Export vault to ZIP" row. Launches
+        // SAF CreateDocument so the user picks the output .zip path. The
+        // ViewModel handles the actual encryption-to-plaintext-and-zip work
+        // once the URI is returned.
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_EXPORT_ZIP) {
+            exportZipLauncher.launchAndIgnoreTimer(
+                "photok_vault_${System.currentTimeMillis()}.zip",
+                activity = activity,
+            )
+            false
+        }
+
+        // @since Item 1 ZIP backup — "Import vault from ZIP" row. Launches
+        // SAF OpenDocument so the user picks an existing .zip file. The
+        // ViewModel handles reading the manifest, re-encrypting each entry,
+        // and creating fresh Photo DB rows.
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_IMPORT_ZIP) {
+            importZipLauncher.launchAndIgnoreTimer(
+                input = arrayOf("application/zip", "application/octet-stream"),
+                activity = activity,
+            )
+            false
+        }
+
+        // @since v10 recycle bin — "Trash" row. Navigates to the Trash
+        // screen (TrashFragment) where the user can browse, restore, or
+        // permanently delete soft-deleted photos.
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TRASH) {
+            fragment?.findNavController()?.navigate(R.id.action_global_trashFragment)
+            false
+        }
+
+        // @since Item 4 storage analytics — "Refresh storage stats" row.
+        // Re-runs getStorageStats() and updates the subtitles of the three
+        // Info rows in the Storage section. The ViewModel surfaces no toast
+        // (the rows themselves update visibly).
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_REFRESH_STORAGE) {
+            viewModel.refreshStorageStats()
             false
         }
 
@@ -447,6 +506,8 @@ fun SettingsScreen() {
             screenConfig = uiState.screenConfig,
             handleUiEvent = viewModel::handleUiEvent,
             syncConfigStatus = syncConfigStatus,
+            infoSummaries = uiState.infoSummaries,
+            trashCount = uiState.trashCount,
         )
     }
 
@@ -461,6 +522,8 @@ fun SettingsContent(
     screenConfig: PreferenceScreenConfig,
     handleUiEvent: (SettingsUiEvent) -> Unit,
     syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured,
+    infoSummaries: Map<String, String> = emptyMap(),
+    trashCount: Int? = null,
 ) {
     val fragment = LocalFragment.current
 
@@ -557,6 +620,7 @@ fun SettingsContent(
                                     PreferenceDynamicSummaryView(
                                         preference = preference,
                                         status = syncConfigStatus,
+                                        trashCount = trashCount,
                                         onClick = {
                                             fragment ?: return@PreferenceDynamicSummaryView
                                             handleUiEvent(
@@ -566,6 +630,13 @@ fun SettingsContent(
                                                 )
                                             )
                                         },
+                                    )
+                                }
+
+                                is Preference.Info -> {
+                                    PreferenceInfoView(
+                                        preference = preference,
+                                        summary = infoSummaries[preference.key],
                                     )
                                 }
                             }
@@ -790,19 +861,35 @@ fun PreferenceDynamicSummaryView(
     status: SyncConfigStatus,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    trashCount: Int? = null,
 ) {
     val context = LocalContext.current
-    val summary: String = when (status) {
-        is SyncConfigStatus.NotConfigured ->
-            context.getString(R.string.settings_cloud_sync_not_configured)
-        SyncConfigStatus.Validating ->
-            context.getString(R.string.settings_cloud_sync_validating)
-        is SyncConfigStatus.Configured ->
-            context.getString(R.string.settings_cloud_sync_configured, status.remoteName)
-        is SyncConfigStatus.AwaitingRemoteChoice ->
-            context.getString(R.string.settings_cloud_sync_awaiting_choice)
-        is SyncConfigStatus.Invalid -> status.reason.toSummary(context)
-        is SyncConfigStatus.ImportFailed -> status.reason.toSummary(context)
+    val summary: String = when (preference.key) {
+        // Trash row — subtitle is the live trash count from the DB.
+        // @since v10 recycle bin
+        SettingsFragment.KEY_ACTION_TRASH -> {
+            val count = trashCount
+            if (count == null) {
+                context.getString(R.string.settings_trash_summary)
+            } else if (count == 0) {
+                context.getString(R.string.settings_trash_empty_summary)
+            } else {
+                context.getString(R.string.settings_trash_count_summary, count)
+            }
+        }
+        // Cloud Sync row — subtitle is the rclone config status.
+        else -> when (status) {
+            is SyncConfigStatus.NotConfigured ->
+                context.getString(R.string.settings_cloud_sync_not_configured)
+            SyncConfigStatus.Validating ->
+                context.getString(R.string.settings_cloud_sync_validating)
+            is SyncConfigStatus.Configured ->
+                context.getString(R.string.settings_cloud_sync_configured, status.remoteName)
+            is SyncConfigStatus.AwaitingRemoteChoice ->
+                context.getString(R.string.settings_cloud_sync_awaiting_choice)
+            is SyncConfigStatus.Invalid -> status.reason.toSummary(context)
+            is SyncConfigStatus.ImportFailed -> status.reason.toSummary(context)
+        }
     }
 
     PreferenceView(
@@ -810,6 +897,30 @@ fun PreferenceDynamicSummaryView(
         title = stringResource(preference.title),
         summary = summary,
         onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Read-only info row whose subtitle comes from a runtime `Map<String, String>`
+ * (see [SettingsUiState.infoSummaries]) rather than a static string resource.
+ * Falls back to [Preference.Info.summaryPlaceholder] when no entry exists
+ * for the row's key (e.g. before the first stats refresh completes).
+ *
+ * @since Item 4 — storage analytics
+ */
+@Composable
+fun PreferenceInfoView(
+    preference: Preference.Info,
+    summary: String?,
+    modifier: Modifier = Modifier,
+) {
+    val resolved = summary ?: stringResource(preference.summaryPlaceholder)
+    PreferenceView(
+        icon = painterResource(preference.icon),
+        title = stringResource(preference.title),
+        summary = resolved,
+        onClick = null,
         modifier = modifier,
     )
 }

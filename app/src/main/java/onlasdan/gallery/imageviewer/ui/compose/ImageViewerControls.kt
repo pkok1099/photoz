@@ -157,6 +157,30 @@ fun ImageViewerControls(
                         }
                     },
                     actions = {
+                        // @since Item 3 — slideshow toggle. Play icon starts the
+                        //   auto-advance; pause/stop icon stops it. The icon
+                        //   swaps based on uiState.isSlideshowActive.
+                        IconButton(
+                            onClick = {
+                                handleUiEvent(ImageViewerUiEvent.ToggleSlideshow)
+                            },
+                        ) {
+                            val icon = if (uiState.isSlideshowActive) {
+                                R.drawable.media3_icon_pause
+                            } else {
+                                R.drawable.ic_play_circle
+                            }
+                            val label = if (uiState.isSlideshowActive) {
+                                stringResource(R.string.view_photo_slideshow_stop)
+                            } else {
+                                stringResource(R.string.view_photo_slideshow_start)
+                            }
+                            Icon(
+                                painter = painterResource(icon),
+                                contentDescription = label,
+                            )
+                        }
+
                         IconButton(
                             onClick = {
                                 handleUiEvent(

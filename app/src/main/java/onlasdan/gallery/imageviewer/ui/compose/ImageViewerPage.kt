@@ -122,9 +122,14 @@ fun BoxScope.ImageViewerImagePage(
             .fillMaxSize()
             .zoomable(
                 onClick = {
-                    handleUiEvent(
-                        ImageViewerUiEvent.ToggleShowControls
-                    )
+                    // @since Item 3 — slideshow mode. Tap pauses the
+                    //   slideshow (and re-shows controls) instead of
+                    //   toggling controls when the slideshow is active.
+                    if (uiState.isSlideshowActive) {
+                        handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+                    } else {
+                        handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
+                    }
                 },
                 state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
                 gestures = EnabledZoomGestures.ZoomAndPan,
@@ -264,7 +269,14 @@ fun BoxScope.ImageViewerVideoPage(
             .fillMaxSize()
             .zoomable(
                 onClick = {
-                    handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
+                    // @since Item 3 — slideshow mode. Tap pauses the
+                    //   slideshow (and re-shows controls) instead of
+                    //   toggling controls when the slideshow is active.
+                    if (uiState.isSlideshowActive) {
+                        handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+                    } else {
+                        handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
+                    }
                 },
                 state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
                 gestures = EnabledZoomGestures.ZoomAndPan,

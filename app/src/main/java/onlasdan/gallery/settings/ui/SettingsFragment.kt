@@ -84,5 +84,38 @@ class SettingsFragment : Fragment() {
          *  UPLOADED). Never touches LOCAL_ONLY or UPLOAD_PENDING files.
          *  @since Item 2 — manual one-shot cleanup of cached originals */
         const val KEY_ACTION_CLEAN_CACHED_ORIGINALS = "action_clean_cached_originals"
+
+        /** Action key for "Export vault to ZIP" (Item 1 ZIP backup).
+         *  Opens SAF CreateDocument so the user picks the output .zip path,
+         *  then SettingsViewModel.exportVaultToZip(uri) decrypts each photo
+         *  and writes the plaintext + manifest.json into the ZIP. */
+        const val KEY_ACTION_EXPORT_ZIP = "action_export_zip"
+
+        /** Action key for "Import vault from ZIP" (Item 1 ZIP backup).
+         *  Opens SAF OpenDocument so the user picks an existing .zip, then
+         *  SettingsViewModel.importVaultFromZip(uri) reads the manifest,
+         *  re-encrypts each entry, and creates fresh Photo DB rows. */
+        const val KEY_ACTION_IMPORT_ZIP = "action_import_zip"
+
+        /** Action key for the "Trash" row. Navigates to the Trash screen
+         *  (TrashFragment) where the user can browse / restore / permanently
+         *  delete soft-deleted photos. @since v10 recycle bin */
+        const val KEY_ACTION_TRASH = "action_trash"
+
+        /** Action key for the "Refresh storage stats" row. Re-runs
+         *  PhotoRepository.getStorageStats() and updates the subtitles of
+         *  the three Info rows below. @since Item 4 storage analytics */
+        const val KEY_ACTION_REFRESH_STORAGE = "action_refresh_storage"
+
+        /** Info key for the "Local originals" row in the Storage section.
+         *  The row's subtitle is computed at runtime and surfaced via
+         *  SettingsUiState.infoSummaries under this key. @since Item 4 */
+        const val KEY_INFO_STORAGE_ORIGINALS = "info_storage_originals"
+
+        /** Info key for the "Local thumbnails" row. @since Item 4 */
+        const val KEY_INFO_STORAGE_THUMBNAILS = "info_storage_thumbnails"
+
+        /** Info key for the "Photos" row. @since Item 4 */
+        const val KEY_INFO_STORAGE_PHOTOS = "info_storage_photos"
     }
 }

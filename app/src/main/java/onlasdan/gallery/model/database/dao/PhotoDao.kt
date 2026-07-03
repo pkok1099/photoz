@@ -69,26 +69,30 @@ interface PhotoDao {
 
     /**
      * Get all photos, ordered by imported At (desc).
-     * Used for re-encrypting.
+     * Used for re-encrypting, backup dump, and resetApp — INCLUDES trash
+     * entries so a backup/restore round-trip preserves trashed photos and
+     * a re-encryption pass migrates everything (not just live photos).
      *
      * @return all photos as [List]
      */
     @Query("SELECT * FROM photo ORDER BY importedAt DESC")
     suspend fun findAllPhotosByImportDateDesc(): List<Photo>
 
-    @Query("SELECT * FROM photo ORDER BY importedAt DESC")
+    @Query("SELECT * FROM photo WHERE deleted_at = 0 ORDER BY importedAt DESC")
     fun observeAll(): Flow<List<Photo>>
 
     /**
      * Count all photos.
      */
-    @Query("SELECT COUNT(*) FROM photo")
+    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0")
     suspend fun countAll(): Int
 
     // Sorted
 
     fun observeAllSorted(sort: Sort): Flow<List<Photo>> {
-        val query = SimpleSQLiteQuery("SELECT * FROM photo ORDER BY ${sort.field.columnName} ${sort.order.sql}")
+        val query = SimpleSQLiteQuery(
+            "SELECT * FROM photo WHERE deleted_at = 0 ORDER BY ${sort.field.columnName} ${sort.order.sql}"
+        )
 
         return observeAll(query)
     }
@@ -184,6 +188,75 @@ interface PhotoDao {
      */
     @Query("SELECT * FROM photo WHERE size = 0")
     suspend fun findPhotosWithPlaceholderMetadata(): List<Photo>
+
+    // endregion
+
+    // region RECYCLE BIN — @since v10 soft delete
+
+    /**
+     * Observe all photos currently in the trash (deleted_at > 0), ordered by
+     * most-recently-deleted first. Drives the Trash screen's list.
+     *
+     * @since v10 recycle bin
+     */
+    @Query("SELECT * FROM photo WHERE deleted_at > 0 ORDER BY deleted_at DESC")
+    fun observeTrash(): Flow<List<Photo>>
+
+    /**
+     * Snapshot of all photos in the trash. Used by the auto-cleanup pass
+     * [onlasdan.gallery.model.repositories.PhotoRepository.cleanupExpiredTrash]
+     * to find rows whose 30-day retention has expired.
+     *
+     * @since v10 recycle bin
+     */
+    @Query("SELECT * FROM photo WHERE deleted_at > 0")
+    suspend fun findAllTrash(): List<Photo>
+
+    /**
+     * Soft-delete a single photo: stamp `deleted_at` with the given epoch-ms
+     * (the gallery + album queries filter `WHERE deleted_at = 0`, so the
+     * photo disappears from the live views but its DB row + encrypted files
+     * stay intact and are surfaced on the Trash screen).
+     *
+     * @since v10 recycle bin
+     */
+    @Query("UPDATE photo SET deleted_at = :timestamp WHERE photo_uuid = :uuid")
+    suspend fun softDelete(uuid: String, timestamp: Long)
+
+    /**
+     * Restore a photo from the trash: reset `deleted_at` to 0 so the photo
+     * reappears in the gallery and albums.
+     *
+     * @since v10 recycle bin
+     */
+    @Query("UPDATE photo SET deleted_at = 0 WHERE photo_uuid = :uuid")
+    suspend fun restoreFromTrash(uuid: String)
+
+    /**
+     * Permanently delete all trash entries whose `deleted_at` is older than
+     * [before]. Used by the auto-cleanup pass on app start (30-day retention)
+     * and by the Trash screen's "Empty trash" action (pass [before] = Long.MAX_VALUE
+     * to wipe the entire trash). Returns the number of rows deleted so the
+     * caller can clean up the corresponding encrypted files via
+     * [onlasdan.gallery.io.VaultFileStorage.deleteEncryptedFile].
+     *
+     * Note: this only deletes the DB rows; the caller is responsible for
+     * deleting the on-disk `.crypt` / `.crypt.tn` files for each returned
+     * Photo BEFORE calling this (or via [PhotoRepository.cleanupExpiredTrash]).
+     *
+     * @since v10 recycle bin
+     */
+    @Query("DELETE FROM photo WHERE deleted_at > 0 AND deleted_at < :before")
+    suspend fun deleteExpiredTrashBefore(before: Long): Int
+
+    /**
+     * Count all photos currently in the trash. Used by the Trash screen
+     * header and the auto-cleanup toast.
+     *
+     * @since v10 recycle bin
+     */
+    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at > 0")
+    suspend fun countTrash(): Int
 
     // endregion
 }

@@ -235,6 +235,29 @@ fun ImageViewerScreen(
             }
         }
 
+        // ─── Item 3 — slideshow auto-advance ───────────────────────────────
+        // When the user toggles the slideshow ON, this LaunchedEffect fires
+        // and waits SLIDESHOW_INTERVAL_MS (5s) before advancing to the
+        // next photo. Re-launches whenever the current page changes (so
+        // each photo gets its own 5s window) or the slideshow flag flips.
+        // Stops cleanly at the last photo (no looping — keep it minimal).
+        LaunchedEffect(uiState.isSlideshowActive, pagerState.settledPage, uiState.items.size) {
+            if (!uiState.isSlideshowActive) return@LaunchedEffect
+            if (uiState.items.isEmpty()) return@LaunchedEffect
+
+            delay(ImageViewerViewModel.SLIDESHOW_INTERVAL_MS)
+            if (!isActive) return@LaunchedEffect
+
+            val nextIndex = pagerState.settledPage + 1
+            if (nextIndex < uiState.items.size) {
+                pagerState.animateScrollToPage(nextIndex)
+            } else {
+                // Reached the last photo — stop the slideshow and bring
+                // the controls back so the user can navigate away.
+                handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+            }
+        }
+
 
         // Keep screen on while playing
         DisposableEffect(exoPlayerState.isPlaying) {

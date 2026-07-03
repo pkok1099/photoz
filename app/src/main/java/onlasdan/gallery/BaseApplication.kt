@@ -33,6 +33,7 @@ import onlasdan.gallery.sync.debug.SyncLogger
 import onlasdan.gallery.telemetry.domain.TelemetryService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -59,6 +60,14 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
 
     @Inject
     lateinit var telemetryService: TelemetryService
+
+    /**
+     * @since v10 recycle bin — injected so we can run the trash auto-cleanup
+     *   pass on app start. The cleanup permanently deletes trash entries
+     *   older than 30 days (see [PhotoRepository.cleanupExpiredTrash]).
+     */
+    @Inject
+    lateinit var photoRepository: onlasdan.gallery.model.repositories.PhotoRepository
 
     /**
      * Hilt-injected WorkManager configuration. WorkManager reads this via
@@ -110,6 +119,22 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
 
         setAppDesign(config.systemDesign)
         cleanupDeadFilesUseCase()
+
+        // ─── v10 recycle bin — auto-cleanup expired trash on app start ───────
+        // Permanently delete trash entries whose `deleted_at` is older than
+        // 30 days. Best-effort: failures are logged but never crash the app
+        // (the next start will retry). Skipped if the vault isn't set up yet
+        // (the call is a no-op when the DB has no trash entries).
+        appScope.launch {
+            try {
+                val n = photoRepository.cleanupExpiredTrash()
+                if (n > 0) {
+                    android.util.Log.i("TrashAutoCleanup", "permanently deleted $n expired trash entries")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("TrashAutoCleanup", "cleanupExpiredTrash failed: ${e.message}")
+            }
+        }
 
         // ─── Item 1: restore persisted background timestamp ───────────────
         // `wentToBackgroundAt` was previously an in-memory `Long` that reset to `0L`

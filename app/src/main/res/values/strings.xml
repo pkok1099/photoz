@@ -520,4 +520,62 @@
     <!-- Video viewer loading indicator — @since video-loading-indicator feature -->
     <string name="video_downloading">Downloading video…</string>
     <string name="video_download_failed">Couldn\'t download video</string>
+
+    <!-- ─── Item 1 — ZIP backup export / import ────────────────────────────── -->
+    <string name="settings_category_backup">Backup (ZIP)</string>
+    <string name="settings_category_backup_summary">Export your vault\'s decrypted photos to a plain ZIP file, or import them back. The ZIP is not encrypted — pick a safe location.</string>
+    <string name="settings_backup_export_zip_title">Export vault to ZIP</string>
+    <string name="settings_backup_export_zip_summary">Save all photos as a plain (unencrypted) ZIP archive. Choose a secure location.</string>
+    <string name="settings_backup_import_zip_title">Import vault from ZIP</string>
+    <string name="settings_backup_import_zip_summary">Restore photos from a ZIP archive previously created by Export. Re-encrypts and adds them to the vault.</string>
+    <string name="settings_backup_export_zip_toast_started">Exporting vault to ZIP…</string>
+    <string name="settings_backup_export_zip_toast_success">Vault exported to ZIP.</string>
+    <string name="settings_backup_export_zip_toast_failed">ZIP export failed. Check the chosen location and try again.</string>
+    <string name="settings_backup_import_zip_toast_started">Importing vault from ZIP…</string>
+    <string name="settings_backup_import_zip_toast_success">Imported %1$d photo(s) from ZIP.</string>
+    <string name="settings_backup_import_zip_toast_nothing">No new photos found in ZIP (all already in vault).</string>
+    <string name="settings_backup_import_zip_toast_failed">ZIP import failed. Make sure the file is a valid PhotoZ export.</string>
+
+    <!-- ─── Item 2 — recycle bin / soft delete ─────────────────────────────── -->
+    <string name="settings_category_trash">Trash</string>
+    <string name="settings_trash_title">Trash</string>
+    <string name="settings_trash_summary">Browse, restore, or permanently delete photos you\'ve removed. Items are auto-purged after 30 days.</string>
+    <string name="settings_trash_empty_summary">Trash is empty.</string>
+    <string name="settings_trash_count_summary">%1$d item(s) in trash. Tap to manage.</string>
+
+    <string name="trash_title">Trash</string>
+    <string name="trash_empty">Trash is empty</string>
+    <string name="trash_empty_hint">Deleted photos show up here for 30 days before being permanently removed.</string>
+    <string name="trash_empty_button">Empty trash</string>
+    <string name="trash_empty_confirm_title">Empty trash?</string>
+    <string name="trash_empty_confirm_message">All photos in the trash will be permanently deleted. This cannot be undone.</string>
+    <string name="trash_empty_success">Permanently deleted %1$d photo(s).</string>
+    <string name="trash_empty_nothing">Trash is already empty.</string>
+    <string name="trash_empty_failed">Failed to empty trash. Please try again.</string>
+    <string name="trash_restore_button">Restore</string>
+    <string name="trash_delete_permanent_button">Delete</string>
+    <string name="trash_row_deleted_at">Deleted %1$s</string>
+    <string name="trash_restore_success">Photo restored to gallery.</string>
+    <string name="trash_restore_failed">Failed to restore photo. Please try again.</string>
+    <string name="trash_delete_permanent_success">Photo permanently deleted.</string>
+    <string name="trash_delete_permanent_failed">Failed to delete photo. Please try again.</string>
+    <string name="trash_delete_permanent_confirm_title">Delete permanently?</string>
+    <string name="trash_delete_permanent_confirm_message">\"%1$s\" will be permanently deleted. This cannot be undone.</string>
+
+    <!-- ─── Item 3 — slideshow mode ────────────────────────────────────────── -->
+    <string name="view_photo_slideshow_start">Start slideshow</string>
+    <string name="view_photo_slideshow_stop">Stop slideshow</string>
+    <string name="view_photo_slideshow_summary">Auto-advance through photos every 5 seconds. Tap to pause.</string>
+
+    <!-- ─── Item 4 — storage analytics ─────────────────────────────────────── -->
+    <string name="settings_category_storage">Storage</string>
+    <string name="settings_storage_originals_title">Local originals</string>
+    <string name="settings_storage_originals_summary">%1$s across %2$d file(s)</string>
+    <string name="settings_storage_thumbnails_title">Local thumbnails</string>
+    <string name="settings_storage_thumbnails_summary">%1$s across %2$d file(s)</string>
+    <string name="settings_storage_photos_title">Photos</string>
+    <string name="settings_storage_photos_summary">%1$d total (%2$d uploaded, %3$d pending)</string>
+    <string name="settings_storage_loading">Computing…</string>
+    <string name="settings_storage_refresh_title">Refresh storage stats</string>
+    <string name="settings_storage_refresh_summary">Re-scan local files and recompute the totals above.</string>
 </resources>

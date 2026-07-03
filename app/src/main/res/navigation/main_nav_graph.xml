@@ -223,6 +223,19 @@
         app:popEnterAnim="@anim/slide_in_from_left"
         app:popExitAnim="@anim/slide_out_to_right"
         />
+    <!--
+      @since v10 recycle bin — global action to the Trash screen. Used from
+      Settings → Trash. Pushed onto the back stack so the system back button
+      returns to Settings.
+    -->
+    <action
+        android:id="@+id/action_global_trashFragment"
+        app:destination="@id/trashFragment"
+        app:enterAnim="@anim/slide_in_from_right"
+        app:exitAnim="@anim/slide_out_to_left"
+        app:popEnterAnim="@anim/slide_in_from_left"
+        app:popExitAnim="@anim/slide_out_to_right"
+        />
     <fragment
         android:id="@+id/encryptionMigrationFragment"
         android:name="onlasdan.gallery.encryption.migration.ui.EncryptionMigrationFragment"
@@ -238,4 +251,13 @@
         android:name="onlasdan.gallery.encryption.ui.RecoveryPhraseRestoreFragment"
         android:label="RecoveryPhraseRestoreFragment" >
     </fragment>
+    <!--
+      @since v10 recycle bin — Trash screen. Reached from Settings → Trash
+      via the action_global_trashFragment action below. Lists soft-deleted
+      photos with restore / permanently-delete / empty-trash actions.
+    -->
+    <fragment
+        android:id="@+id/trashFragment"
+        android:name="onlasdan.gallery.trash.ui.TrashFragment"
+        android:label="TrashFragment" />
 </navigation>

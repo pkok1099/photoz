@@ -73,6 +73,23 @@ sealed interface ImageViewerUiEvent {
     data object ToggleShowControls : ImageViewerUiEvent
     data object ToggleMuteVideoPlayer : ImageViewerUiEvent
     data class UpdateCurrentDialog(val newValue: ImageViewerUiState.Dialog?) : ImageViewerUiEvent
+    /**
+     * Toggle the slideshow auto-advance. When ON, the viewer advances to
+     * the next photo every [ImageViewerUiState.slideshowIntervalMs] ms.
+     * When toggled ON, controls are auto-hidden; when toggled OFF (manually
+     * or by reaching the last photo), controls are re-shown.
+     *
+     * @since Item 3 — slideshow mode
+     */
+    data object ToggleSlideshow : ImageViewerUiEvent
+    /**
+     * Stop the slideshow (used by the viewer's auto-advance when it reaches
+     * the last photo, and by tap-to-pause). Distinct from [ToggleSlideshow]
+     * so the caller doesn't have to track the current state.
+     *
+     * @since Item 3 — slideshow mode
+     */
+    data object StopSlideshow : ImageViewerUiEvent
 }
 
 /**
@@ -148,6 +165,17 @@ data class ImageViewerUiState(
      * @since video-loading-indicator feature
      */
     val videoDownloads: Map<String, VideoDownloadState> = emptyMap(),
+    /**
+     * `true` while the slideshow auto-advance is active. The viewer's
+     * `LaunchedEffect` watches this flag + the current pager page and
+     * calls `pagerState.animateScrollToPage(nextIndex)` after
+     * [slideshowIntervalMs] ms. Tap on the image pauses the slideshow
+     * (sets this to `false` and re-shows controls). Reaching the last
+     * photo also sets this to `false`.
+     *
+     * @since Item 3 — slideshow mode
+     */
+    val isSlideshowActive: Boolean = false,
 ) {
     data class Inputs(
         val showControls: Boolean = false,
@@ -179,6 +207,16 @@ class ImageViewerViewModel @AssistedInject constructor(
 ) : ObservableViewModel(app) {
 
     private val inputs = MutableStateFlow(ImageViewerUiState.Inputs())
+
+    /**
+     * Whether the slideshow auto-advance is currently active. Toggled by
+     * [ImageViewerUiEvent.ToggleSlideshow] and reset to `false` by
+     * [ImageViewerUiEvent.StopSlideshow] (used by tap-to-pause and by the
+     * auto-advance when it reaches the last photo).
+     *
+     * @since Item 3 — slideshow mode
+     */
+    private val slideshowActive = MutableStateFlow(false)
 
     // @since video-loading-indicator feature — per-UUID on-demand video
     //  download state. Drives the "Downloading video…" progress bar in the
@@ -213,18 +251,6 @@ class ImageViewerViewModel @AssistedInject constructor(
         ImageViewerUiState(
             items = photos.map { photo ->
                 if (photo.type.isVideo) {
-                    // For video originals, trigger an async restore BEFORE ExoPlayer tries to
-                    // open the local file. ExoPlayer will see the file once download completes;
-                    // until then, the player shows a loading state. (PR1 on-demand restore.)
-                    //
-                    // @since video-loading-indicator feature — track per-UUID
-                    //   download state so the viewer's shutter shows a
-                    //   determinate "Downloading video…" progress bar instead
-                    //   of just an indeterminate spinner. The download itself
-                    //   is fired from [maybeStartVideoDownload] (below) which
-                    //   is called from [handleUiEvent] when the user opens a
-                    //   video, NOT from this flow — this flow only LOOKS UP
-                    //   the current state for each video UUID.
                     ImageViewerItem.Video(
                         photo = photo,
                         mediaItem = createMediaItem(photo)
@@ -242,6 +268,7 @@ class ImageViewerViewModel @AssistedInject constructor(
             videoPlaybackSpeed = configValues.getOrDefault(Config.IMAGE_VIEWER_PLAYBACK_SPEED, 1f) as Float,
             inputs = inputs,
             videoDownloads = videoDownloads,
+            isSlideshowActive = slideshowActive.value,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), ImageViewerUiState())
 
@@ -475,6 +502,24 @@ class ImageViewerViewModel @AssistedInject constructor(
             is ImageViewerUiEvent.UpdateVideoPlaybackSpeed -> viewModelScope.launch {
                 config.imageViewerPlaybackSpeed = event.newValue
             }
+
+            // @since Item 3 — slideshow mode. Toggle the slideshow flag.
+            //   When turning ON, immediately hide controls so the user sees
+            //   a clean full-screen view. When turning OFF (manual stop or
+            //   reaching last photo), re-show controls so the user can
+            //   interact again.
+            is ImageViewerUiEvent.ToggleSlideshow -> {
+                val newState = !slideshowActive.value
+                slideshowActive.value = newState
+                inputs.update {
+                    it.copy(showControls = !newState)
+                }
+            }
+
+            is ImageViewerUiEvent.StopSlideshow -> {
+                slideshowActive.value = false
+                inputs.update { it.copy(showControls = true) }
+            }
         }
     }
 
@@ -560,5 +605,14 @@ class ImageViewerViewModel @AssistedInject constructor(
          * a long download.
          */
         private const val STREAM_POLL_INTERVAL_MS = 100L
+
+        /**
+         * How long the slideshow waits on each photo before auto-advancing
+         * to the next one. 5 seconds matches the user-facing string in
+         * `view_photo_slideshow_summary` — keep them in sync.
+         *
+         * @since Item 3 — slideshow mode
+         */
+        const val SLIDESHOW_INTERVAL_MS = 5000L
     }
 }

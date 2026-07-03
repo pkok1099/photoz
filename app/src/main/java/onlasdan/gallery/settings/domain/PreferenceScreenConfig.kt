@@ -92,6 +92,26 @@ sealed interface Preference {
         override val title: Int,
         val summaryPlaceholder: Int,
     ) : Preference
+
+    /**
+     * Read-only info row whose subtitle is computed at runtime from a
+     * `Map<String, String>` keyed by [key] (see `SettingsUiState.infoSummaries`).
+     * No onClick / switch — the row is purely informational. Used by the
+     * Storage section to surface "Local originals: X MB (N files)" etc.
+     * without requiring the user to tap anything.
+     *
+     * The subtitle falls back to a placeholder string resource when the
+     * map has no entry for [key] (e.g. before the first stats refresh
+     * completes).
+     *
+     * @since Item 4 — storage analytics
+     */
+    data class Info(
+        override val key: String,
+        override val icon: Int,
+        override val title: Int,
+        val summaryPlaceholder: Int,
+    ) : Preference
 }
 
 val PreferenceScreenConfigContent = buildList {
@@ -285,6 +305,90 @@ val PreferenceScreenConfigContent = buildList {
                     icon = R.drawable.ic_warning,
                     title = R.string.settings_advanced_reset_title,
                     summary = R.string.settings_advanced_reset_summary,
+                ),
+            ),
+        )
+    )
+    // ─── Backup section (Item 1 — ZIP vault export / import) ───────────────
+    // Plain (unencrypted) ZIP archive containing each photo's decrypted
+    // plaintext + a manifest.json with per-photo metadata. The user picks
+    // the output location via SAF — they're responsible for securing the
+    // file. Import re-encrypts the bytes with the current VMK and creates
+    // fresh DB rows (new UUIDs) so re-importing the same ZIP creates
+    // distinct photos.
+    add(
+        PreferenceSection(
+            title = R.string.settings_category_backup,
+            summary = R.string.settings_category_backup_summary,
+            preferences = listOf(
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_EXPORT_ZIP,
+                    icon = R.drawable.ic_export,
+                    title = R.string.settings_backup_export_zip_title,
+                    summary = R.string.settings_backup_export_zip_summary,
+                ),
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_IMPORT_ZIP,
+                    icon = R.drawable.ic_download,
+                    title = R.string.settings_backup_import_zip_title,
+                    summary = R.string.settings_backup_import_zip_summary,
+                ),
+            ),
+        )
+    )
+    // ─── Trash section (Item 2 — recycle bin / soft delete) ────────────────
+    // Opens the Trash screen where the user can browse soft-deleted photos,
+    // restore them, or permanently delete them. The "Empty trash" action
+    // is available inside the Trash screen.
+    add(
+        PreferenceSection(
+            title = R.string.settings_category_trash,
+            summary = null,
+            preferences = listOf(
+                Preference.DynamicSummary(
+                    key = SettingsFragment.KEY_ACTION_TRASH,
+                    icon = R.drawable.ic_delete,
+                    title = R.string.settings_trash_title,
+                    summaryPlaceholder = R.string.settings_trash_summary,
+                ),
+            ),
+        )
+    )
+    // ─── Storage section (Item 4 — storage analytics) ─────────────────────
+    // Read-only rows showing the current vault storage breakdown. The
+    // subtitles are computed at runtime by SettingsViewModel.refreshStorageStats()
+    // and surfaced via SettingsUiState.infoSummaries. Tapping a row
+    // triggers a refresh (in case the user just imported / deleted photos
+    // and wants to see the new totals without leaving and re-entering
+    // Settings).
+    add(
+        PreferenceSection(
+            title = R.string.settings_category_storage,
+            summary = null,
+            preferences = listOf(
+                Preference.Info(
+                    key = SettingsFragment.KEY_INFO_STORAGE_ORIGINALS,
+                    icon = R.drawable.ic_database,
+                    title = R.string.settings_storage_originals_title,
+                    summaryPlaceholder = R.string.settings_storage_loading,
+                ),
+                Preference.Info(
+                    key = SettingsFragment.KEY_INFO_STORAGE_THUMBNAILS,
+                    icon = R.drawable.ic_gallery_thumbnail,
+                    title = R.string.settings_storage_thumbnails_title,
+                    summaryPlaceholder = R.string.settings_storage_loading,
+                ),
+                Preference.Info(
+                    key = SettingsFragment.KEY_INFO_STORAGE_PHOTOS,
+                    icon = R.drawable.ic_image,
+                    title = R.string.settings_storage_photos_title,
+                    summaryPlaceholder = R.string.settings_storage_loading,
+                ),
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_REFRESH_STORAGE,
+                    icon = R.drawable.ic_refresh,
+                    title = R.string.settings_storage_refresh_title,
+                    summary = R.string.settings_storage_refresh_summary,
                 ),
             ),
         )

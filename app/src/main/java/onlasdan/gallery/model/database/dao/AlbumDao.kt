@@ -169,7 +169,7 @@ abstract class AlbumDao {
             SELECT p.*
             FROM ${Photo.TABLE_NAME} p
             INNER JOIN ${AlbumPhotoCrossRefTable.TABLE_NAME} ref ON p.photo_uuid = ref.photo_uuid
-            WHERE ref.album_uuid = ?
+            WHERE ref.album_uuid = ? AND p.${Photo.COL_DELETED_AT} = 0
             ORDER BY ref.${AlbumPhotoCrossRefTable.COL_PINNED} DESC, ${sort.field.columnName} ${sort.order.sql}
         """.trimIndent()
 

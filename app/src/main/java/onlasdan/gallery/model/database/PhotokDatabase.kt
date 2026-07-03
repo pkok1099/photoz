@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 9
+private const val DATABASE_VERSION = 10
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -107,6 +107,19 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 8,
             to = 9,
+        ),
+        // v9 → v10: recycle bin / soft delete.
+        //   Add `deleted_at INTEGER NOT NULL DEFAULT 0` to `photo`. 0 = live,
+        //   non-zero = epoch-ms the user moved the photo to the Trash. All
+        //   gallery / album queries now filter `WHERE deleted_at = 0`; the
+        //   Trash screen queries `WHERE deleted_at > 0`. Existing photos get
+        //   the default 0 on migration (they were all live).
+        // Additive (new column with constant default) — Room auto-generates
+        // the ALTER TABLE ADD COLUMN statement; no AutoMigrationSpec needed.
+        // @since v10 recycle bin
+        AutoMigration(
+            from = 9,
+            to = 10,
         ),
     ]
 )
