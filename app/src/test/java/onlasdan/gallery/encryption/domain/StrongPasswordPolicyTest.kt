@@ -80,7 +80,7 @@ class StrongPasswordPolicyTest {
     }
 
     @Test
-    fun `pure 12-digit numeric string is NOT acceptable (1 class < 2 required)`() {
+    fun `pure 12-digit numeric string is NOT acceptable (1 class is less than 2 required)`() {
         // 12 digits, 1 class, length >= 12 relaxes to 2 classes required, but 1 < 2 → reject.
         // This is intentional — even though the PIN reject rule only fires for < 12 digits,
         // the class-diversity rule still catches a pure-digit 12-char password.

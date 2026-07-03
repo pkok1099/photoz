@@ -206,7 +206,7 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
         // (e.g. PhotoSyncWorker mid-upload) will fail gracefully and retry
         // on the next foreground unlock.
         val timeout = config.securityLockTimeout
-        if (timeout != -1L) {
+        if (timeout != -1) {
             try {
                 sessionRepository.reset()
                 android.util.Log.i("RcloneDiag",

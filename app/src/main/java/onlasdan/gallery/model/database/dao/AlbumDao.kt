@@ -191,5 +191,5 @@ abstract class AlbumDao {
      * @since v11 — Sprint 2 / M7 multi-vault
      */
     @Query("UPDATE album SET vault_id = :vaultId WHERE vault_id IS NULL")
-    suspend fun backfillVaultId(vaultId: String): Int
+    abstract suspend fun backfillVaultId(vaultId: String): Int
 }

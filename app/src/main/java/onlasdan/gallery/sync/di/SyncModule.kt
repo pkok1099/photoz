@@ -90,6 +90,11 @@ object SyncModule {
         // Room cache from the encrypted remote registry. HashRegistry has
         // @Singleton @Inject constructor, so Hilt provides it directly.
         hashRegistry: HashRegistry,
+        // @since Sprint 2 / M7 — Multi-vault: RepoManager tags restored Photo
+        // rows + AlbumTable creations with the syncing vault's vault_id.
+        // SessionRepository has @Singleton @Inject constructor (bound by
+        // EncryptionBindingModule).
+        sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
     ) = RepoManager(
         app,
         config,
@@ -101,6 +106,7 @@ object SyncModule {
         phraseEscrowWrapper,
         recoveryPhraseStore,
         hashRegistry,
+        sessionRepository,
     )
 
     // @since v9 dedup + encrypted GCM registry — provides the HashRegistryDao
