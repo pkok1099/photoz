@@ -39,6 +39,8 @@ import onlasdan.gallery.sort.domain.SortRepository
 import onlasdan.gallery.sync.work.SyncRestorer
 import onlasdan.gallery.transcoding.data.AesCbcRandomAccessDataSource
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,8 +49,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 sealed interface ImageViewerUiEvent {
     data class ConfirmDelete(val item: ImageViewerItem) : ImageViewerUiEvent
@@ -99,6 +106,31 @@ sealed interface VideoDownloadState {
     /** Download failed (network blip, vault locked, remote missing, etc.). */
     data class Failed(val message: String) : VideoDownloadState
 }
+
+/**
+ * In-flight state for a progressive video download, shared between the
+ * download coroutine (writer) and [AesCbcRandomAccessDataSource] (reader,
+ * running on ExoPlayer's loading thread).
+ *
+ * - [availableBytes] is polled from the file system (the download's writer
+ *   side updates it as `File.length()` grows). The DataSource reads it to
+ *   know how many bytes are safe to read; reads past this point block
+ *   (poll) until more bytes arrive.
+ * - [downloadComplete] flips to `true` when the download coroutine exits
+ *   (success OR failure). The DataSource treats this as "no more data is
+ *   coming" and returns EOF on the next read past the available window.
+ *
+ * Keyed by [Photo.internalFileName] in [ImageViewerViewModel.videoStreamState]
+ * so the DataSource — which only sees the file `Uri` — can look the state up
+ * by extracting the filename from the URI path.
+ *
+ * @since progressive-video-streaming feature — playback starts while the
+ *   encrypted file is still downloading.
+ */
+data class StreamState(
+    val availableBytes: AtomicLong = AtomicLong(0L),
+    val downloadComplete: AtomicBoolean = AtomicBoolean(false),
+)
 
 data class ImageViewerUiState(
     val items: List<ImageViewerItem> = emptyList(),
@@ -160,6 +192,17 @@ class ImageViewerViewModel @AssistedInject constructor(
     // per viewer session).
     private val inflightDownloads = mutableSetOf<String>()
 
+    // @since progressive-video-streaming — per-internalFileName stream state
+    //  shared between the download coroutine (which updates availableBytes as
+    //  the file grows) and the AesCbcRandomAccessDataSource (which blocks on
+    //  reads past the available window). Entries are added when a progressive
+    //  download starts and removed after it completes (success or failure) so
+    //  the DataSource falls back to its default "fully available" path.
+    //
+    //  ConcurrentHashMap: the DataSource reads from ExoPlayer's loading thread
+    //  while the ViewModel adds/removes entries from the main / IO dispatchers.
+    private val videoStreamState = ConcurrentHashMap<String, StreamState>()
+
     val uiState = combine(
         createPhotosFlow(),
         createPinnedPhotoIdsFlow(),
@@ -211,7 +254,36 @@ class ImageViewerViewModel @AssistedInject constructor(
      * UUID, the call is a no-op. Progress is published to [videoDownloadsFlow]
      * which the viewer's shutter observes.
      *
-     * @since video-loading-indicator feature
+     * ## Progressive streaming
+     *
+     * Instead of waiting for the full download before ExoPlayer opens the
+     * file (the pre-progressive behavior), this method:
+     *  1. Registers a [StreamState] in [videoStreamState] keyed by the photo's
+     *     `internalFileName` so [AesCbcRandomAccessDataSource] can find it by
+     *     inspecting the file `Uri` ExoPlayer passes to `open()`.
+     *  2. Launches the download coroutine (existing
+     *     `ensureLocalOriginalWithProgress` — writes directly to the final
+     *     `<uuid>.crypt` path).
+     *  3. Launches a file-size monitor coroutine that polls
+     *     `localFile.length()` every [STREAM_POLL_INTERVAL_MS] and advances
+     *     `StreamState.availableBytes`. The DataSource blocks on reads past
+     *     this watermark.
+     *  4. When the download coroutine finishes (success OR failure), flips
+     *     `StreamState.downloadComplete` so the DataSource stops blocking and
+     *     returns EOF cleanly, then removes the entry so the DataSource falls
+     *     back to its default "fully available" path.
+     *
+     * ExoPlayer starts playback immediately (the LaunchedEffect in
+     * `ImageViewerScreen` calls `setMediaItem` + `prepare()` right after this
+     * method returns). The DataSource's `open()` blocks on
+     * `waitForBytesAvailable(1)` until rclone has written at least the version
+     * byte, then proceeds to read — blocking as needed — while the download
+     * continues in the background. The user sees the "Downloading video…"
+     * progress bar in the shutter until ExoPlayer has enough buffered data to
+     * start rendering frames.
+     *
+     * @since video-loading-indicator feature; progressive-video-streaming
+     *   extension.
      */
     fun maybeStartVideoDownload(photo: Photo) {
         if (!photo.type.isVideo) return
@@ -221,7 +293,8 @@ class ImageViewerViewModel @AssistedInject constructor(
             inflightDownloads.add(uuid)
         }
         // If the local file already exists, mark Done immediately — no
-        // network round-trip needed.
+        // network round-trip needed. No StreamState is registered, so the
+        // DataSource uses its default "fully available" path.
         val localFile = app.getFileStreamPath(photo.internalFileName)
         if (localFile.exists() && localFile.length() > 0) {
             videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
@@ -246,9 +319,27 @@ class ImageViewerViewModel @AssistedInject constructor(
             synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
             return
         }
+
+        // --- Progressive streaming setup -----------------------------------
+        // Register a StreamState BEFORE launching the download so the
+        // DataSource (which ExoPlayer will spin up momentarily) can find it
+        // and block on reads past the available window.
+        val streamState = StreamState()
+        videoStreamState[photo.internalFileName] = streamState
+
         // Mark Downloading at 0% immediately so the spinner swaps to a
         // determinate bar without delay.
         videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(0f)) }
+
+        // File-size monitor: poll localFile.length() and advance
+        // availableBytes. rclone writes the file directly (no temp file), so
+        // File.length() reflects real progress. Monotonic — only advances,
+        // never goes backwards (File.length() can transiently read 0 if
+        // rclone hasn't created the file yet on the very first poll).
+        monitorFileSize(streamState, localFile)
+
+        // Download coroutine — writes to localFile. When it finishes, flips
+        // downloadComplete so the DataSource's blocking reads unblock.
         viewModelScope.launch {
             try {
                 val result = runCatching {
@@ -272,6 +363,16 @@ class ImageViewerViewModel @AssistedInject constructor(
                         }
                     }
                 }
+                // Signal the DataSource that no more data is coming, regardless
+                // of success/failure. This unblocks any waitForBytesAvailable /
+                // BlockingInputStream reads that are parked at the end of the
+                // available window.
+                streamState.downloadComplete.set(true)
+                // One final length sync — the monitor's loop may not have
+                // ticked since the last write. On failure this captures the
+                // partial file size; on success it captures the final size.
+                streamState.availableBytes.set(localFile.length())
+
                 if (result.isSuccess) {
                     videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
                 } else {
@@ -279,6 +380,13 @@ class ImageViewerViewModel @AssistedInject constructor(
                     videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
                 }
             } finally {
+                // Remove the StreamState entry. After downloadComplete is set,
+                // the entry is no longer needed for blocking — the DataSource's
+                // providers return defaults (-1, true) when the entry is
+                // absent, which is the correct "fully available" (or "partial
+                // but download finished") state. Removing also prevents the
+                // map from growing unboundedly across many video opens.
+                videoStreamState.remove(photo.internalFileName)
                 // QC fix: ALWAYS remove the UUID from inflightDownloads when
                 // the coroutine exits — success OR failure. Without this, a
                 // failed download (network blip, vault locked, remote missing)
@@ -287,6 +395,40 @@ class ImageViewerViewModel @AssistedInject constructor(
                 // concurrent duplicate launches while a download is in flight,
                 // NOT to permanently pin a UUID after the download resolves.
                 synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
+            }
+        }
+    }
+
+    /**
+     * Poll [file]'s length on the IO dispatcher and advance
+     * [state.availableBytes] (monotonically) so [AesCbcRandomAccessDataSource]
+     * knows how many bytes are safe to read. Stops when
+     * [StreamState.downloadComplete] flips to true.
+     *
+     * Best-effort: swallowed exceptions don't fail the download (the download
+     * coroutine is the source of truth for success/failure; this monitor only
+     * feeds the DataSource's blocking-read watermark).
+     *
+     * @since progressive-video-streaming feature
+     */
+    private fun monitorFileSize(state: StreamState, file: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                while (isActive && !state.downloadComplete.get()) {
+                    val len = file.length()
+                    // Monotonic — File.length() can transiently read 0 before
+                    // rclone creates the file, and we never want to regress
+                    // the watermark (the DataSource might already have
+                    // unblocked a read at a higher offset).
+                    state.availableBytes.updateAndGet { old -> if (len > old) len else old }
+                    delay(STREAM_POLL_INTERVAL_MS)
+                }
+                // Final sync — capture the post-completion file size so any
+                // DataSource read parked at the old watermark can proceed.
+                state.availableBytes.set(file.length())
+            } catch (e: Exception) {
+                // Swallow — best-effort monitor. The download coroutine
+                // handles failure signaling.
             }
         }
     }
@@ -346,13 +488,42 @@ class ImageViewerViewModel @AssistedInject constructor(
     }
 
     val mediaSourceFactory: MediaSource.Factory by lazy {
+        // The DataSource.Factory creates a fresh AesCbcRandomAccessDataSource
+        // per MediaSource. ExoPlayer calls DataSource.open(dataSpec) with the
+        // file Uri, and the DataSource looks up the per-file StreamState (if
+        // any) via the providers below. When a progressive download is in
+        // flight, the DataSource blocks on reads past the available window;
+        // when the file is fully local (no StreamState entry), the providers
+        // return their defaults and the DataSource behaves exactly as before
+        // — preserving the existing local-playback path.
         val factory = DataSource.Factory {
             AesCbcRandomAccessDataSource(
                 sessionRepository = sessionRepository,
+                availableBytesProvider = { uri ->
+                    lookupStreamState(uri)?.availableBytes?.get() ?: -1L
+                },
+                downloadCompleteProvider = { uri ->
+                    lookupStreamState(uri)?.downloadComplete?.get() ?: true
+                },
             )
         }
 
         ProgressiveMediaSource.Factory(factory)
+    }
+
+    /**
+     * Extract the internal filename (e.g. `<uuid>.crypt`) from [uri] and look
+     * up the associated [StreamState] in [videoStreamState]. Returns `null`
+     * when the file isn't being progressively downloaded (fully local or
+     * download already complete) — the DataSource's providers translate that
+     * to their "fully available" defaults.
+     *
+     * @since progressive-video-streaming feature
+     */
+    private fun lookupStreamState(uri: Uri): StreamState? {
+        val path = uri.path ?: return null
+        val name = File(path).name
+        return videoStreamState[name]
     }
 
     private fun createPhotosFlow(): Flow<List<Photo>> {
@@ -378,5 +549,16 @@ class ImageViewerViewModel @AssistedInject constructor(
         fun create(
             @Assisted(ALBUM_UUID) albumUuid: String?
         ): ImageViewerViewModel
+    }
+
+    companion object {
+        /**
+         * Poll interval for the file-size monitor coroutine that feeds
+         * [StreamState.availableBytes]. 100ms is responsive enough that the
+         * DataSource's blocking reads unblock within ~1-2 frames of the data
+         * being written, without burning CPU on `File.length()` calls during
+         * a long download.
+         */
+        private const val STREAM_POLL_INTERVAL_MS = 100L
     }
 }
