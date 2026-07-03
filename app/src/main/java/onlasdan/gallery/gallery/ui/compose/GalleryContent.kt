@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -57,25 +58,20 @@ fun GalleryContent(
     multiSelectionState: MultiSelectionState,
     modifier: Modifier = Modifier,
 ) {
+    // ─── Bug 1 fix: search bar + filter chips moved to GalleryScreen ──────────
+    // The search bar ([GallerySearchBar]) and the All/Photos/Videos/Files
+    // FilterChip row ([GalleryFilterRow]) used to live here, inside the
+    // Content-only branch of GalleryScreen's `when (uiState)` block. That
+    // meant the chips disappeared whenever the gallery was empty — e.g.
+    // selecting the "Videos" filter when there are no videos made the gallery
+    // a dead-end: the user couldn't switch back to "All" or "Photos" because
+    // the chips were gone. They now render in GalleryScreen above the
+    // `when (uiState)` block so they're ALWAYS visible, regardless of whether
+    // the gallery has content or shows the empty placeholder.
+    //
+    // This composable now only renders the photo grid itself (plus the FAB
+    // and the multi-selection menu that ride on top of it).
     Column(modifier = modifier.fillMaxSize()) {
-        // ─── Search bar + All/Photos/Videos/Files filter chip row ──────────
-        // Sits above the photo grid. The search bar drives the
-        // [GalleryUiEvent.SearchQueryChanged] event (filename contains,
-        // case-insensitive); the chips drive [GalleryUiEvent.FilterChanged].
-        // Both filters compose in [GalleryUiStateFactory.create].
-        //
-        // @since file-upload feature — original Photos/Files chip row.
-        // @since search-filter feature — added the search bar + the All and
-        //   Videos chips, and split Photos to be images-only (videos moved to
-        //   their own chip).
-        GallerySearchBar(
-            query = uiState.searchQuery,
-            onQueryChange = { handleUiEvent(GalleryUiEvent.SearchQueryChanged(it)) },
-        )
-        GalleryFilterRow(
-            selected = uiState.filter,
-            onSelect = { handleUiEvent(GalleryUiEvent.FilterChanged(it)) },
-        )
         PhotoGallery(
             modifier = Modifier.fillMaxSize(),
             photos = uiState.photos,
@@ -112,12 +108,31 @@ fun GalleryContent(
                     leadingIcon = {
                         Icon(
                             painter = painterResource(R.drawable.ic_folder),
-                            contentDescription = null
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
                         )
                     },
                     text = { Text(stringResource(R.string.menu_ms_add_to_album)) },
                     onClick = {
                         handleUiEvent(GalleryUiEvent.OnAddToAlbum)
+                        multiSelectionState.dismissMore()
+                    },
+                )
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    text = { Text(stringResource(R.string.menu_ms_restore_original)) },
+                    onClick = {
+                        handleUiEvent(
+                            GalleryUiEvent.OnRestoreOriginals(
+                                multiSelectionState.selectedItems.value.toList()
+                            )
+                        )
                         multiSelectionState.dismissMore()
                     },
                 )
@@ -131,10 +146,13 @@ fun GalleryContent(
  * (case-insensitive contains). The trailing clear button (X) empties the
  * query — easier than long-press + delete on a soft keyboard.
  *
+ * Rendered by [GalleryScreen] ABOVE the `when (uiState)` block so it stays
+ * visible in both Empty and Content states — Bug 1 fix.
+ *
  * @since search-filter feature — filename search
  */
 @Composable
-private fun GallerySearchBar(
+fun GallerySearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
 ) {
@@ -175,11 +193,16 @@ private fun GallerySearchBar(
  * "Photos" shows image types only, "Videos" shows video types only, and
  * "Files" shows DOCUMENT/ARCHIVE/AUDIO tiles.
  *
+ * Rendered by [GalleryScreen] ABOVE the `when (uiState)` block so it stays
+ * visible in both Empty and Content states — Bug 1 fix: without this, picking
+ * a filter with no matches (e.g. "Videos" with no videos) made the gallery
+ * a dead-end because the chips disappeared along with the empty state.
+ *
  * @since file-upload feature — originally just Photos / Files
  * @since search-filter feature — added All + Videos
  */
 @Composable
-private fun GalleryFilterRow(
+fun GalleryFilterRow(
     selected: GalleryFilter,
     onSelect: (GalleryFilter) -> Unit,
 ) {

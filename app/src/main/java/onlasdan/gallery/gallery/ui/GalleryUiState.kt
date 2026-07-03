@@ -45,7 +45,22 @@ enum class GalleryFilter {
 
 sealed interface GalleryUiState {
 
-    data object Empty : GalleryUiState
+    /**
+     * Gallery is empty — either the user has imported nothing yet, or the
+     * current filter + search combination yields zero matches.
+     *
+     * Carries the current [filter] and [searchQuery] so the gallery header
+     * (search bar + filter chip row) can be rendered identically in both the
+     * Empty and Content states — Bug 1 fix: the chips MUST stay visible when
+     * the gallery is empty, otherwise the user can't switch back from a
+     * filter that has no matches (e.g. "Videos" with no videos imported).
+     *
+     * @since Bug 1 fix — Empty now carries filter + searchQuery
+     */
+    data class Empty(
+        val filter: GalleryFilter = GalleryFilter.ALL,
+        val searchQuery: String = "",
+    ) : GalleryUiState
 
     data class Content(
         val photos: List<PhotoTile> = emptyList(),

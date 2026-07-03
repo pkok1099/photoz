@@ -32,7 +32,15 @@ class GalleryUiStateFactory @Inject constructor() {
         searchQuery: String = "",
     ): GalleryUiState {
         return if (photos.isEmpty()) {
-            GalleryUiState.Empty
+            // ─── Bug 1 fix: Empty state carries filter + searchQuery ──────────
+            // The gallery header (search bar + filter chip row) is now rendered
+            // outside the `when (uiState)` block in GalleryScreen and pulls the
+            // current filter + searchQuery from EITHER the Empty or Content
+            // state. The chips MUST stay visible when the gallery is empty so
+            // the user can switch back from a filter with no matches (e.g.
+            // "Videos" with no videos imported) — without this the gallery
+            // would be a dead-end.
+            GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
         } else {
             // @since file-upload feature — split photos vs files for the
             // gallery filter chip. "Photos" = image types only; "Videos" =
@@ -87,8 +95,13 @@ class GalleryUiStateFactory @Inject constructor() {
             // If the selected filter + search yield zero matches, show Empty
             // so the gallery placeholder appears (e.g. user has only photos,
             // picks the "Files" filter — show the empty state with the FAB).
+            //
+            // ─── Bug 1 fix: pass filter + searchQuery to Empty ──────────────
+            // Same reason as above: the gallery header needs to keep showing
+            // the chips so the user can switch back to "All" or clear the
+            // search query when the filtered list is empty.
             if (filteredPhotos.isEmpty()) {
-                GalleryUiState.Empty
+                GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
             } else {
                 GalleryUiState.Content(
                     photos = filteredPhotos.map {

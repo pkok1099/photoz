@@ -125,6 +125,13 @@
     <string name="menu_restore_from_backup_toast_success">Restored %1$d thumbnail(s) from cloud backup</string>
     <string name="menu_restore_from_backup_toast_failed">Restore failed: %1$s</string>
 
+    <!-- MULTI-SELECT: per-photo original restore — @since Bug 4: granular restore -->
+    <string name="menu_ms_restore_original">Restore original</string>
+    <string name="menu_restore_original_toast_started">Downloading %1$d original(s) from cloud backup…</string>
+    <string name="menu_restore_original_toast_success">Restored %1$d original(s) from cloud backup.</string>
+    <string name="menu_restore_original_toast_failed">Restore original failed: %1$s</string>
+    <string name="menu_restore_original_toast_nothing">Nothing to restore — originals are already local.</string>
+
     <!-- DELETE -->
     <string name="delete_are_you_sure">Are you sure, you want to <b>delete</b> %1$d file(s)?</string>
     <string name="delete_are_you_sure_this">Are you sure, you want to <b>delete</b> this file?</string>
@@ -434,8 +441,8 @@
     <string name="settings_cleanup_backup_toast_nothing">Nothing to clean up — no deleted photos to reclaim.</string>
 
     <!-- Clean cached originals — @since Item 2: one-shot local .crypt cleanup -->
-    <string name="settings_clean_cached_originals_title">Clean cached originals</string>
-    <string name="settings_clean_cached_originals_summary">Delete local encrypted originals for photos that are already safely backed up. Thumbnails are kept so the gallery still shows the photo. Photos that haven\'t been uploaded yet are never touched.</string>
+    <string name="settings_clean_cached_originals_title">Clean local originals cache</string>
+    <string name="settings_clean_cached_originals_summary">Delete cached encrypted originals (.crypt) from local storage. Photos stay safe on the remote and can be re-downloaded on demand.</string>
     <string name="settings_clean_cached_originals_toast_started">Cleaning cached originals…</string>
     <string name="settings_clean_cached_originals_toast_success">Freed %2$s — deleted %1$d cached original(s).</string>
     <string name="settings_clean_cached_originals_toast_nothing">Nothing to clean — no cached originals found.</string>

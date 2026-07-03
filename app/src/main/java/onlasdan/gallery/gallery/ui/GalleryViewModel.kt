@@ -104,7 +104,7 @@ class GalleryViewModel @Inject constructor(
         searchQueryFlow,
     ) { photos, showAlbumSelection, sort, filter, searchQuery ->
         galleryUiStateFactory.create(photos, showAlbumSelection, sort, filter, searchQuery)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), GalleryUiState.Empty)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), GalleryUiState.Empty())
 
     private val eventsChannel = Channel<GalleryNavigationEvent>()
     val eventsFlow = eventsChannel.receiveAsFlow()
@@ -135,6 +135,13 @@ class GalleryViewModel @Inject constructor(
             // entries that don't have one yet). Non-fatal: failures are surfaced
             // as a toast; the user can retry.
             GalleryUiEvent.OnRestoreFromBackup -> onRestoreFromBackup()
+            // @since Bug 4 — granular per-photo restore. The user picked
+            //   "Restore original" from the multi-selection dropdown. Downloads
+            //   the encrypted original for each selected UUID via
+            //   [SyncRestorer.ensureLocalOriginal]. Failures are surfaced as a
+            //   toast; the user can retry. Idempotent: photos whose local
+            //   original already exists are skipped.
+            is GalleryUiEvent.OnRestoreOriginals -> onRestoreOriginals(event.uuids)
         }
     }
 
@@ -192,6 +199,65 @@ class GalleryViewModel @Inject constructor(
                     GalleryNavigationEvent.ShowToast(
                         resources.getString(
                             R.string.menu_restore_from_backup_toast_failed,
+                            e.message ?: e.javaClass.simpleName,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Triggered by the multi-selection "Restore original" dropdown item.
+     *
+     * Per-photo granular restore (Bug 4): for each selected UUID, calls
+     * [onlasdan.gallery.sync.work.SyncRestorer.ensureLocalOriginal] to
+     * download the encrypted original from the cloud backup. This is the
+     * complement to the bulk [onRestoreFromBackup] action — the user can
+     * restore just the photos they care about instead of pulling every
+     * original (which could be gigabytes).
+     *
+     * Idempotent: photos whose local original already exists are skipped
+     * (the underlying SyncRestorer short-circuits on a non-empty local file).
+     *
+     * Sends a [GalleryNavigationEvent.ShowToast] with the result so the user
+     * gets feedback (started / success / nothing-to-do / failed).
+     *
+     * @since Bug 4 — granular per-photo restore
+     */
+    private fun onRestoreOriginals(uuids: List<String>) {
+        if (uuids.isEmpty()) return
+
+        eventsChannel.trySend(
+            GalleryNavigationEvent.ShowToast(
+                resources.getString(
+                    R.string.menu_restore_original_toast_started,
+                    uuids.size,
+                ),
+            ),
+        )
+        viewModelScope.launch {
+            try {
+                var restored = 0
+                for (uuid in uuids) {
+                    val result = syncRestorer.ensureLocalOriginal(uuid)
+                    if (result.isSuccess) restored++
+                }
+                val toastRes = if (restored == 0) {
+                    R.string.menu_restore_original_toast_nothing
+                } else {
+                    R.string.menu_restore_original_toast_success
+                }
+                eventsChannel.trySend(
+                    GalleryNavigationEvent.ShowToast(
+                        resources.getString(toastRes, restored),
+                    ),
+                )
+            } catch (e: Exception) {
+                eventsChannel.trySend(
+                    GalleryNavigationEvent.ShowToast(
+                        resources.getString(
+                            R.string.menu_restore_original_toast_failed,
                             e.message ?: e.javaClass.simpleName,
                         ),
                     ),

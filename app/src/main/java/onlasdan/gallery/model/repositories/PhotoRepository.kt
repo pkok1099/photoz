@@ -206,12 +206,79 @@ class PhotoRepository @Inject constructor(
             return String.empty
         }
 
+        // ─── Bug 5 fix: auto-create album from folder path ──────────────────
+        // If the imported photo carries a real folder path (i.e. `albumPath`
+        // came from MediaStore RELATIVE_PATH, NOT the filename fallback used
+        // for SAF-picked files), find-or-create an album with that name and
+        // link the photo to it. So photos imported from "Download" get grouped
+        // into a "Download" album automatically — the user no longer has to
+        // create albums by hand and move photos into them one-by-one.
+        //
+        // Skip when `albumPath` equals the photo's filename: that's the SAF
+        // fallback path (no real RELATIVE_PATH available), and treating each
+        // filename as its own album would create a useless one-item album per
+        // import. Skip when blank too.
+        try {
+            ensureAlbumForPhoto(photo)
+        } catch (e: Exception) {
+            // Non-fatal: album creation is a convenience, not a correctness
+            // requirement. The photo is already safely imported; if the
+            // album link fails (e.g. DB busy), we just skip the grouping.
+            Timber.w(e, "Auto-album creation failed for %s (non-fatal)", photo.uuid)
+        }
+
         if (!config.deleteImportedFiles || importSource == ImportSource.Share) {
             return photo.uuid
         }
 
         val deleted = io.deleteFile(sourceUri)
         return if (deleted == true) photo.uuid else String.empty
+    }
+
+    /**
+     * Find-or-create an album named [photo.albumPath] and link [photo] to it.
+     *
+     * Bug 5 fix: photos imported from a folder (e.g. "Download") should be
+     * grouped into an album of the same name automatically. The folder key
+     * comes from MediaStore `RELATIVE_PATH`, captured at import time as
+     * [Photo.albumPath].
+     *
+     * Skip silently when:
+     *   - `albumPath` is null/blank (no folder info available)
+     *   - `albumPath` equals the photo's filename (the SAF fallback — would
+     *     create a one-item album per import, which is noise)
+     *
+     * Idempotent:
+     *   - If an album with this name already exists, the photo is linked to
+     *     that existing album (no duplicate album is created).
+     *   - The link itself uses `OnConflictStrategy.IGNORE` on the cross-ref
+     *     table, so re-linking an already-linked photo is a no-op.
+     *
+     * @since Bug 5 fix — auto-create albums from folder path
+     */
+    private suspend fun ensureAlbumForPhoto(photo: Photo) {
+        val albumName = photo.albumPath?.trim().orEmpty()
+        if (albumName.isBlank()) return
+        // Skip the SAF fallback: when the import came through a SAF picker
+        // (no MediaStore RELATIVE_PATH available), `albumPath` falls back to
+        // the filename. Treating each filename as its own album would pollute
+        // the albums list with one-item entries.
+        if (albumName == photo.fileName.trim()) return
+
+        val existing = albumDao.getByName(albumName)
+        val albumUUID = existing?.uuid ?: run {
+            val newAlbum = onlasdan.gallery.model.database.entity.AlbumTable(
+                name = albumName,
+                modifiedAt = System.currentTimeMillis(),
+            )
+            albumDao.insert(newAlbum)
+            // Re-query by name to pick up the just-inserted row's UUID. The
+            // insert() return value is the rowid (Long), not the UUID column,
+            // and the cross-ref table keys on the UUID string column.
+            albumDao.getByName(albumName)?.uuid ?: return
+        }
+        albumDao.link(listOf(photo.uuid), albumUUID)
+        Timber.i("Auto-album: linked %s to album '%s' (%s)", photo.uuid, albumName, albumUUID)
     }
 
     /**

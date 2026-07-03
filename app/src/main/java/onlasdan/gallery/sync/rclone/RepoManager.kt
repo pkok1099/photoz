@@ -26,7 +26,9 @@ import onlasdan.gallery.encryption.domain.models.VaultProtection
 import onlasdan.gallery.encryption.domain.models.VaultProtectionParams
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.encryption.domain.models.VaultSession
+import onlasdan.gallery.model.database.dao.AlbumDao
 import onlasdan.gallery.model.database.dao.PhotoDao
+import onlasdan.gallery.model.database.entity.AlbumTable
 import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.model.database.entity.PhotoType
@@ -87,6 +89,14 @@ class RepoManager @Inject constructor(
     // @since PR4 sync — needed by restoreThumbnailsAfterLogin() to insert DB rows for
     // each thumbnail pulled back from the remote after a successful login.
     private val photoDao: PhotoDao,
+    // @since Bug 5 fix — auto-create albums from folder path on restore.
+    // When [ensurePhotoRowForRestoredEntry] creates a new Photo row from a
+    // registry entry, it also calls [ensureAlbumForRestoredPhoto] to
+    // find-or-create an album whose name matches the entry's `albumPath`
+    // and link the photo to it. Without this, restored photos never show up
+    // in any album even though they carry a folder key — the user would
+    // have to manually create and populate each album after every restore.
+    private val albumDao: AlbumDao,
     // @since key-escrow — needed by uploadRecoveryPhraseEscrow() / downloadVaultProtectionEscrow()
     // to persist the recovery-phrase wrapped-VMK artifact on the remote during registration
     // and to restore it into the local DB during login (so the existing phrase-entry UI can
@@ -1029,9 +1039,51 @@ class RepoManager @Inject constructor(
         try {
             photoDao.insert(photo)
             diag("ensurePhotoRowForRestoredEntry: created Photo row for ${entry.uuid} (filename=${photo.fileName}, size=${photo.size}, type=${photo.type})")
+
+            // ─── Bug 5 fix: auto-create album from folder path on restore ────
+            // The registry entry's `albumPath` was captured at the original
+            // import time. Re-create the album (if missing) and link the
+            // restored Photo to it, so the user's folder structure is
+            // preserved across restore. Non-fatal: a failure here just means
+            // the photo lives outside any album — the restore itself has
+            // already succeeded.
+            try {
+                ensureAlbumForRestoredPhoto(photo)
+            } catch (e: Exception) {
+                diag("ensurePhotoRowForRestoredEntry: auto-album FAILED for ${entry.uuid} (non-fatal): ${e.message}", e)
+            }
         } catch (e: Exception) {
             diag("ensurePhotoRowForRestoredEntry: insert FAILED for ${entry.uuid}: ${e.message}", e)
         }
+    }
+
+    /**
+     * Find-or-create an album named [photo.albumPath] and link [photo] to it.
+     *
+     * Bug 5 restore-side fix: mirrors
+     * [onlasdan.gallery.model.repositories.PhotoRepository.ensureAlbumForPhoto]
+     * for the restore path. See that method's docstring for the full
+     * rationale (skip when albumPath is null/blank or equals the filename —
+     * the SAF fallback).
+     *
+     * @since Bug 5 fix — auto-create albums from folder path (restore side)
+     */
+    private suspend fun ensureAlbumForRestoredPhoto(photo: Photo) {
+        val albumName = photo.albumPath?.trim().orEmpty()
+        if (albumName.isBlank()) return
+        if (albumName == photo.fileName.trim()) return
+
+        val existing = albumDao.getByName(albumName)
+        val albumUUID = existing?.uuid ?: run {
+            val newAlbum = AlbumTable(
+                name = albumName,
+                modifiedAt = System.currentTimeMillis(),
+            )
+            albumDao.insert(newAlbum)
+            albumDao.getByName(albumName)?.uuid ?: return
+        }
+        albumDao.link(listOf(photo.uuid), albumUUID)
+        diag("ensureAlbumForRestoredPhoto: linked ${photo.uuid} to album '$albumName' ($albumUUID)")
     }
 
     /**

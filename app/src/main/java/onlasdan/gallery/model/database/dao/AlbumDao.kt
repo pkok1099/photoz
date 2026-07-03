@@ -67,6 +67,18 @@ abstract class AlbumDao {
     @Query("SELECT * FROM album WHERE album_uuid = :uuid")
     abstract suspend fun getAlbum(uuid: String): AlbumTable?
 
+    /**
+     * Find an album by its (case-sensitive) name. Used by the auto-album
+     * feature (Bug 5 fix) to look up an existing album whose name matches
+     * the imported photo's `albumPath` before deciding whether to create a
+     * new one — without this, repeated imports from the same folder would
+     * each spawn a new album instead of accumulating into one.
+     *
+     * @since Bug 5 fix — auto-create albums from folder path
+     */
+    @Query("SELECT * FROM album WHERE name = :name LIMIT 1")
+    abstract suspend fun getByName(name: String): AlbumTable?
+
 
     @Query("SELECT photo_uuid, linked_at FROM album_photos_cross_ref WHERE photo_uuid in (:photoUUIDs)")
     abstract suspend fun getLinkedAtFor(

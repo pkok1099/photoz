@@ -26,6 +26,7 @@ import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
 import onlasdan.gallery.encryption.domain.VaultProtectionRepository
 import onlasdan.gallery.encryption.domain.crypto.PhraseEscrowWrapper
 import onlasdan.gallery.model.database.PhotoZDatabase
+import onlasdan.gallery.model.database.dao.AlbumDao
 import onlasdan.gallery.model.database.dao.PhotoDao
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.rclone.RepoManager
@@ -63,6 +64,11 @@ object SyncModule {
         // @since PR4 sync — RepoManager.restoreThumbnailsAfterLogin() inserts Photo
         // DB rows for each thumbnail pulled back from the remote after login.
         photoDao: PhotoDao,
+        // @since Bug 5 fix — RepoManager.ensurePhotoRowForRestoredEntry() now
+        // also auto-creates an album from the registry entry's `albumPath` and
+        // links the restored Photo to it. AlbumDao is bound by Hilt via
+        // AppModule.provideAlbumDao.
+        albumDao: AlbumDao,
         // @since key-escrow — RepoManager needs to read/write the recovery-phrase
         // VaultProtection row to escrow it to the remote during register and
         // restore it from the remote during login. Already bound by Hilt
@@ -90,6 +96,7 @@ object SyncModule {
         rcloneController,
         configManager,
         photoDao,
+        albumDao,
         vaultProtectionRepository,
         phraseEscrowWrapper,
         recoveryPhraseStore,

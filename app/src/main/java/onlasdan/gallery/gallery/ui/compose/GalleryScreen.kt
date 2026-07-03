@@ -16,6 +16,7 @@
 
 package onlasdan.gallery.gallery.ui.compose
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,10 +30,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,6 +51,7 @@ import onlasdan.gallery.R
 import onlasdan.gallery.gallery.components.AlbumPickerDialog
 import onlasdan.gallery.gallery.components.ImportSharedDialog
 import onlasdan.gallery.gallery.components.rememberMultiSelectionState
+import onlasdan.gallery.gallery.ui.GalleryFilter
 import onlasdan.gallery.gallery.ui.GalleryUiEvent
 import onlasdan.gallery.gallery.ui.GalleryUiState
 import onlasdan.gallery.gallery.ui.GalleryViewModel
@@ -68,12 +70,19 @@ fun GalleryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // ─── Bug 2 fix: switch from LargeTopAppBar + exitUntilCollapsedScrollBehavior ──
+    // to a regular small TopAppBar + pinnedScrollBehavior. The LargeTopAppBar
+    // reserves a large expanded-height for its title even when collapsed,
+    // which left a noticeable empty gap between the top bar and the gallery
+    // thumbnails. The small TopAppBar has a single, compact 64dp height with
+    // no expanded/collapsed state, so the gap disappears and the search bar
+    // + filter chips sit immediately under the top bar.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     AppTheme {
         Scaffold(
             topBar = {
-                LargeTopAppBar(
+                TopAppBar(
                     title = { AppName() },
                     windowInsets = WindowInsets.statusBars,
                     scrollBehavior = scrollBehavior,
@@ -110,6 +119,15 @@ fun GalleryScreen(
                         // ALWAYS visible (even when gallery is empty) so the user
                         // can restore from backup on a fresh install without needing
                         // to have any local photos first.
+                        //
+                        // ─── Bug 3 fix: explicit icon sizes ──────────────────────────
+                        // The IconButton Icon and the DropdownMenuItem leadingIcon
+                        // both now have explicit `.size(24.dp)` modifiers. Material
+                        // 3's IconButton is already a 48dp touch target, but the
+                        // Icon inside defaults to whatever the vector drawable's
+                        // intrinsic size is (some of PhotoZ's drawables are
+                        // 48x48dp which made the overflow icon look oversized).
+                        // Pinning to 24dp matches the Material icon spec.
                         var showOverflowMenu by remember { mutableStateOf(false) }
                         IconButton(
                             onClick = { showOverflowMenu = true },
@@ -117,6 +135,7 @@ fun GalleryScreen(
                             Icon(
                                 painter = painterResource(R.drawable.ic_more_vert),
                                 contentDescription = stringResource(R.string.common_more),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                         DropdownMenu(
@@ -128,6 +147,7 @@ fun GalleryScreen(
                                     Icon(
                                         painter = painterResource(R.drawable.ic_restore),
                                         contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 },
                                 text = { Text(stringResource(R.string.menu_restore_from_backup)) },
@@ -142,33 +162,77 @@ fun GalleryScreen(
             },
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
         ) { contentPadding ->
-            val modifier = Modifier.padding(top = contentPadding.calculateTopPadding())
+            // ─── Bug 1 fix: search bar + filter chips ALWAYS visible ──────────
+            // The All/Photos/Videos/Files filter chips and the search bar used
+            // to live inside `GalleryContent`, which is only rendered in the
+            // `GalleryUiState.Content` branch of the `when (uiState)` block
+            // below. When the gallery became empty (e.g. user picked the
+            // "Videos" filter but there are no videos), the chips disappeared
+            // along with the empty state — making the gallery a dead-end: the
+            // user couldn't switch back to "All" or "Photos" because the chips
+            // were gone.
+            //
+            // Both composables now render ABOVE the `when (uiState)` block so
+            // they stay visible in BOTH the Empty and Content states. The
+            // current filter + searchQuery are pulled from whichever state is
+            // active — `GalleryUiState.Empty` now carries those fields too
+            // (Bug 1 fix in GalleryUiState.kt).
+            //
+            // Local snapshot of the delegated `uiState` so Kotlin can smart-
+            // cast through the `when` below (delegated properties can't be
+            // smart-cast directly).
+            val state = uiState
+            val currentFilter = when (state) {
+                is GalleryUiState.Empty -> state.filter
+                is GalleryUiState.Content -> state.filter
+            }
+            val currentSearchQuery = when (state) {
+                is GalleryUiState.Empty -> state.searchQuery
+                is GalleryUiState.Content -> state.searchQuery
+            }
 
-            when (uiState) {
-                is GalleryUiState.Empty -> GalleryPlaceholder(
-                    handleUiEvent = { viewModel.handleUiEvent(it) },
-                    modifier = modifier,
+            Column(
+                modifier = Modifier.padding(top = contentPadding.calculateTopPadding()),
+            ) {
+                GallerySearchBar(
+                    query = currentSearchQuery,
+                    onQueryChange = {
+                        viewModel.handleUiEvent(GalleryUiEvent.SearchQueryChanged(it))
+                    },
+                )
+                GalleryFilterRow(
+                    selected = currentFilter,
+                    onSelect = {
+                        viewModel.handleUiEvent(GalleryUiEvent.FilterChanged(it))
+                    },
                 )
 
-                is GalleryUiState.Content -> {
-                    val contentUiState = uiState as GalleryUiState.Content
-                    val multiSelectionState = rememberMultiSelectionState(
-                        items = contentUiState.photos.map { it.uuid }
-                    )
-
-                    GalleryContent(
-                        uiState = contentUiState,
+                when (state) {
+                    is GalleryUiState.Empty -> GalleryPlaceholder(
                         handleUiEvent = { viewModel.handleUiEvent(it) },
-                        multiSelectionState = multiSelectionState,
-                        modifier = modifier,
+                        modifier = Modifier,
                     )
 
-                    AlbumPickerDialog(
-                        visible = contentUiState.showAlbumSelectionDialog,
-                        selectedItemIds = multiSelectionState.selectedItems.value.toList(),
-                        onAlbumSelected = { multiSelectionState.cancelSelection() },
-                        onDismissRequest = { viewModel.handleUiEvent(GalleryUiEvent.CancelAlbumSelection) }
-                    )
+                    is GalleryUiState.Content -> {
+                        val contentUiState = state
+                        val multiSelectionState = rememberMultiSelectionState(
+                            items = contentUiState.photos.map { it.uuid }
+                        )
+
+                        GalleryContent(
+                            uiState = contentUiState,
+                            handleUiEvent = { viewModel.handleUiEvent(it) },
+                            multiSelectionState = multiSelectionState,
+                            modifier = Modifier,
+                        )
+
+                        AlbumPickerDialog(
+                            visible = contentUiState.showAlbumSelectionDialog,
+                            selectedItemIds = multiSelectionState.selectedItems.value.toList(),
+                            onAlbumSelected = { multiSelectionState.cancelSelection() },
+                            onDismissRequest = { viewModel.handleUiEvent(GalleryUiEvent.CancelAlbumSelection) }
+                        )
+                    }
                 }
             }
 

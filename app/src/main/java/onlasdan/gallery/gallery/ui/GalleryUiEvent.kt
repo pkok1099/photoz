@@ -58,4 +58,21 @@ sealed interface GalleryUiEvent {
      * @since v9 followup (Bug 2) — Restore button alongside Export
      */
     data object OnRestoreFromBackup : GalleryUiEvent
+
+    /**
+     * User picked "Restore original" from the multi-selection dropdown.
+     *
+     * Per-photo granular restore: for each selected UUID, calls
+     * [onlasdan.gallery.sync.work.SyncRestorer.ensureLocalOriginal] to
+     * download the encrypted original file from the cloud backup. This is
+     * the "Bug 4" complement to the bulk [OnRestoreFromBackup] action —
+     * the user can now restore just the photos they care about instead of
+     * pulling every original.
+     *
+     * Idempotent: photos whose local original already exists are skipped
+     * (the underlying SyncRestorer short-circuits).
+     *
+     * @since Bug 4 — granular per-photo restore
+     */
+    data class OnRestoreOriginals(val uuids: List<String>) : GalleryUiEvent
 }
