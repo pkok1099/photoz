@@ -56,6 +56,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import timber.log.Timber
 import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -93,6 +95,12 @@ class PhotoSyncWorker @AssistedInject constructor(
     // the registry upload is skipped (logged) — the photo itself is still
     // uploaded + verified, just not registered for future dedup.
     private val sessionRepository: SessionRepository,
+    // @since Batch 1 / Item 3 — hash verification after upload. Needed to
+    // create a decryption stream over the freshly-downloaded remote file so
+    // we can recompute the SHA-256 of the plaintext and compare against the
+    // photo's stored `contentHash`. Only used when `config.syncVerifyHash`
+    // is true (off by default — doubles bandwidth per upload).
+    private val cryptoEngine: onlasdan.gallery.encryption.domain.crypto.CryptoEngine,
 ) : CoroutineWorker(appContext, params) {
 
     // ─── Notification update rate-limiting state (v8) ───────────────────────
@@ -636,6 +644,69 @@ class PhotoSyncWorker @AssistedInject constructor(
             diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
             reportUploadFailureNotification(photo.fileName, batchState)
             throw e
+        }
+
+        // ─── Item 3: optional full hash verification by re-download + decrypt ──
+        // The remote-side `verifyRemote` above only works if the backend supports
+        // server-side hashsum. Koofr (and many other backends) don't — the call
+        // falls through to the `HashNotSupportedException` branch and we're left
+        // trusting only the size check. This optional pass, gated on the user's
+        // `syncVerifyHash` setting (default OFF — doubles bandwidth per upload),
+        // downloads the freshly-uploaded remote file, decrypts it with the VMK,
+        // recomputes the SHA-256 of the plaintext, and compares it against the
+        // photo's stored `contentHash`. If they don't match → throw + mark
+        // UPLOAD_FAILED so WorkManager retries the whole upload.
+        //
+        // This is the only way to truly verify upload integrity against backends
+        // that can't compute server-side hashes. It's expensive (download = full
+        // upload size again) so it's off by default and surfaced as a Settings
+        // toggle for paranoiac users.
+        if (config.syncVerifyHash && !contentHash.isNullOrBlank()) {
+            diag("performUpload: syncVerifyHash is ON — performing full re-download + decrypt + sha256 verification")
+            val verifyFile = File(appContext.cacheDir, "verify-${photo.uuid}.crypt")
+            try {
+                rcloneController.downloadFile(remoteOrig, verifyFile.absolutePath).getOrThrow()
+                diag("performUpload: hash verification — downloaded ${verifyFile.length()} bytes to ${verifyFile.absolutePath}")
+
+                val session = sessionRepository.get()
+                if (session == null) {
+                    diag("performUpload: hash verification SKIPPED — vault session is null (locked). Size check still passed.")
+                } else {
+                    val md = MessageDigest.getInstance("SHA-256")
+                    FileInputStream(verifyFile).use { fis ->
+                        val decryptedStream = cryptoEngine.createDecryptStream(fis, session)
+                        if (decryptedStream == null) {
+                            throw IOException("Failed to create decrypt stream for hash verification (uuid=$uuid)")
+                        }
+                        decryptedStream.use { stream ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = stream.read(buf)
+                                if (n <= 0) break
+                                md.update(buf, 0, n)
+                            }
+                        }
+                    }
+                    val actualHash = md.digest().joinToString("") { "%02x".format(it) }
+                    if (!actualHash.equals(contentHash, ignoreCase = true)) {
+                        throw IOException(
+                            "Hash mismatch after upload: expected=$contentHash actual=$actualHash (uuid=$uuid). " +
+                                "Remote file may be corrupt or was tampered with."
+                        )
+                    }
+                    diag("performUpload: hash verification OK — remote sha256 matches photo.contentHash ($actualHash)")
+                    SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED",
+                        "full re-download + decrypt + sha256 verified OK ($actualHash)")
+                }
+            } catch (e: Exception) {
+                diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+                reportUploadFailureNotification(photo.fileName, batchState)
+                throw e
+            } finally {
+                verifyFile.delete()
+            }
+        } else if (config.syncVerifyHash && contentHash.isNullOrBlank()) {
+            diag("performUpload: syncVerifyHash is ON but photo has no contentHash (pre-v9 import) — skipping full verification")
         }
 
         // ─── v9 dedup: append to the local registry cache ────────────────────

@@ -432,6 +432,10 @@
     <string name="settings_sync_delete_after_upload_title">Delete local after upload</string>
     <string name="settings_sync_delete_after_upload_summary">Remove the local encrypted original after a successful upload to free device storage. Thumbnails are kept so the gallery still shows the photo.</string>
 
+    <!-- Hash verification after upload — @since Batch 1 / Item 3 -->
+    <string name="settings_sync_verify_hash_title">Verify uploads by hash</string>
+    <string name="settings_sync_verify_hash_summary">After each upload, re-download and re-hash the remote file to confirm it matches the local original. Slower (uses extra bandwidth) but catches silent corruption. Recommended for paranoiac users.</string>
+
     <!-- Registry garbage collection — @since registry-gc feature -->
     <string name="settings_cleanup_backup_title">Clean up backup</string>
     <string name="settings_cleanup_backup_summary">Reclaim cloud space by repacking thumbnail packs and deleting originals for photos you\'ve removed. Safe to run any time.</string>

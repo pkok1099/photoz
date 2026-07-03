@@ -110,6 +110,16 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
 
         setAppDesign(config.systemDesign)
         cleanupDeadFilesUseCase()
+
+        // ─── Item 1: restore persisted background timestamp ───────────────
+        // `wentToBackgroundAt` was previously an in-memory `Long` that reset to `0L`
+        // on process death, defeating the auto-lock check in [onStart] after a
+        // force-close + reopen. Restore it from SharedPreferences so the check
+        // still fires.
+        wentToBackgroundAt = config.lastBackgroundedAt
+        android.util.Log.e("RcloneDiag",
+            "BaseApplication.onCreate: restored wentToBackgroundAt=$wentToBackgroundAt " +
+                "(lockTimeout=${config.securityLockTimeout})")
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
@@ -126,6 +136,8 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
             return
         }
 
+        // Item 1: `wentToBackgroundAt` is now restored from prefs in onCreate, so the
+        // auto-lock check still fires after a force-close + reopen.
         if (config.securityLockTimeout != -1
             && wentToBackgroundAt != 0L
             && System.currentTimeMillis() - wentToBackgroundAt >= config.securityLockTimeout
@@ -137,7 +149,9 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
     override fun onStop(owner: LifecycleOwner) {
         super.onStop(owner)
 
+        // Item 1: persist to prefs so the value survives process death.
         wentToBackgroundAt = System.currentTimeMillis()
+        config.lastBackgroundedAt = wentToBackgroundAt
     }
 
     /**
@@ -152,6 +166,11 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
      */
     fun lockApp() {
         sessionRepository.reset()
+
+        // Item 1: clear persisted background timestamp so the next cold start doesn't
+        // immediately re-lock (we're already locking now).
+        config.lastBackgroundedAt = 0L
+        wentToBackgroundAt = 0L
 
         val intent = Intent(this, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

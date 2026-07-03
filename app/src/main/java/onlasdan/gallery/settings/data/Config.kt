@@ -128,6 +128,18 @@ class Config(context: Context) {
         get() = getLong(TIMESTAMP_LAST_RECOVERY_START, TIMESTAMP_LAST_RECOVERY_START_DEFAULT)
         set(value) = putLong(TIMESTAMP_LAST_RECOVERY_START, value)
 
+    /**
+     * Timestamp (epoch ms) the app last went to background. Persisted across process death
+     * so that the auto-lock timer in [onlasdan.gallery.BaseApplication.onStart] still fires
+     * after a force-close + reopen. Reset to `0L` once the app has been locked, so the
+     * next cold start doesn't immediately re-lock.
+     *
+     * @since Batch 1 / Item 1 — auto-lock timer fix
+     */
+    var lastBackgroundedAt: Long
+        get() = getLong(LAST_BACKGROUNDED_AT, LAST_BACKGROUNDED_AT_DEFAULT)
+        set(value) = putLong(LAST_BACKGROUNDED_AT, value)
+
     var biometricAuthenticationEnabled: Boolean
         get() = getBoolean(SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED, SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT)
         set(value) = putBoolean(SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED, value)
@@ -221,6 +233,25 @@ class Config(context: Context) {
     var syncDeleteAfterUpload: Boolean
         get() = getBoolean(SYNC_DELETE_AFTER_UPLOAD, SYNC_DELETE_AFTER_UPLOAD_DEFAULT)
         set(value) = putBoolean(SYNC_DELETE_AFTER_UPLOAD, value)
+
+    /**
+     * When `true`, [onlasdan.gallery.sync.work.PhotoSyncWorker] performs an
+     * EXPENSIVE post-upload verification: it downloads the freshly-uploaded
+     * remote file to a cache temp file, decrypts it with the VMK, computes
+     * the SHA-256 of the decrypted plaintext, and compares it to the photo's
+     * stored `contentHash`. If they don't match, the upload is marked
+     * `UPLOAD_FAILED` and an exception is thrown so WorkManager retries.
+     *
+     * This is the only way to verify uploads against backends that don't
+     * support server-side hashsum (e.g. Koofr). It's OFF by default because
+     * it doubles the bandwidth cost per upload (download = upload size again).
+     * Power users / paranoiac users can turn it on.
+     *
+     * @since Batch 1 / Item 3 — hash verification for upload
+     */
+    var syncVerifyHash: Boolean
+        get() = getBoolean(SYNC_VERIFY_HASH, SYNC_VERIFY_HASH_DEFAULT)
+        set(value) = putBoolean(SYNC_VERIFY_HASH, value)
 
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
@@ -362,6 +393,13 @@ class Config(context: Context) {
         const val TIMESTAMP_LAST_RECOVERY_START = "internal^timestampLastRecoveryStart"
         const val TIMESTAMP_LAST_RECOVERY_START_DEFAULT = 0L
 
+        /**
+         * Persisted background timestamp for auto-lock — survives process death.
+         * @since Batch 1 / Item 1 — auto-lock timer fix
+         */
+        const val LAST_BACKGROUNDED_AT = "internal^lastBackgroundedAt"
+        const val LAST_BACKGROUNDED_AT_DEFAULT = 0L
+
         const val SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED = "security^biometricAuthenticationEnabled"
         const val SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT = false
 
@@ -406,5 +444,12 @@ class Config(context: Context) {
 
         const val SYNC_DELETE_AFTER_UPLOAD = "sync^deleteAfterUpload"
         const val SYNC_DELETE_AFTER_UPLOAD_DEFAULT = false
+
+        /**
+         * SharedPreferences key for the optional hash-verification-after-upload toggle.
+         * @since Batch 1 / Item 3 — hash verification for upload
+         */
+        const val SYNC_VERIFY_HASH = "sync^verifyHash"
+        const val SYNC_VERIFY_HASH_DEFAULT = false
     }
 }

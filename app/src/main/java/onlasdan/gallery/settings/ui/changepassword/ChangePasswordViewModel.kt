@@ -23,10 +23,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.ChangePasswordUseCase
 import onlasdan.gallery.encryption.domain.PasswordUtils
+import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.encryption.domain.VaultService
 import onlasdan.gallery.encryption.domain.models.UnlockRequest
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.settings.data.Config
+import onlasdan.gallery.sync.rclone.RepoManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +66,8 @@ sealed interface ChangePasswordUiEvent {
 class ChangePasswordViewModel @Inject constructor(
     private val changePasswordUseCase: ChangePasswordUseCase,
     private val vaultService: VaultService,
+    private val sessionRepository: SessionRepository,
+    private val repoManager: RepoManager,
     private val config: Config,
     private val resources: Resources,
 ) : ViewModel() {
@@ -121,7 +125,51 @@ class ChangePasswordViewModel @Inject constructor(
         _uiState.update { it.copy(loading = true) }
         viewModelScope.launch(Dispatchers.IO) {
             changePasswordUseCase(state.newPassword)
-                .onSuccess { _uiState.update { it.copy(done = true, loading = false) } }
+                .onSuccess {
+                    // ─── Batch 1 / Item 4: re-upload the key escrow to the remote ──
+                    // [ChangePasswordUseCase] only updates the LOCAL password
+                    // VaultProtection row — it re-wraps the SAME VMK with the new
+                    // password-derived KEK. The VMK itself doesn't change, so the
+                    // already-uploaded `.crypt` photo files do NOT need re-encryption.
+                    //
+                    // But the two escrow artifacts on the remote DO need a refresh:
+                    //   - `recovery-phrase.json.crypt` (Layer 1): VMK wrapped by the
+                    //     recovery phrase. NOT affected by password change (the
+                    //     recovery phrase and VMK are unchanged). Re-uploading is
+                    //     wasteful but harmless — the outer GCM nonce is fresh, so
+                    //     the ciphertext differs but the payload is identical.
+                    //   - `wrapped-phrase.json.crypt` (Layer 2): recovery phrase
+                    //     wrapped by the user's PASSWORD. This DOES change after a
+                    //     password change — the old password no longer unwraps it,
+                    //     so we MUST re-upload Layer 2 with the new password.
+                    //
+                    // For simplicity and safety, [RepoManager.uploadAllEscrows]
+                    // re-uploads BOTH layers atomically. Non-fatal: if the upload
+                    // fails, the password change still succeeded locally — the user
+                    // can still unlock with the new password on THIS device. Only
+                    // fresh-install restore from this point would be broken until
+                    // they re-run setup.
+                    val session = sessionRepository.get()
+                    if (session != null && config.repoConfirmed) {
+                        try {
+                            val escrowResult = repoManager.uploadAllEscrows(state.newPassword, session)
+                            if (escrowResult.isFailure) {
+                                Timber.w(
+                                    escrowResult.exceptionOrNull(),
+                                    "Escrow re-upload after password change failed (non-fatal)",
+                                )
+                            } else {
+                                Timber.i("Escrow re-upload after password change OK")
+                            }
+                        } catch (e: Exception) {
+                            Timber.w(e, "Escrow re-upload after password change threw (non-fatal)")
+                        }
+                    } else {
+                        Timber.w("Skipping escrow re-upload after password change: session=${session != null} repoConfirmed=${config.repoConfirmed}")
+                    }
+
+                    _uiState.update { it.copy(done = true, loading = false) }
+                }
                 .onFailure { Timber.e(it) }
         }
     }

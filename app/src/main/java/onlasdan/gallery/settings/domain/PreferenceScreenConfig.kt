@@ -32,6 +32,8 @@ import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_VERIFY_HASH
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_VERIFY_HASH_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY_DEFAULT
 import onlasdan.gallery.settings.domain.models.LockTimeout
@@ -158,6 +160,19 @@ val PreferenceScreenConfigContent = buildList {
                     title = R.string.settings_sync_delete_after_upload_title,
                     summary = R.string.settings_sync_delete_after_upload_summary,
                     default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
+                ),
+                // ─── Batch 1 / Item 3: optional hash verification after upload ──
+                // When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] downloads
+                // the freshly-uploaded remote file, decrypts it with the VMK,
+                // recomputes the SHA-256, and compares it against the photo's
+                // stored `contentHash`. Off by default — doubles bandwidth per
+                // upload. Power users / paranoiac users can turn it on.
+                Preference.Switch(
+                    key = SYNC_VERIFY_HASH,
+                    icon = R.drawable.ic_check_circle,
+                    title = R.string.settings_sync_verify_hash_title,
+                    summary = R.string.settings_sync_verify_hash_summary,
+                    default = SYNC_VERIFY_HASH_DEFAULT,
                 ),
                 // @since registry-gc feature — manual cleanup of soft-deleted
                 // entries' remote originals + thumbnail pack compaction. The
