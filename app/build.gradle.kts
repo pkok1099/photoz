@@ -162,6 +162,8 @@ fun DependencyHandler.fossImplementation(dependencyNotation: Any) {
 
 dependencies {
     // Architectural Components
+    // NOTE: Lifecycle 2.11.0 requires compileSdk 37 + AGP 9.1.0 — reverted to 2.10.0
+    // (AGP 9 migration is out of scope for Batch 3; will be done as a separate effort).
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
@@ -178,27 +180,32 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Bumped 1.10.2 → 1.11.0 (Batch 3 — safe dep bumps from dependabot branch).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Coroutine Lifecycle Scopes
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
 
     // Navigation Components
-    implementation("androidx.navigation:navigation-fragment-ktx:2.9.7")
-    implementation("androidx.navigation:navigation-ui-ktx:2.9.7")
+    // Bumped 2.9.7 → 2.9.8 (Batch 3 — safe dep bumps from dependabot branch).
+    implementation("androidx.navigation:navigation-fragment-ktx:2.9.8")
+    implementation("androidx.navigation:navigation-ui-ktx:2.9.8")
 
     // Timber Logging
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Dagger Core
-    implementation("com.google.dagger:dagger:2.57.2")
-    kapt("com.google.dagger:dagger-compiler:2.57.2")
+    // NOTE: Dagger/Hilt 2.60 fails to load dagger.spi.internal.shaded...JavacBasicAnnotationProcessor
+    // with Room 2.8.4 — reverted to 2.57.2 (Batch 3 dep bump reverted due to build failure).
+    val daggerVersion = "2.57.2"
+    implementation("com.google.dagger:dagger:$daggerVersion")
+    kapt("com.google.dagger:dagger-compiler:$daggerVersion")
 
     // Dagger - Hilt
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    kapt("com.google.dagger:hilt-android-compiler:2.57.2")
+    implementation("com.google.dagger:hilt-android:$daggerVersion")
+    kapt("com.google.dagger:hilt-android-compiler:$daggerVersion")
     implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
 
     kapt("androidx.hilt:hilt-compiler:1.3.0")
@@ -208,10 +215,12 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.3.0")
 
     // WorkManager — required by onlasdan.gallery.sync.work.PhotoSyncWorker for cloud sync.
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // Bumped 2.10.0 → 2.11.2 (Batch 3 — safe dep bumps from dependabot branch).
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // kotlinx-serialization — used by RcloneController for JSON (de)serialization of rclone rc API.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // Bumped 1.7.3 → 1.11.0 (Batch 3 — safe dep bumps from dependabot branch).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // Activity KTX for viewModels()
     implementation("androidx.activity:activity-ktx:1.12.4")
@@ -274,10 +283,12 @@ dependencies {
     implementation("io.coil-kt:coil-video:$coilVersion")
 
     // Exoplayer
-    implementation("androidx.media3:media3-exoplayer:1.9.2")
-    implementation("androidx.media3:media3-ui:1.9.2")
-    implementation("androidx.media3:media3-ui-compose:1.9.2")
-    implementation("androidx.media3:media3-ui-compose-material3:1.9.2")
+    // Bumped 1.9.2 → 1.10.1 (Batch 3 — safe dep bumps from dependabot branch).
+    val media3Version = "1.10.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-ui-compose:$media3Version")
+    implementation("androidx.media3:media3-ui-compose-material3:$media3Version")
 
     implementation(fileTree("libs").matching {
         include("*.jar")
@@ -293,9 +304,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("io.mockk:mockk:1.14.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    testImplementation("com.google.dagger:hilt-android-testing:2.57.2")
-    kaptTest("com.google.dagger:hilt-android-compiler:2.57.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("com.google.dagger:hilt-android-testing:$daggerVersion")
+    kaptTest("com.google.dagger:hilt-android-compiler:$daggerVersion")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 
