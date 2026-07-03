@@ -90,6 +90,21 @@
     <string name="import_menu_delete_warning">Imported files will be deleted</string>
     <string name="import_menu_album_tooltip">Files will be added to \"%s\" after importing</string>
 
+    <!-- Sprint 3 / M10 — Embedded Photo Picker -->
+    <string name="import_menu_photo_picker_title">Import via Photo Picker</string>
+    <string name="import_menu_photo_picker_description">Private picker — no gallery permission needed. Folder info is not preserved.</string>
+    <string name="import_menu_photo_picker_chip_no_path">No folder info</string>
+    <string name="path_maker_title">Choose album</string>
+    <string name="path_maker_description">Photo Picker doesn\'t expose the original folder path. Pick which album these photos should go into.</string>
+    <string name="path_maker_count">%1$d photo(s) selected</string>
+    <string name="path_maker_album_default">Use \"Picker\" album</string>
+    <string name="path_maker_album_existing">Existing album: %1$s</string>
+    <string name="path_maker_album_new">Create new album</string>
+    <string name="path_maker_album_new_hint">Album name</string>
+    <string name="path_maker_warning">⚠ Photo Picker tidak menyimpan path asli. Pilih album tujuan.</string>
+    <string name="path_maker_button_confirm">Import to album</string>
+    <string name="path_maker_button_cancel">Cancel</string>
+
     <!-- PROCESS -->
     <string name="process_close">Close</string>
     <string name="process_abort">Abort</string>
@@ -183,6 +198,28 @@
     <string name="settings_security_biometric_not_available">Biometric Unlock is not available</string>
     <string name="settings_security_recovery_phrase_title">Recovery Phrase</string>
     <string name="settings_security_recovery_phrase_summary">Manage your recovery phrase.</string>
+
+    <!-- Sprint 2 / M7 — Multi-vault UI -->
+    <string name="settings_security_create_vault_title">Create New Vault</string>
+    <string name="settings_security_create_vault_summary">Add a separate vault protected by a different password</string>
+    <string name="settings_security_switch_vault_title">Switch Vault</string>
+    <string name="settings_security_switch_vault_summary">Lock and unlock with another vault\'s password</string>
+
+    <!-- Sprint 2 / M7 — Create vault dialog -->
+    <string name="create_vault_title">Create New Vault</string>
+    <string name="create_vault_description">Each vault is independent and unlocked only by its own password. New vaults start empty and do not sync to the cloud — they are local-only.</string>
+    <string name="create_vault_password_label">New vault password</string>
+    <string name="create_vault_password_confirm_label">Confirm password</string>
+    <string name="create_vault_strength_weak">Weak</string>
+    <string name="create_vault_strength_moderate">Moderate</string>
+    <string name="create_vault_strength_strong">Strong</string>
+    <string name="create_vault_passwords_dont_match">Passwords do not match</string>
+    <string name="create_vault_password_already_unlocks">This password already unlocks an existing vault. Pick a different password.</string>
+    <string name="create_vault_button_create">Create Vault</string>
+    <string name="create_vault_success">New vault created. Lock and unlock with this password to switch into it.</string>
+    <string name="create_vault_failed">Failed to create vault: %1$s</string>
+    <string name="create_vault_loading">Creating vault…</string>
+    <string name="create_vault_warning_local_only">⚠ This vault will not sync to the cloud and has no recovery phrase. If you forget the password, its contents cannot be recovered.</string>
     <string name="settings_security_timeout_title">Automatic Lock Timeout</string>
     <string name="settings_security_timeout_summary">Automatic lock after given time in background</string>
     <string name="settings_security_timeout_immediately">Immediately</string>

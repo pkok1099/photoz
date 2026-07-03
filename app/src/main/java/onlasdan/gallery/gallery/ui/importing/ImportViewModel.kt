@@ -44,6 +44,19 @@ class ImportViewModel @Inject constructor(
     var albumUUID: String? = null
     var importSource = ImportSource.InApp
 
+    /**
+     * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
+     *
+     * When non-null, [processItem] passes this to
+     * [PhotoRepository.safeImportPhoto] as `overrideAlbumPath`. The photo's
+     * `albumPath` is set to this value (e.g. "Picker") instead of falling
+     * back to the filename, and `ensureAlbumForPhoto` creates/links the
+     * named album.
+     *
+     * Null for the regular MediaStore import (auto-album-from-folder path).
+     */
+    var targetAlbumName: String? = null
+
     private val _reviewTrigger = Channel<Unit>(Channel.CONFLATED)
     val reviewTrigger = _reviewTrigger.receiveAsFlow()
 
@@ -51,6 +64,7 @@ class ImportViewModel @Inject constructor(
         val photoUUID = photoRepository.safeImportPhoto(
             sourceUri = item,
             importSource = importSource,
+            overrideAlbumPath = targetAlbumName,
         )
         if (photoUUID.isEmpty()) {
             failuresOccurred = true

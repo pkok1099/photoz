@@ -155,7 +155,26 @@ class PhotoRepository @Inject constructor(
      *   stored, encrypted and dedup'd identically; only the gallery view and
      *   the tap-to-open flow branch on `photo.type.isFile`.
      */
-    suspend fun safeImportPhoto(sourceUri: Uri, importSource: ImportSource): String {
+    /**
+     * Sprint 3 / M10 — Import a photo from [sourceUri].
+     *
+     * @param sourceUri the source URI (MediaStore, SAF, or Photo Picker).
+     * @param importSource provenance marker for analytics + delete-after-import.
+     * @param overrideAlbumPath OPTIONAL — when non-null, sets the photo's
+     *   `albumPath` to this value instead of the auto-detected folder path.
+     *   Used by the Photo Picker flow (M10): the picker URI doesn't expose
+     *   `RELATIVE_PATH`, so the auto-album-from-folder logic would skip;
+     *   the Path Maker dialog lets the user pick an album, and that choice
+     *   is passed here to override.
+     *
+     *   When non-null, `ensureAlbumForPhoto` will find-or-create the named
+     *   album and link the photo to it (same as the MediaStore auto path).
+     */
+    suspend fun safeImportPhoto(
+        sourceUri: Uri,
+        importSource: ImportSource,
+        overrideAlbumPath: String? = null,
+    ): String {
         val metaData = app.contentResolver.getMetadataFor(sourceUri)
 
         val type = PhotoType.fromMimeType(metaData.mimeType)
@@ -200,7 +219,13 @@ class PhotoRepository @Inject constructor(
             // metaData.relativePath captures the folder structure (e.g. "Download",
             // "DCIM/Camera") from MediaStore. Falls back to filename if not available
             // (SAF URIs from file pickers may not expose RELATIVE_PATH).
-            albumPath = metaData.relativePath ?: metaData.fileName,
+            //
+            // Sprint 3 / M10 — [overrideAlbumPath] takes precedence when non-null.
+            // Used by the Photo Picker flow: the picker URI has no RELATIVE_PATH,
+            // so the user picks an album via Path Maker dialog, and that choice
+            // is passed in here. The chosen album is then created/linked by
+            // ensureAlbumForPhoto (which uses photo.albumPath as the album name).
+            albumPath = overrideAlbumPath ?: metaData.relativePath ?: metaData.fileName,
             // ─── Sprint 2 / M7 — Multi-vault ───────────────────────────────
             // Tag the new photo with the current vault's vault_id so queries
             // filter it correctly. If the vault is somehow locked at import

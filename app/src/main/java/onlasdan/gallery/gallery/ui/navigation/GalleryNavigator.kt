@@ -34,7 +34,12 @@ class GalleryNavigator @Inject constructor() {
     ) {
         when (event) {
             is GalleryNavigationEvent.ShowToast -> showToast(event, fragment)
-            is GalleryNavigationEvent.StartImport -> startImport(event.fileUris, fragment.childFragmentManager, event.importSource)
+            is GalleryNavigationEvent.StartImport -> startImport(
+                fileUris = event.fileUris,
+                fragmentManager = fragment.childFragmentManager,
+                importSource = event.importSource,
+                targetAlbumName = event.targetAlbumName,
+            )
             is GalleryNavigationEvent.StartRestoreBackup -> startRestoreBackup(event.backupUri, fragment.childFragmentManager)
         }
     }
@@ -45,11 +50,17 @@ class GalleryNavigator @Inject constructor() {
         ).show(fragmentManager)
     }
 
-    private fun startImport(fileUris: List<Uri>, fragmentManager: FragmentManager, importSource: ImportSource) {
+    private fun startImport(
+        fileUris: List<Uri>,
+        fragmentManager: FragmentManager,
+        importSource: ImportSource,
+        targetAlbumName: String? = null,
+    ) {
         ImportBottomSheetDialogFragment(
             uris = fileUris,
             albumUUID = null,
             importSource = importSource,
+            targetAlbumName = targetAlbumName,
         ).show(fragmentManager)
     }
 

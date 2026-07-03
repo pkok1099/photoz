@@ -171,6 +171,21 @@ class AlbumDetailViewModel @AssistedInject constructor(
             is ImportChoice.RestoreBackup -> AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
                 choice.backupUri,
             )
+
+            // Sprint 3 / M10 — Photo Picker import from an album detail screen.
+            // The user picked a target album via Path Maker dialog (which may
+            // be THIS album or a different one). We route to StartImport with
+            // the current album's UUID as the link target — the user's Path
+            // Maker choice is also passed via targetAlbumName so the photo's
+            // albumPath metadata is set correctly. If the user picked a
+            // different album in Path Maker, the photo's albumPath will say
+            // that album but the cross-ref will link to THIS album — that's
+            // a v1 inconsistency; v2 will respect the Path Maker choice for
+            // the cross-ref too.
+            is ImportChoice.AddFromPhotoPicker -> AlbumDetailNavigator.NavigationEvent.StartImport(
+                fileUris = choice.fileUris,
+                albumUuid = albumFlow.value.uuid,
+            )
         }
 
         navEventsChannel.trySend(navEvent)

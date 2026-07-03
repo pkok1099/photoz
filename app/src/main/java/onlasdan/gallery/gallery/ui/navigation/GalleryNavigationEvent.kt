@@ -21,6 +21,17 @@ import onlasdan.gallery.model.repositories.ImportSource
 
 sealed interface GalleryNavigationEvent {
     data class ShowToast(val text: String) : GalleryNavigationEvent
-    data class StartImport(val fileUris: List<Uri>, val importSource: ImportSource) : GalleryNavigationEvent
+    /**
+     * Sprint 3 / M10 — [targetAlbumName] is non-null when the import came
+     * from the Photo Picker (which doesn't expose RELATIVE_PATH). The
+     * consumer (MainViewModel.handleImport) sets this as the photo's
+     * `albumPath` before calling PhotoRepository.safeImportPhoto, bypassing
+     * the auto-album-from-folder logic.
+     */
+    data class StartImport(
+        val fileUris: List<Uri>,
+        val importSource: ImportSource,
+        val targetAlbumName: String? = null,
+    ) : GalleryNavigationEvent
     data class StartRestoreBackup(val backupUri: Uri) : GalleryNavigationEvent
 }

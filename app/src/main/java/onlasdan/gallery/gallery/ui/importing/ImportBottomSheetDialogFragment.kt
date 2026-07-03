@@ -43,6 +43,13 @@ class ImportBottomSheetDialogFragment(
     uris: List<Uri>,
     private val albumUUID: String? = "",
     private val importSource: ImportSource,
+    /**
+     * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
+     * When non-null, the imported photos get this as their `albumPath` (see
+     * [ImportViewModel.targetAlbumName] for the full rationale). Null for
+     * the regular MediaStore import.
+     */
+    private val targetAlbumName: String? = null,
 ) : BaseProcessBottomSheetDialogFragment<Uri>(
     uris,
     R.string.import_importing,
@@ -66,6 +73,8 @@ class ImportBottomSheetDialogFragment(
     override fun prepareViewModel(items: List<Uri>?) {
         viewModel.albumUUID = albumUUID
         viewModel.importSource = importSource
+        // Sprint 3 / M10 — propagate the Path Maker's chosen album.
+        viewModel.targetAlbumName = targetAlbumName
         super.prepareViewModel(items?.reversed()) // Reverse list to keep order in system gallery
     }
 }

@@ -19,6 +19,7 @@ package onlasdan.gallery.gallery.components
 import android.net.Uri
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,9 +47,11 @@ import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
@@ -70,6 +73,23 @@ import kotlinx.coroutines.launch
 sealed interface ImportChoice {
     data class AddNewFiles(val fileUris: List<Uri>) : ImportChoice
     data class RestoreBackup(val backupUri: Uri) : ImportChoice
+    /**
+     * Sprint 3 / M10 — Photo Picker import.
+     *
+     * Photo Picker URIs (`content://media/picker/...`) do NOT expose
+     * `RELATIVE_PATH`, so the auto-album-from-folder logic in
+     * PhotoRepository.ensureAlbumForPhoto won't fire for these URIs.
+     *
+     * The caller (gallery) shows a Path Maker dialog after the picker
+     * returns to let the user pick which album the photos go into.
+     * The chosen album name is passed via [targetAlbum].
+     *
+     * @since v11 — Sprint 3 / M10 multi-vault
+     */
+    data class AddFromPhotoPicker(
+        val fileUris: List<Uri>,
+        val targetAlbum: String,
+    ) : ImportChoice
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,6 +149,27 @@ private fun ImportMenuDialogContent(
             )
         }
 
+    // ─── Sprint 3 / M10 — Embedded Photo Picker ──────────────────────────
+    // PickVisualMedia is the system Photo Picker (Android 13+). It returns
+    // URIs that do NOT expose RELATIVE_PATH — by design, for privacy. The
+    // auto-album-from-folder logic in PhotoRepository.ensureAlbumForPhoto
+    // won't fire for these URIs (it skips when albumPath equals filename,
+    // which is the SAF/picker fallback).
+    //
+    // After the picker returns, we show a Path Maker dialog (state below)
+    // to let the user pick which album the photos go into. The dialog's
+    // "Confirm" button emits ImportChoice.AddFromPhotoPicker with the
+    // chosen target album name.
+    var pendingPickerUris by remember { mutableStateOf<List<Uri>?>(null) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            pendingPickerUris = uris
+        }
+    }
+
     val config = LocalConfig.current
     val isPreview = LocalInspectionMode.current
 
@@ -160,6 +201,22 @@ private fun ImportMenuDialogContent(
             }
         )
 
+        // ─── Sprint 3 / M10 — Photo Picker entry ──────────────────────────
+        ImportMenuItem(
+            text = stringResource(R.string.import_menu_photo_picker_title),
+            description = stringResource(R.string.import_menu_photo_picker_description),
+            iconPainter = painterResource(R.drawable.ic_image),
+            chips = { modifier ->
+                NoFolderInfoChip(modifier = modifier)
+            },
+            onClick = {
+                photoPickerLauncher.launchAndIgnoreTimer(
+                    input = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                    activity = activity,
+                )
+            }
+        )
+
         HorizontalDivider()
 
         ImportMenuItem(
@@ -172,6 +229,28 @@ private fun ImportMenuDialogContent(
                     activity = activity
                 )
             }
+        )
+    }
+
+    // ─── Sprint 3 / M10 — Path Maker dialog (shown after picker returns) ──
+    pendingPickerUris?.let { uris ->
+        PathMakerDialog(
+            photoCount = uris.size,
+            existingAlbums = albumName?.let { listOf(it) } ?: emptyList(),
+            onConfirm = { chosenAlbum ->
+                val urisToImport = uris
+                pendingPickerUris = null
+                onDismissRequest()
+                onImportChoice(
+                    ImportChoice.AddFromPhotoPicker(
+                        fileUris = urisToImport,
+                        targetAlbum = chosenAlbum,
+                    )
+                )
+            },
+            onDismiss = {
+                pendingPickerUris = null
+            },
         )
     }
 }

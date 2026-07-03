@@ -176,6 +176,8 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
     var showUsageDataSheet by rememberSaveable { mutableStateOf(false) }
     var showRecoveryPhraseSheet by rememberSaveable { mutableStateOf(false) }
     var showChangePasswordSheet by rememberSaveable { mutableStateOf(false) }
+    // Sprint 2 / M7 — Multi-vault UI
+    var showCreateVaultSheet by rememberSaveable { mutableStateOf(false) }
     var showConfirmPasswordDialogForBackup by rememberSaveable { mutableStateOf(false) }
     var showConfirmPasswordDialogForReset by rememberSaveable { mutableStateOf(false) }
 
@@ -204,6 +206,19 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 
         viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_RECOVERY_PHRASE) {
             showRecoveryPhraseSheet = true
+            false
+        }
+
+        // ─── Sprint 2 / M7 — Multi-vault UI wiring ──────────────────────────
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CREATE_VAULT) {
+            showCreateVaultSheet = true
+            false
+        }
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_SWITCH_VAULT) {
+            // Switch vault = lock the app. The unlock screen will iterate all
+            // Password rows and the user picks which vault to enter by typing
+            // that vault's password.
+            (fragment?.activity as? onlasdan.gallery.BaseApplication)?.lockApp()
             false
         }
 
@@ -395,6 +410,13 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
     if (showChangePasswordSheet) {
         ChangePasswordSheet(
             onDismissRequest = { showChangePasswordSheet = false },
+        )
+    }
+
+    // Sprint 2 / M7 — Multi-vault UI
+    if (showCreateVaultSheet) {
+        onlasdan.gallery.settings.ui.createvault.CreateVaultSheet(
+            onDismissRequest = { showCreateVaultSheet = false },
         )
     }
 

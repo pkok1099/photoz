@@ -272,6 +272,25 @@ val PreferenceScreenConfigContent = buildList {
                     title = R.string.settings_security_recovery_phrase_title,
                     summary = R.string.settings_security_recovery_phrase_summary,
                 ),
+
+                // ─── Sprint 2 / M7 — Multi-vault entry points ───────────────
+                // "Create New Vault" opens the CreateVaultSheet (password-only,
+                // no recovery phrase, local-only by design). "Switch Vault"
+                // simply locks the app — the user then unlocks with another
+                // vault's password. The unlock flow iterates all Password rows
+                // and picks the matching vault.
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_CREATE_VAULT,
+                    icon = R.drawable.ic_add,
+                    title = R.string.settings_security_create_vault_title,
+                    summary = R.string.settings_security_create_vault_summary,
+                ),
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_SWITCH_VAULT,
+                    icon = R.drawable.ic_lock,
+                    title = R.string.settings_security_switch_vault_title,
+                    summary = R.string.settings_security_switch_vault_summary,
+                ),
             ),
         )
     )

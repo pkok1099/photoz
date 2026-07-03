@@ -273,6 +273,27 @@ class GalleryViewModel @Inject constructor(
                 importSource = ImportSource.InApp,
             )
             is ImportChoice.RestoreBackup -> GalleryNavigationEvent.StartRestoreBackup(choice.backupUri)
+            // Sprint 3 / M10 — Photo Picker import. Same StartImport event as
+            // AddNewFiles, but the URIs come from PickVisualMedia (no
+            // RELATIVE_PATH). The PhotoRepository will use the filename as
+            // albumPath fallback; the user has already picked a target album
+            // via PathMakerDialog, and that album name is stashed as a
+            // side-channel via the ImportSource's pending target album field.
+            //
+            // For v1, we route through StartImport with a special
+            // ImportSource.PhotoPicker that carries the target album. The
+            // import flow in MainViewModel picks it up and sets albumPath
+            // before calling PhotoRepository.safeImportPhoto.
+            is ImportChoice.AddFromPhotoPicker -> GalleryNavigationEvent.StartImport(
+                fileUris = choice.fileUris,
+                importSource = ImportSource.InApp,
+                // Sprint 3 / M10 — stash the Path Maker's chosen album so the
+                // import flow sets albumPath explicitly, bypassing the
+                // auto-album-from-folder logic (which would skip because the
+                // picker URI has no RELATIVE_PATH → albumPath falls back to
+                // filename → ensureAlbumForPhoto skips).
+                targetAlbumName = choice.targetAlbum,
+            )
         }
 
         eventsChannel.trySend(navEvent)

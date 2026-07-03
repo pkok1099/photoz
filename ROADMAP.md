@@ -119,7 +119,7 @@
 - `:data` — Room DB, DAOs, repositories
 - Est: ~500 lines Gradle config + package moves
 
-### M7. Cryptographic Plausible Deniability (Multi-Vault, No Flag)
+### M7. Cryptographic Plausible Deniability (Multi-Vault, No Flag) — IN PROGRESS (Sprint 2 done, UI Sprint 3)
 **Reason**: 2026 research shows decoy vaults with config flags CAN be detected by forensic tools (Cellebrite finds flag → proves concealment). Solution: pattern-based key derivation — every password derives a different vault. No flag, no master index, no concept of "real" vs "decoy" in the data model.
 
 **Design principles (final, post-design-review)**:
@@ -201,7 +201,7 @@ vault_id = HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()
 
 **Estimate**: ~800 lines + DB migration v10→v11
 
-### M8. BFU-Safe Key Handling (Re-key on Backgrounding)
+### M8. BFU-Safe Key Handling (Re-key on Backgrounding) — DONE (Sprint 3)
 **Reason**: 2026 trend — BFU (Before First Unlock) state is dramatically harder for forensics. VMK should never persist in CE storage when app is backgrounded.
 
 **Implementation**:
@@ -220,7 +220,7 @@ vault_id = HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()
 - Two-pane layout for tablet (gallery + detail side by side)
 - Est: ~400 lines
 
-### M10. Embedded Photo Picker (Android 16+) + Path Maker + Symlink Album
+### M10. Embedded Photo Picker (Android 16+) + Path Maker + Symlink Album — PARTIAL (Photo Picker + Path Maker v1 done in Sprint 3; symlink album deferred)
 **Reason**: Android 16 Embedded Photo Picker — no `READ_MEDIA_IMAGES` permission needed. App only receives temporary URI, cannot access full gallery. Major privacy win. **However**, Photo Picker URI does NOT expose `RELATIVE_PATH` (by design — privacy), so the auto-album-from-folder logic in `PhotoRepository.ensureAlbumForPhoto` won't fire for picker imports. We need an explicit Path Maker UX to compensate.
 
 **Implementation — 3 parts**:

@@ -68,12 +68,14 @@ class SettingsFragment : Fragment() {
         const val KEY_ACTION_SOURCECODE = "action_sourcecode"
         const val KEY_ACTION_CREDITS = "action_credits"
         const val KEY_ACTION_TELEMETRY = "action_telemetry"
-        const val KEY_ACTION_ABOUT = "action_about"
 
+        // Sprint 2 / M7 — Multi-vault UI entry points
+        const val KEY_ACTION_CREATE_VAULT = "action_create_vault"
+        const val KEY_ACTION_SWITCH_VAULT = "action_switch_vault"
+        const val KEY_ACTION_ABOUT = "action_about"
         /** Action key for the "Cloud Sync" row. Opens SAF file picker to import rclone.conf.
          *  @since PR1 sync addendum (Settings UI) */
         const val KEY_ACTION_CLOUD_SYNC = "action_cloud_sync"
-
         /** Action key for the "Clean up backup" row. Runs registry GC: repacks
          *  thumbnail packs with >30% tombstoned entries, then deletes the remote
          *  originals for tombstoned entries. @since registry-gc feature */
