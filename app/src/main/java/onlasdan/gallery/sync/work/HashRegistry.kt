@@ -20,6 +20,7 @@ import android.app.Application
 import android.util.Log
 import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
+import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.rclone.RcloneController
 import kotlinx.coroutines.Dispatchers
@@ -172,8 +173,18 @@ class HashRegistry @Inject constructor(
     private fun diag(msg: String, t: Throwable? = null) {
         Log.e(TAG, "[HashRegistry] $msg", t)
         try {
-            File(app.filesDir, "sync_log.txt").appendText("\n[$TAG] [HashRegistry] $msg\n")
-            if (t != null) File(app.filesDir, "sync_log.txt").appendText(t.stackTraceToString() + "\n")
+            val entry = buildString {
+                append("\n[")
+                append(TAG)
+                append("] [HashRegistry] ")
+                append(msg)
+                append('\n')
+                if (t != null) {
+                    append(t.stackTraceToString())
+                    append('\n')
+                }
+            }
+            onlasdan.gallery.sync.debug.SyncLogRotator.append(app, entry)
         } catch (_: Exception) {}
     }
 
@@ -236,7 +247,7 @@ class HashRegistry @Inject constructor(
     suspend fun downloadAndCache(vmkBytes: ByteArray): Int = withContext(Dispatchers.IO) {
         val remote = try {
             val config = app.getSharedPreferences(
-                "onlasdan.gallery_preferences",
+                Config.FILE_NAME,
                 android.content.Context.MODE_PRIVATE,
             )
             config.getString("sync^chosenRemote", null)
@@ -327,7 +338,7 @@ class HashRegistry @Inject constructor(
     suspend fun uploadToRemote(vmkBytes: ByteArray) = withContext(Dispatchers.IO) {
         val remote = try {
             val config = app.getSharedPreferences(
-                "onlasdan.gallery_preferences",
+                Config.FILE_NAME,
                 android.content.Context.MODE_PRIVATE,
             )
             config.getString("sync^chosenRemote", null)
@@ -488,7 +499,7 @@ class HashRegistry @Inject constructor(
     suspend fun flushPendingThumbnailPacks() = withContext(Dispatchers.IO) {
         val remote = try {
             val config = app.getSharedPreferences(
-                "onlasdan.gallery_preferences",
+                Config.FILE_NAME,
                 android.content.Context.MODE_PRIVATE,
             )
             config.getString("sync^chosenRemote", null)
@@ -733,7 +744,7 @@ class HashRegistry @Inject constructor(
     suspend fun gcThumbnailPacks(): Int = withContext(Dispatchers.IO) {
         val remote = try {
             val config = app.getSharedPreferences(
-                "onlasdan.gallery_preferences",
+                Config.FILE_NAME,
                 android.content.Context.MODE_PRIVATE,
             )
             config.getString("sync^chosenRemote", null)
@@ -798,7 +809,9 @@ class HashRegistry @Inject constructor(
                 for (d in dead) {
                     try {
                         dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        diag("gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after pack delete FAILED (non-fatal): ${e.message}", e)
+                    }
                 }
                 repacked++
                 continue
@@ -839,9 +852,11 @@ class HashRegistry @Inject constructor(
                     packLocalFile.delete()
                     try {
                         rcloneController.deleteFile(packRemotePath).getOrThrow()
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        diag("gcThumbnailPacks: delete empty pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}", e)
+                    }
                     for (d in dead) {
-                        try { dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L)) } catch (_: Exception) {}
+                        try { dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L)) } catch (e: Exception) { diag("gcThumbnailPacks: clear pack field on dead entry ${d.uuid} (empty-pack fallback) FAILED (non-fatal): ${e.message}", e) }
                     }
                     repacked++
                     continue
@@ -887,7 +902,9 @@ class HashRegistry @Inject constructor(
                 for (d in dead) {
                     try {
                         dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        diag("gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after repack FAILED (non-fatal): ${e.message}", e)
+                    }
                 }
 
                 // Delete the OLD pack from the remote.
@@ -951,7 +968,7 @@ class HashRegistry @Inject constructor(
     suspend fun gcOriginals(): Int = withContext(Dispatchers.IO) {
         val remote = try {
             val config = app.getSharedPreferences(
-                "onlasdan.gallery_preferences",
+                Config.FILE_NAME,
                 android.content.Context.MODE_PRIVATE,
             )
             config.getString("sync^chosenRemote", null)
@@ -994,9 +1011,8 @@ class HashRegistry @Inject constructor(
             try {
                 val thumbRemotePath = "$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}${SyncConfig.THUMBNAIL_FILE_SUFFIX}"
                 rcloneController.deleteFile(thumbRemotePath).getOrNull()
-            } catch (_: Exception) {
-                // Non-fatal — the thumbnail may have been packed already, or
-                // may not exist on this backend.
+            } catch (e: Exception) {
+                diag("gcOriginals: delete legacy thumbnail for ${entry.uuid} FAILED (non-fatal — may have been packed already, or may not exist on this backend): ${e.message}", e)
             }
             // Physically remove the registry row. The original is gone, so
             // there's nothing left to reference. Tombstone → no row.

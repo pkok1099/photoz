@@ -469,6 +469,29 @@ class PhotoRepository @Inject constructor(
             // Resolve the decrypted file: copy the photo's encrypted original
             // through the decrypt stream into a fresh plaintext cache file.
             val extViewDir = File(app.cacheDir, "extview").apply { mkdirs() }
+
+            // ─── QC fix: clean up stale plaintext cache files ─────────────────
+            // Before creating the new plaintext cache file, delete any existing
+            // files in cacheDir/extview/ left over from a previous openFileExternally
+            // call. This guarantees at most ONE plaintext file is on disk at any
+            // given time — these are decrypted originals of DOCUMENT/ARCHIVE/AUDIO
+            // photos exposed to external viewer apps via FileProvider, so we want
+            // to minimize their lifetime and count on disk.
+            //
+            // TODO(future enhancement): a full cleanup of this directory should
+            //   also run on Activity.onPause / onStop so the plaintext file is
+            //   wiped the moment the user leaves the gallery (the external viewer
+            //   app has already finished reading the file by then). For now,
+            //   this single-file housekeeping on each call is a defense-in-depth
+            //   measure — the OS will eventually reclaim cacheDir space under
+            //   memory pressure, but we don't want to rely on that for sensitive
+            //   plaintext.
+            runCatching {
+                extViewDir.listFiles()?.forEach { stale ->
+                    if (stale.isFile) stale.delete()
+                }
+            }
+
             val outFile = File(extViewDir, "${photo.uuid}.${photo.type.fileExtension}")
 
             val cipherInput = vaultFileStorage.openEncryptedInput(photo.internalFileName)

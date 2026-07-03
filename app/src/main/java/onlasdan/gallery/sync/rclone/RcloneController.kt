@@ -68,14 +68,25 @@ class RcloneController @Inject constructor(
     // Called from every layer of the call chain so we can trace exactly how far
     // execution gets before the "binary not found" / EACCES / ENOEXEC failure surfaces.
     // The `app` instance is non-null at any call site (constructor-injected).
+    //
+    // The file-append path goes through [SyncLogRotator.append], which caps
+    // `sync_log.txt` at 1 MB (truncating to the last 512 KB when exceeded).
+    // Without that cap the file would grow without bound — it lives in
+    // `filesDir` (persistent storage, NOT cache), so it never gets reclaimed
+    // by the OS. See [SyncLogRotator] for the full rotation policy.
     private fun diag(msg: String, throwable: Throwable? = null) {
         android.util.Log.e("RcloneDiag", msg, throwable)
         try {
-            val logFile = java.io.File(app.filesDir, "sync_log.txt")
-            logFile.appendText("\n[RcloneDiag] $msg\n")
-            if (throwable != null) {
-                logFile.appendText(throwable.stackTraceToString() + "\n")
+            val entry = buildString {
+                append("\n[RcloneDiag] ")
+                append(msg)
+                append('\n')
+                if (throwable != null) {
+                    append(throwable.stackTraceToString())
+                    append('\n')
+                }
             }
+            onlasdan.gallery.sync.debug.SyncLogRotator.append(app, entry)
         } catch (_: Exception) {
             // Never let diag() itself throw and disrupt the calling code path.
         }

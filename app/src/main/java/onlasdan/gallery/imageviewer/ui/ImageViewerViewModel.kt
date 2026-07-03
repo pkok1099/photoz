@@ -225,6 +225,14 @@ class ImageViewerViewModel @AssistedInject constructor(
         val localFile = app.getFileStreamPath(photo.internalFileName)
         if (localFile.exists() && localFile.length() > 0) {
             videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
+            // QC fix: the inflightDownloads set used to be append-only — the
+            // UUID was added when a download started but NEVER removed, not
+            // even on these fast-path early returns. That meant a user who
+            // later cleared the local file (or whose syncState changed) could
+            // never retry the download without leaving and re-entering the
+            // viewer. Remove the UUID on every exit path so the set only
+            // blocks genuinely concurrent duplicate launches, not retries.
+            synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
             return
         }
         if (photo.syncState != onlasdan.gallery.sync.domain.SyncState.UPLOADED) {
@@ -233,38 +241,52 @@ class ImageViewerViewModel @AssistedInject constructor(
             videoDownloadsFlow.update {
                 it + (uuid to VideoDownloadState.Failed("Video not uploaded — cannot restore from cloud"))
             }
+            // QC fix: same as above — allow retry if the photo is later
+            // uploaded (e.g. after a manual sync run).
+            synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
             return
         }
         // Mark Downloading at 0% immediately so the spinner swaps to a
         // determinate bar without delay.
         videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(0f)) }
         viewModelScope.launch {
-            val result = runCatching {
-                syncRestorer.ensureLocalOriginalWithProgress(uuid) { progress ->
-                    // Rate-limit updates to ~5/sec (every 200ms) — the same
-                    // cadence uploadFileWithProgress uses. State-change to 100%
-                    // always goes through.
-                    val current = videoDownloadsFlow.value[uuid]
-                    if (current is VideoDownloadState.Downloading) {
-                        val now = System.currentTimeMillis()
-                        if (progress >= 100f || now - current.lastUpdateMs >= 200L) {
-                            videoDownloadsFlow.update {
-                                it + (uuid to VideoDownloadState.Downloading(progress, now))
+            try {
+                val result = runCatching {
+                    syncRestorer.ensureLocalOriginalWithProgress(uuid) { progress ->
+                        // Rate-limit updates to ~5/sec (every 200ms) — the same
+                        // cadence uploadFileWithProgress uses. State-change to 100%
+                        // always goes through.
+                        val current = videoDownloadsFlow.value[uuid]
+                        if (current is VideoDownloadState.Downloading) {
+                            val now = System.currentTimeMillis()
+                            if (progress >= 100f || now - current.lastUpdateMs >= 200L) {
+                                videoDownloadsFlow.update {
+                                    it + (uuid to VideoDownloadState.Downloading(progress, now))
+                                }
                             }
-                        }
-                    } else if (current == null) {
-                        // First update — always emit.
-                        videoDownloadsFlow.update {
-                            it + (uuid to VideoDownloadState.Downloading(progress))
+                        } else if (current == null) {
+                            // First update — always emit.
+                            videoDownloadsFlow.update {
+                                it + (uuid to VideoDownloadState.Downloading(progress))
+                            }
                         }
                     }
                 }
-            }
-            if (result.isSuccess) {
-                videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
-            } else {
-                val msg = result.exceptionOrNull()?.message ?: "Download failed"
-                videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
+                if (result.isSuccess) {
+                    videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
+                } else {
+                    val msg = result.exceptionOrNull()?.message ?: "Download failed"
+                    videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
+                }
+            } finally {
+                // QC fix: ALWAYS remove the UUID from inflightDownloads when
+                // the coroutine exits — success OR failure. Without this, a
+                // failed download (network blip, vault locked, remote missing)
+                // permanently blocked retries for that UUID for the lifetime
+                // of the viewer session. The set's only purpose is to prevent
+                // concurrent duplicate launches while a download is in flight,
+                // NOT to permanently pin a UUID after the download resolves.
+                synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
             }
         }
     }

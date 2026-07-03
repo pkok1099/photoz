@@ -122,14 +122,25 @@ class PhotoSyncWorker @AssistedInject constructor(
     // `adb shell run-as <pkg> cat files/sync_log.txt`.
     // Critical for diagnosing upload failures — prior sessions' logging only
     // covered repo detection/init, not the photo upload call chain itself.
+    //
+    // The file-append path goes through [SyncLogRotator.append], which caps
+    // `sync_log.txt` at 1 MB (truncating to the last 512 KB when exceeded).
+    // Without that cap the file would grow without bound — it lives in
+    // `filesDir` (persistent storage, NOT cache), so it never gets reclaimed
+    // by the OS. See [SyncLogRotator] for the full rotation policy.
     private fun diag(msg: String, throwable: Throwable? = null) {
         android.util.Log.e("RcloneDiag", "[UploadWorker] $msg", throwable)
         try {
-            val logFile = java.io.File(appContext.filesDir, "sync_log.txt")
-            logFile.appendText("\n[RcloneDiag] [UploadWorker] $msg\n")
-            if (throwable != null) {
-                logFile.appendText(throwable.stackTraceToString() + "\n")
+            val entry = buildString {
+                append("\n[RcloneDiag] [UploadWorker] ")
+                append(msg)
+                append('\n')
+                if (throwable != null) {
+                    append(throwable.stackTraceToString())
+                    append('\n')
+                }
             }
+            onlasdan.gallery.sync.debug.SyncLogRotator.append(appContext, entry)
         } catch (_: Exception) {}
     }
 
