@@ -15,8 +15,23 @@
   -->
 
 <resources>
-    <!-- Application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <!--
+      Application theme — Sprint 1 / P4 (Dynamic Color).
+      Parent switched from Theme.AppCompat.Light.NoActionBar to
+      Theme.Material3.DayNight.NoActionBar.Bridge so that:
+        (a) Legacy XML screens using AppCompat-style attrs (colorPrimary,
+            colorAccent, textColor, etc.) keep working unchanged — the
+            Bridge parent maps these to Material3 equivalents.
+        (b) Material3 widgets (MaterialButton, MaterialTextView, etc.)
+            render correctly when used in hybrid screens.
+        (c) DynamicColors.applyToActivityIfAvailable() (called in
+            MainActivity.onCreate) can overlay wallpaper-derived colors
+            on Android 12+ (always on this app, since minSdk=35).
+      DayNight auto-switches light/dark based on system uiMode — previously
+      this was a single Light theme. Dark mode now works across all XML
+      screens for free.
+    -->
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar.Bridge">
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>

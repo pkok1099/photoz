@@ -121,7 +121,9 @@ class CryptoMigrationV2CompatibilityTest {
 
         // Encrypt as V2
         val v2Output = ByteArrayOutputStream()
-        val v2Stream = cbcEngine.createEncryptStream(v2Output, vaultSession)!!
+        // Sprint 1 / P6: pass useGcm = false explicitly — the engine's default
+        // is now GCM (version 3), but this test verifies the V2 (CBC) format.
+        val v2Stream = cbcEngine.createEncryptStream(v2Output, vaultSession, useGcm = false)!!
         v2Stream.write(plaintext)
         v2Stream.close()
 

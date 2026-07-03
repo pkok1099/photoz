@@ -86,7 +86,11 @@ class CryptoMigrationV1ToV3Test {
 
         // Re-encrypt with modern CBC
         val cbcOutput = ByteArrayOutputStream()
-        val cbcStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession)!!
+        // Sprint 1 / P6: pass useGcm = false explicitly — the engine's default
+        // is now GCM (version 3), but this test verifies the CBC (version 2)
+        // migration path. Without this flag, the assertion below (expecting
+        // 0x02) would fail.
+        val cbcStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
         cbcStream.write(decryptedBytes)
         cbcStream.close()
 
@@ -117,7 +121,8 @@ class CryptoMigrationV1ToV3Test {
 
         // Step 3: Re-encrypt with modern CBC (what the migrator writes into the new file)
         val cbcOutput = ByteArrayOutputStream()
-        val cbcEncryptStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession)!!
+        // Sprint 1 / P6: pass useGcm = false explicitly (see comment above).
+        val cbcEncryptStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
         cbcEncryptStream.write(decryptedBytes)
         cbcEncryptStream.close()
 

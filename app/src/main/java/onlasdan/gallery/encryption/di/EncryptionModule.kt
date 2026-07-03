@@ -26,6 +26,8 @@ import onlasdan.gallery.encryption.data.SessionRepositoryImpl
 import onlasdan.gallery.encryption.data.VaultProtectionRepositoryImpl
 import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
 import onlasdan.gallery.encryption.domain.SessionRepository
+import onlasdan.gallery.encryption.domain.VaultIdBackfillHook
+import onlasdan.gallery.encryption.domain.VaultIdBackfillUseCase
 import onlasdan.gallery.encryption.domain.VaultProtectionRepository
 import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
 import onlasdan.gallery.encryption.domain.crypto.CryptoEngine
@@ -61,6 +63,18 @@ interface EncryptionBindingModule {
 
     @Binds
     fun bindRecoveryPhraseStore(impl: RecoveryPhraseStoreImpl): RecoveryPhraseStore
+
+    /**
+     * Binds the vault_id backfill hook — Sprint 2 / M7 multi-vault.
+     *
+     * VaultService receives this as a nullable constructor param. The binding
+     * here is non-nullable so Hilt always provides a real instance — the
+     * nullable in VaultService's signature is just for testability.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Binds
+    fun bindVaultIdBackfillHook(impl: VaultIdBackfillUseCase): VaultIdBackfillHook
 }
 
 @Module

@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 10
+private const val DATABASE_VERSION = 11
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -120,6 +120,28 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 9,
             to = 10,
+        ),
+        // v10 → v11: Sprint 2 / M7 multi-vault.
+        //   1. Add `vault_id TEXT DEFAULT NULL` to `photo` (nullable for backfill).
+        //   2. Add `vault_id TEXT DEFAULT NULL` to `album` (nullable for backfill).
+        //   3. Add `vault_id TEXT DEFAULT NULL` to `hash_registry` (nullable for backfill).
+        //   4. DROP the unique index on `vault_protection.type` — multiple Password
+        //      rows are now allowed (one per vault).
+        //
+        // Steps 1-3 are additive (new nullable columns) — Room handles via AutoMigration.
+        // Step 4 (drop index) CANNOT be done by AutoMigration alone — it requires
+        // a manual Migration registered alongside the AutoMigration. The manual
+        // migration runs FIRST (Room executes manual migrations matching the
+        // (startVersion, endVersion) range before AutoMigrations), then the
+        // AutoMigration runs to add the new columns.
+        //
+        // Backfill (UPDATE rows WHERE vault_id IS NULL) is done lazily at first
+        // unlock — see [onlasdan.gallery.encryption.domain.VaultIdBackfillUseCase].
+        //
+        // @since v11 — Sprint 2 / M7 multi-vault
+        AutoMigration(
+            from = 10,
+            to = 11,
         ),
     ]
 )

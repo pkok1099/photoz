@@ -77,6 +77,16 @@ class PhotoRepository @Inject constructor(
     //  the export ZIP and parses it back on import. Hilt-provided (see
     //  AppModule.provideGson).
     private val gson: Gson,
+    /**
+     * Sprint 2 / M7 — Multi-vault.
+     *
+     * Used to fetch the current session's `vault_id` for filtering all
+     * Photo queries (gallery, trash, dedup, sync-pending). Throws if the
+     * vault is locked — callers must guard with `sessionRepository.get() != null`
+     * when invoking from non-UI contexts (e.g. WorkManager workers that
+     * run after the user has unlocked).
+     */
+    private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
 ) {
 
     // region DATABASE
@@ -103,14 +113,31 @@ class PhotoRepository @Inject constructor(
      */
     suspend fun findAllPhotosByImportDateDesc() = photoDao.findAllPhotosByImportDateDesc()
 
-    fun observeAll(sort: Sort) = photoDao.observeAllSorted(sort)
+    /**
+     * Sprint 2 / M7 — observe all live photos in the CURRENT vault, sorted.
+     *
+     * Throws if the vault is locked (no active session). Callers from the UI
+     * are always post-unlock, so this is safe.
+     */
+    fun observeAll(sort: Sort) = photoDao.observeAllSorted(sort, currentVaultId())
 
     /**
      * @see PhotoDao.countAll
      */
-    suspend fun countAll() = photoDao.countAll()
+    suspend fun countAll() = photoDao.countAll(currentVaultId())
 
     // endregion
+
+    /**
+     * Sprint 2 / M7 — Returns the current session's `vault_id`.
+     *
+     * Throws if the vault is locked. All multi-vault-scoped DAO queries go
+     * through this so the filter is consistent across the app.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    private fun currentVaultId(): String =
+        sessionRepository.require().vaultId
 
     // region IO
 
@@ -174,6 +201,12 @@ class PhotoRepository @Inject constructor(
             // "DCIM/Camera") from MediaStore. Falls back to filename if not available
             // (SAF URIs from file pickers may not expose RELATIVE_PATH).
             albumPath = metaData.relativePath ?: metaData.fileName,
+            // ─── Sprint 2 / M7 — Multi-vault ───────────────────────────────
+            // Tag the new photo with the current vault's vault_id so queries
+            // filter it correctly. If the vault is somehow locked at import
+            // time (shouldn't happen — import requires unlock), the photo is
+            // created with vault_id = NULL and backfilled on the next unlock.
+            vaultId = runCatching { currentVaultId() }.getOrNull(),
         )
 
         val created = safeCreatePhoto(photo, inputStream, sourceUri, sha256)
@@ -194,7 +227,7 @@ class PhotoRepository @Inject constructor(
                 // If another Photo row with the same content_hash already exists,
                 // delete the just-imported duplicate (local file + DB row) so the
                 // gallery doesn't show two entries for the same file.
-                val existing = photoDao.findByContentHash(hashHex, excludeUuid = photo.uuid)
+                val existing = photoDao.findByContentHash(hashHex, excludeUuid = photo.uuid, vaultId = currentVaultId())
                 if (existing != null) {
                     Timber.i("Dedup at import: content_hash=%s already exists as uuid=%s — deleting duplicate %s",
                         hashHex, existing.uuid, photo.uuid)
@@ -270,17 +303,21 @@ class PhotoRepository @Inject constructor(
         // the albums list with one-item entries.
         if (albumName == photo.fileName.trim()) return
 
-        val existing = albumDao.getByName(albumName)
+        // Sprint 2 / M7 — scope the lookup to the current vault.
+        val vaultId = runCatching { currentVaultId() }.getOrNull() ?: return
+        val existing = albumDao.getByName(albumName, vaultId)
         val albumUUID = existing?.uuid ?: run {
             val newAlbum = onlasdan.gallery.model.database.entity.AlbumTable(
                 name = albumName,
                 modifiedAt = System.currentTimeMillis(),
+                // Sprint 2 / M7 — tag the new album with the current vault_id
+                vaultId = vaultId,
             )
             albumDao.insert(newAlbum)
             // Re-query by name to pick up the just-inserted row's UUID. The
             // insert() return value is the rowid (Long), not the UUID column,
             // and the cross-ref table keys on the UUID string column.
-            albumDao.getByName(albumName)?.uuid ?: return
+            albumDao.getByName(albumName, vaultId)?.uuid ?: return
         }
         albumDao.link(listOf(photo.uuid), albumUUID)
         Timber.i("Auto-album: linked %s to album '%s' (%s)", photo.uuid, albumName, albumUUID)
@@ -358,7 +395,22 @@ class PhotoRepository @Inject constructor(
      */
     fun createPhotoFile(photo: Photo, source: InputStream?, digest: MessageDigest? = null): Long {
         try {
-            val encryptedDestination = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
+            // ─── Sprint 1 / P6: AES-256-GCM for new files ───────────────────────
+            // Non-video files (photos, PDFs, ZIPs, audio) encrypt with GCM (version
+            // byte 0x03) for the authentication tag protection. Video originals
+            // still encrypt with CBC (version 0x02) because the random-access
+            // streaming DataSource (AesCbcRandomAccessDataSource) relies on CBC's
+            // block-chain IV property — GCM streaming is a future enhancement
+            // (tracked in ROADMAP.md).
+            //
+            // Thumbnails and video previews are small enough that they're read in
+            // full (no streaming), so they default to GCM via the default
+            // `useGcm = true` parameter in CreateThumbnailsUseCase's calls.
+            val useGcm = !photo.type.isVideo
+            val encryptedDestination = vaultFileStorage.openEncryptedOutput(
+                fileName = photo.internalFileName,
+                useGcm = useGcm,
+            )
 
             source ?: return -1L
             encryptedDestination ?: return -1L
@@ -499,7 +551,7 @@ class PhotoRepository @Inject constructor(
      */
     suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
         val trashed = try {
-            photoDao.findAllTrash()
+            photoDao.findAllTrash(currentVaultId())
         } catch (e: Exception) {
             Timber.w(e, "emptyTrash: findAllTrash FAILED")
             return@withContext 0
@@ -525,7 +577,7 @@ class PhotoRepository @Inject constructor(
     suspend fun cleanupExpiredTrash(): Int = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - TRASH_RETENTION_MS
         val expired = try {
-            photoDao.findAllTrash().filter { it.deletedAt in 1 until cutoff }
+            photoDao.findAllTrash(currentVaultId()).filter { it.deletedAt in 1 until cutoff }
         } catch (e: Exception) {
             Timber.w(e, "cleanupExpiredTrash: findAllTrash FAILED")
             return@withContext 0
@@ -546,7 +598,7 @@ class PhotoRepository @Inject constructor(
      *
      * @since v10 recycle bin
      */
-    fun observeTrash() = photoDao.observeTrash()
+    fun observeTrash() = photoDao.observeTrash(currentVaultId())
 
     /**
      * Delete a photos bytes and thumbnail bytes on the filesystem.
@@ -934,7 +986,7 @@ class PhotoRepository @Inject constructor(
                 // Skip duplicates: same fileName + same content_hash.
                 if (!meta.contentHash.isNullOrBlank()) {
                     val existing = try {
-                        photoDao.findByContentHash(meta.contentHash, excludeUuid = meta.uuid)
+                        photoDao.findByContentHash(meta.contentHash, excludeUuid = meta.uuid, vaultId = currentVaultId())
                     } catch (e: Exception) { null }
                     if (existing != null) {
                         Timber.i("importFromZip: skip duplicate %s (hash=%s)", meta.fileName, meta.contentHash)
@@ -956,6 +1008,8 @@ class PhotoRepository @Inject constructor(
                     relativePath = meta.albumPath ?: meta.fileName,
                     albumPath = meta.albumPath,
                     contentHash = meta.contentHash,
+                    // Sprint 2 / M7 — tag with current vault_id
+                    vaultId = runCatching { currentVaultId() }.getOrNull(),
                 )
 
                 // Write the plaintext bytes through the encrypt stream.

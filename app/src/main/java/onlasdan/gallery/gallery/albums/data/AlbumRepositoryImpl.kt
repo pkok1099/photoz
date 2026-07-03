@@ -38,12 +38,27 @@ import javax.inject.Inject
 class AlbumRepositoryImpl @Inject constructor(
     private val albumDao: AlbumDao,
     private val sortRepository: SortRepository,
+    /**
+     * Sprint 2 / M7 — Multi-vault.
+     *
+     * Used to fetch the current session's `vault_id` for filtering album
+     * queries and tagging newly-created albums.
+     */
+    private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
 ) : AlbumRepository {
+
+    /**
+     * Sprint 2 / M7 — Returns the current session's `vault_id`.
+     * Throws if the vault is locked. All multi-vault-scoped DAO queries go
+     * through this so the filter is consistent across the app.
+     */
+    private fun currentVaultId(): String =
+        sessionRepository.require().vaultId
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeAllAlbumsWithPhotos(): Flow<List<Album>> {
         return sortRepository.observeSortsForAlbums().flatMapLatest { sorts ->
-            albumDao.observeAllAlbums().map { albums ->
+            albumDao.observeAllAlbums(currentVaultId()).map { albums ->
                 albums.map { album ->
                     val photos = albumDao.getPhotosForAlbum(album.uuid, sorts[album.uuid] ?: SortConfig.Album.default)
                     album.toDomain().copy(files = photos)
@@ -53,7 +68,7 @@ class AlbumRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getAlbums(): List<Album> = withContext(IO) {
-        albumDao.getAllAlbums().map { album -> album.toDomain() }
+        albumDao.getAllAlbums(currentVaultId()).map { album -> album.toDomain() }
     }
 
     override fun observeAlbumWithPhotos(uuid: String, sort: Sort): Flow<Album> =
@@ -67,7 +82,11 @@ class AlbumRepositoryImpl @Inject constructor(
     }
 
     override suspend fun createAlbum(album: Album): Result<Album> = withContext(IO) {
-        when (albumDao.insert(album.toData())) {
+        // Sprint 2 / M7 — tag the new album with the current vault's vault_id.
+        val albumWithVault = album.toData().copy(
+            vaultId = runCatching { currentVaultId() }.getOrNull(),
+        )
+        when (albumDao.insert(albumWithVault)) {
             -1L -> Result.failure(IOException())
             else -> Result.success(album.copy())
         }

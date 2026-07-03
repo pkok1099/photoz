@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 PhotoZ
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -27,25 +27,71 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.inject.Inject
 
+/**
+ * Hybrid CBC + GCM crypto engine — the single injected [CryptoEngine] for PhotoZ.
+ *
+ * Despite the historical name (kept for stability — Hilt binding references it
+ * directly in [onlasdan.gallery.encryption.di.EncryptionBindingModule]), this
+ * engine handles **both** algorithms:
+ *
+ *  - **Encrypt, `useGcm = true` (default, Sprint 1 / P6)**: writes a version-3
+ *    GCM header `[0x03][IV(12)]` and a GCM ciphertext with a trailing 16-byte
+ *    authentication tag. Used for all non-video files.
+ *  - **Encrypt, `useGcm = false`**: writes a version-2 CBC header `[0x02][IV(16)]`
+ *    and a CBC ciphertext. Used for video originals (random-access streaming
+ *    requires CBC's block-chain IV property).
+ *  - **Decrypt**: reads the version byte from the stream header and dispatches
+ *    transparently to the matching cipher (CBC for versions 1, 2; GCM for 3).
+ *
+ * The class name was kept as `CbcCryptoEngine` to avoid touching the Hilt
+ * binding graph (renaming would require updating the `@Binds` in
+ * `EncryptionBindingModule` and the existing unit tests). The class itself
+ * is now an "engine" in the abstract sense, not strictly CBC.
+ */
 class CbcCryptoEngine @Inject constructor(): CryptoEngine {
 
-    override fun createEncryptStream(output: OutputStream, session: Session): CipherOutputStream? {
+    override fun createEncryptStream(
+        output: OutputStream,
+        session: Session,
+        useGcm: Boolean,
+    ): CipherOutputStream? {
         require(session is VaultSession)
 
         try {
-            val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+            if (useGcm) {
+                // ─── Sprint 1 / P6: AES-256-GCM for new files ───────────────
+                // Format: [0x03][IV(12)][GCM ciphertext + 16-byte auth tag]
+                // The 12-byte IV is the NIST-recommended size for GCM — the JCE
+                // provider appends the 16-byte tag automatically when the
+                // CipherOutputStream is closed.
+                val iv = ByteArray(GCM_IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-            val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
+                val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+                    init(Cipher.ENCRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
+                }
+
+                output.write(byteArrayOf(EncryptionVersionByte.Three.value))
+                output.write(iv)
+
+                return CipherOutputStream(output, cipher)
+            } else {
+                // ─── Legacy CBC path (videos, backwards compat) ──────────────
+                // Format: [0x02][IV(16)][CBC ciphertext]
+                val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+
+                val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+                    init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
+                }
+
+                output.write(byteArrayOf(EncryptionVersionByte.Two.value))
+                output.write(iv)
+
+                return CipherOutputStream(output, cipher)
             }
-
-            output.write(byteArrayOf(EncryptionVersionByte.Two.value))
-            output.write(iv)
-
-            return CipherOutputStream(output, cipher)
         } catch (e: Exception) {
             Timber.e("Error creating CipherOutputStream: $e")
             return null
@@ -55,32 +101,52 @@ class CbcCryptoEngine @Inject constructor(): CryptoEngine {
     override fun createDecryptStream(input: InputStream, session: Session): CipherInputStream? {
         require(session is VaultSession)
 
-        try  {
+        try {
             val versionByte = input.read().toByte()
             val version = EncryptionVersionByte.fromValue(versionByte)
 
-            val iv = ByteArray(IV_SIZE)
-
-            when (version) {
+            return when (version) {
                 EncryptionVersionByte.One -> {
+                    // Legacy v1: [0x01][SALT(16)][IV(16)][CBC ciphertext]
                     val salt = ByteArray(SALT_SIZE)
                     input.read(salt, 0, salt.size)
+                    val iv = ByteArray(IV_SIZE)
                     input.read(iv, 0, iv.size)
+
+                    val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+                        init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
+                    }
+                    CipherInputStream(input, cipher)
                 }
                 EncryptionVersionByte.Two -> {
+                    // v2: [0x02][IV(16)][CBC ciphertext]
+                    val iv = ByteArray(IV_SIZE)
                     input.read(iv, 0, iv.size)
+
+                    val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+                        init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
+                    }
+                    CipherInputStream(input, cipher)
+                }
+                EncryptionVersionByte.Three -> {
+                    // v3 (Sprint 1 / P6): [0x03][IV(12)][GCM ciphertext + 16-byte tag]
+                    // The JCE provider reads the trailing 16-byte tag from the
+                    // stream and verifies it on doFinal() (triggered by close()
+                    // on CipherInputStream). If the tag doesn't match, the
+                    // AEADBadTagException is thrown on read/close — callers
+                    // should catch and treat as corruption.
+                    val iv = ByteArray(GCM_IV_SIZE)
+                    input.read(iv, 0, iv.size)
+
+                    val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+                        init(Cipher.DECRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
+                    }
+                    CipherInputStream(input, cipher)
                 }
             }
-
-            val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
-            }
-
-            return CipherInputStream(input, cipher)
         } catch (e: Exception) {
             Timber.e("Error creating CipherInputStream: $e")
             return null
         }
     }
-
 }

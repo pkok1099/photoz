@@ -119,15 +119,87 @@
 - `:data` — Room DB, DAOs, repositories
 - Est: ~500 lines Gradle config + package moves
 
-### M7. Cryptographic Plausible Deniability (Decoy Vault Done Right)
-**Reason**: 2026 research shows decoy vaults with config flags CAN be detected by forensic tools (Cellebrite finds flag → proves concealment). Solution: pattern-based key derivation — every password derives a different key, no flag, no master index.
+### M7. Cryptographic Plausible Deniability (Multi-Vault, No Flag)
+**Reason**: 2026 research shows decoy vaults with config flags CAN be detected by forensic tools (Cellebrite finds flag → proves concealment). Solution: pattern-based key derivation — every password derives a different vault. No flag, no master index, no concept of "real" vs "decoy" in the data model.
 
-**Implementation**:
-- Password → PBKDF2 → KEK → try decrypt VaultProtection(Password) → if match, unlock vault
-- No `is_decoy` flag in DB. Decoy password derives different KEK → decrypts different blob → different vault
-- Storage padding: decoy vault has plausible size (not too small)
-- No "wrong password" error — decoy password still "succeeds" (opens empty/fake vault)
-- Est: ~500 lines
+**Design principles (final, post-design-review)**:
+1. **Unlimited vaults** — every distinct password derives a distinct vault. App only knows "the vault that unlocked". No real/decoy distinction anywhere.
+2. **No flags** — no `is_real`, no `is_decoy`, no `vault_role`. Vault identity is derived cryptographically from VMK, not stored as metadata.
+3. **No stock photos in decoys** — same stock photos across installs = fingerprint. Decoy starts empty; user fills it themselves if they want.
+4. **No separate registry files** — `registry.real` / `registry.decoy` would expose the existence of multiple vaults to remote forensic access.
+5. **First vault syncs; additional vaults local-only** — implicit signal: vault WITH recovery phrase = syncs. Vaults without recovery phrase = local-only. No flag, no UI exposure.
+6. **Recovery phrase: first vault only** — additional vaults are password-only, local-only. Decoy is sacrificial by design — forgetting the decoy password = losing decoy data, which is acceptable for the use case.
+
+**Schema change (DB v10 → v11)**:
+- `Photo` table: add `vault_id TEXT NULL` column (nullable for backfill during migration)
+- `Album` table: add `vault_id TEXT NULL` column
+- `HashRegistryEntry` table: add `vault_id TEXT NULL` column
+- `VaultProtection` table: NO schema change — already allows multiple Password-type rows (no unique constraint on type)
+
+**Vault ID computation**:
+```
+vault_id = HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()
+```
+- Computed once per unlock from VMK in memory
+- Stored on `VaultSession` (in-memory only — never persisted)
+- Used to filter all DB queries (WHERE vault_id = ?)
+- Migration backfill: on first unlock after upgrade, compute vault_id from current VMK, UPDATE all rows WHERE vault_id IS NULL
+
+**Unlock flow (multi-vault aware)**:
+1. User enters password
+2. Iterate ALL `VaultProtection` rows of type `Password`:
+   - For each: derive KEK from password + row's salt
+   - Try to unwrap the row's wrapped VMK (GCM decrypt — auth tag verifies the password is correct for THIS row)
+   - First success = active vault (return its VMK + compute vault_id)
+3. If no row succeeds → "wrong password" error (same UX as today)
+- Performance: N rows × PBKDF2(100k iterations) ≈ 100N ms. N=5 → 500ms (acceptable). N=10 → 1s (annoying but rare).
+
+**Create new vault flow** (Settings → "Create new vault"):
+1. User enters new password (must NOT unlock any existing vault — verify by running unlock flow above)
+2. Generate fresh VMK (`KeyGen.generateVaultMasterKey()`)
+3. Derive KEK from new password + fresh salt
+4. Wrap VMK with KEK → new `VaultProtection(Password)` row
+5. Compute new vault_id from new VMK
+6. Reset session, unlock with new password → active vault is the new (empty) one
+7. NO recovery phrase created → no sync (vault is local-only by design)
+8. User can now import photos into the new vault; they're tagged with the new vault_id
+
+**Switch vault flow**:
+- "Switch vault" in Settings → user enters different password → existing unlock flow runs → different vault unlocks
+- Or simply: lock app from Settings → unlock screen → enter different password
+- No explicit "switch" UI needed — password IS the vault selector
+
+**Sync model**:
+- `HashRegistry.flushRegistryIfBatchComplete()`: only serialize entries WHERE `vault_id = <syncing_vault_id>`
+- `RepoManager.downloadRegistry()`: upsert entries with the syncing vault's vault_id
+- `SyncRestorer.restoreAllOriginals()`: only restore photos WHERE `vault_id = <syncing_vault_id>`
+- "Syncing vault" = the vault that has a `VaultProtection(RecoveryPhrase)` row. Implicit signal — no flag stored.
+
+**PhotoRepository changes**:
+- All `PhotoDao` queries: add `WHERE vault_id = ?` filter using current session's vault_id
+- `safeImportPhoto()`: set `photo.vault_id = session.vaultId` before insert
+- Album auto-create: only link to albums in the same vault
+- Delete: only affect photos in current vault (per-album delete via symlink, see M10)
+
+**Migration v10 → v11**:
+- AutoMigration adds nullable `vault_id` column to 3 tables
+- Backfill NOT done in migration (no VMK available in migration context)
+- Backfill done lazily in `VaultService.unlock()` post-success: if any row has `vault_id IS NULL`, compute from current VMK and UPDATE all
+- One-time cost on first unlock after upgrade — transparent to user
+
+**What this design AVOIDS (forensic-resistance)**:
+- ❌ No `is_real` / `is_decoy` flag anywhere (DB, registry, file headers)
+- ❌ No `vault_count` or `vault_index` metadata
+- ❌ No separate registry files per vault (single `registry.json.crypt`)
+- ❌ No stock photo fingerprints
+- ❌ No "wrong password" differentiation (decoy password succeeds like any other)
+
+**Future (M7 v2, not in this sprint)**:
+- Per-entry encrypted registry (1 file, multiple VMKs) — would allow all vaults to sync without exposing vault count
+- Per-vault recovery phrase (UX burden, deferred)
+- Storage padding (decoy vaults padded to plausible size) — currently decoys start empty, which IS suspicious to a careful forensic analyst who knows the app; padding is a future hardening
+
+**Estimate**: ~800 lines + DB migration v10→v11
 
 ### M8. BFU-Safe Key Handling (Re-key on Backgrounding)
 **Reason**: 2026 trend — BFU (Before First Unlock) state is dramatically harder for forensics. VMK should never persist in CE storage when app is backgrounded.
@@ -148,14 +220,77 @@
 - Two-pane layout for tablet (gallery + detail side by side)
 - Est: ~400 lines
 
-### M10. Embedded Photo Picker (Android 16+)
-**Reason**: Android 16 Embedded Photo Picker — no `READ_MEDIA_IMAGES` permission needed. App only receives temporary URI, cannot access full gallery. Major privacy win.
+### M10. Embedded Photo Picker (Android 16+) + Path Maker + Symlink Album
+**Reason**: Android 16 Embedded Photo Picker — no `READ_MEDIA_IMAGES` permission needed. App only receives temporary URI, cannot access full gallery. Major privacy win. **However**, Photo Picker URI does NOT expose `RELATIVE_PATH` (by design — privacy), so the auto-album-from-folder logic in `PhotoRepository.ensureAlbumForPhoto` won't fire for picker imports. We need an explicit Path Maker UX to compensate.
 
-**Implementation**:
-- Replace `ActivityResultContracts.OpenDocument` with `PickVisualMedia` (Photo Picker API)
-- Remove `READ_MEDIA_IMAGES` permission from manifest (if no longer needed)
-- User experience: faster, more private (app cannot "see" user's gallery)
-- Est: ~100 lines
+**Implementation — 3 parts**:
+
+**Part 1: Dual import entry point (mandatory)**
+- Keep existing MediaStore import ("Import from Gallery") — auto-album from `RELATIVE_PATH` works as-is
+- Add "Import via Photo Picker" entry — uses `PickVisualMedia` (no `READ_MEDIA_IMAGES` permission)
+- User chooses import source at gallery overflow menu
+- Note: rclone upload path (`remote:photoz-backup/originals/<uuid>.crypt`) is UNCHANGED — picker only changes the **source URI reader**, not the encrypted-file path
+
+**Part 2: Path Maker dialog (for picker + MediaStore override)**
+- Triggered after photo(s) selected (both picker AND gallery — picker is mandatory, gallery is optional override)
+- Default suggestion: hard-coded `"Picker"` album for picker imports; `RELATIVE_PATH` for MediaStore (current behavior preserved)
+- UI:
+  - Show N selected photo count
+  - Album dropdown (existing albums) + "Create new album" option
+  - "Save to album: [____]" — one-shot for all N photos in this batch
+  - Warning banner if picker is used: "Photo Picker tidak menyimpan path asli. Pilih album tujuan."
+- On confirm: write `albumPath` to Photo row + call `ensureAlbumForPhoto()` (existing logic reuses)
+
+**Part 3: Symlink album (canonical UUID scheme)**
+**Problem solved**: User imports `A/B/photo.jpg` then later imports same hash from `C/D/photo.jpg`. Currently dedup deletes the second import entirely — photo only appears in album "A/B". With symlink, the photo can appear in BOTH albums without duplicating the encrypted file.
+
+**Schema change (DB v10 → v11)**:
+- Add `canonical_uuid TEXT NULL` column to `Photo` table
+- `canonical_uuid = NULL` → this Photo OWNS the encrypted file (its UUID is the file's UUID)
+- `canonical_uuid = <other-uuid>` → this Photo is a SYMLINK; the encrypted file lives under the canonical UUID
+- File lookup helper: `internalFileName(photo.canonicalUuid ?: photo.uuid)` — applies to original, thumbnail, video preview
+
+**Dedup at import time (modified behavior)**:
+- When `findByContentHash(hashHex)` matches an existing Photo:
+  - Do NOT delete the new Photo row
+  - Set `canonical_uuid = existingPhoto.uuid` on the new Photo
+  - Do NOT write new encrypted file (reuse canonical's)
+  - Do NOT add new registry entry (canonical's entry covers it)
+  - But DO call `ensureAlbumForPhoto(newPhoto)` so the symlink lands in the user's chosen album
+
+**Delete semantics (per-album, refcounted)**:
+- Delete Photo row X:
+  - If X has `canonical_uuid = NULL` (it's a canonical):
+    - Query: any other Photo with `canonical_uuid = X.uuid`?
+    - If YES: promote the oldest such Photo to canonical — set its `canonical_uuid = NULL`, copy X's `contentHash` to it (already same), keep X's encrypted file (rename `<X.uuid>.crypt` → `<promoted.uuid>.crypt`? NO — too expensive). Instead: leave file as `<X.uuid>.crypt` but update `promoted.canonical_uuid = NULL` and `promoted.uuid = X.uuid` (swap UUIDs in DB row) — OR keep `promoted.uuid` and update file lookup to use `promoted.canonicalUuid ?: promoted.uuid` where `canonicalUuid` now points to X's uuid (the file's actual UUID).
+    - **Simpler approach**: file lookup is always `canonicalUuid ?: uuid`. When deleting canonical X, find oldest symlink S, set `S.canonical_uuid = NULL` AND keep file as `<X.uuid>.crypt` — but then S.uuid != file UUID. Need a `file_uuid` column OR keep `canonical_uuid` set to X's uuid on S (so S still references X's file) and just mark X as deleted. **Decision: file UUID is decoupled from Photo UUID**. Add `file_uuid` column (defaults to own uuid for new rows). Lookup: `internalFileName(photo.fileUuid)`.
+  - If NO symlinks: delete file physically (local + remote), mark registry entry `deleted=true`
+- Delete Photo row X where `canonical_uuid != NULL` (it's a symlink):
+  - Just delete the DB row. File untouched (canonical still references it).
+
+**Registry extension (backwards-compatible)**:
+- Current `HashRegistryEntry.albumPath: String?` (single album per hash)
+- Add `additionalAlbums: List<String>?` (null for old entries, populated when symlinks exist)
+- On symlink creation: append new albumPath to canonical's `additionalAlbums` in registry
+- On symlink deletion: remove from `additionalAlbums`
+- On cross-device restore: read `albumPath` (canonical) AND `additionalAlbums` (symlinks) — recreate all Photo rows + albums
+
+**Thumbnail handling**:
+- Each Photo row has its own `uuid`, so `internalThumbnailFileName(photo.uuid)` differs per symlink
+- Thumbnail lookup: `internalThumbnailFileName(photo.fileUuid)` (same as original)
+- Decision: thumbnails are content-addressed too — same hash = same thumbnail bytes. Reuse canonical's thumbnail file via `fileUuid`.
+
+**Path Maker improvement roadmap (Sprint 4+)**:
+- v1 (Sprint 3): one-shot "Save all N to album X" — fast, simple, covers 90% use case
+- v2 (Sprint 4): per-batch with override — default album for batch, long-press individual photo to assign to different album
+- v3 (Sprint 6): smart suggestion — based on EXIF date / location, suggest album ("Photos from June 2026", "Photos in Jakarta")
+- v4 (Sprint 9): drag-and-drop album assignment in gallery multi-select mode
+
+**Estimate**:
+- Part 1 (dual entry): ~50 lines
+- Part 2 (Path Maker dialog v1): ~200 lines
+- Part 3 (Symlink schema + dedup modify + delete refcount + registry extension): ~600 lines + DB migration v10→v11
+- Total: ~850 lines + migration
 
 ---
 

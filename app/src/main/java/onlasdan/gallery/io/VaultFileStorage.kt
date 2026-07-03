@@ -39,10 +39,24 @@ class VaultFileStorage @Inject constructor(
         null
     }
 
-    fun openEncryptedOutput(fileName: String): CipherOutputStream? = try {
+    fun openEncryptedOutput(
+        fileName: String,
+        /**
+         * When `true` (default), the file is encrypted with AES-256-GCM
+         * (version byte 0x03) — the modern, authenticated format.
+         *
+         * When `false`, the file is encrypted with AES-256-CBC (version byte
+         * 0x02) — required for files that will be streamed via
+         * [onlasdan.gallery.transcoding.data.AesCbcRandomAccessDataSource]
+         * (currently only video originals).
+         *
+         * @since Sprint 1 / P6 — GCM upgrade
+         */
+        useGcm: Boolean = true,
+    ): CipherOutputStream? = try {
         val session = sessionRepository.require()
         val output = app.openFileOutput(fileName, Context.MODE_PRIVATE)
-        cryptoEngine.createEncryptStream(output, session)
+        cryptoEngine.createEncryptStream(output, session, useGcm = useGcm)
     } catch (e: Exception) {
         Timber.e(e)
         null

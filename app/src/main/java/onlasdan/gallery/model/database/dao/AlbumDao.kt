@@ -38,6 +38,7 @@ import org.intellij.lang.annotations.Language
 @Language("roomsql")
 const val SELECT_ALL_ALBUMS_QUERY = """
     SELECT * FROM album
+    WHERE vault_id = :vaultId OR vault_id IS NULL
     ORDER BY modified_at DESC
 """
 
@@ -55,10 +56,10 @@ abstract class AlbumDao {
 
 
     @Query(SELECT_ALL_ALBUMS_QUERY)
-    abstract suspend fun getAllAlbums(): List<AlbumTable>
+    abstract suspend fun getAllAlbums(vaultId: String): List<AlbumTable>
 
     @Query(SELECT_ALL_ALBUMS_QUERY)
-    abstract fun observeAllAlbums(): Flow<List<AlbumTable>>
+    abstract fun observeAllAlbums(vaultId: String): Flow<List<AlbumTable>>
 
 
     @Query("SELECT * FROM album WHERE album_uuid = :uuid")
@@ -68,16 +69,20 @@ abstract class AlbumDao {
     abstract suspend fun getAlbum(uuid: String): AlbumTable?
 
     /**
-     * Find an album by its (case-sensitive) name. Used by the auto-album
-     * feature (Bug 5 fix) to look up an existing album whose name matches
-     * the imported photo's `albumPath` before deciding whether to create a
-     * new one — without this, repeated imports from the same folder would
-     * each spawn a new album instead of accumulating into one.
+     * Find an album by its (case-sensitive) name, scoped to the current vault.
+     * Used by the auto-album feature (Bug 5 fix) to look up an existing album
+     * whose name matches the imported photo's `albumPath` before deciding
+     * whether to create a new one — without this, repeated imports from the
+     * same folder would each spawn a new album instead of accumulating into
+     * one.
+     *
+     * Sprint 2 / M7: scoped to the current vault — different vaults may have
+     * albums with the same name without colliding.
      *
      * @since Bug 5 fix — auto-create albums from folder path
      */
-    @Query("SELECT * FROM album WHERE name = :name LIMIT 1")
-    abstract suspend fun getByName(name: String): AlbumTable?
+    @Query("SELECT * FROM album WHERE name = :name AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1")
+    abstract suspend fun getByName(name: String, vaultId: String): AlbumTable?
 
 
     @Query("SELECT photo_uuid, linked_at FROM album_photos_cross_ref WHERE photo_uuid in (:photoUUIDs)")
@@ -175,4 +180,16 @@ abstract class AlbumDao {
 
         return SimpleSQLiteQuery(sql, arrayOf(album))
     }
+
+    // ─── Sprint 2 / M7 — Multi-vault queries ──────────────────────────────
+
+    /**
+     * Backfill `vault_id` for all album rows that have it NULL.
+     *
+     * Called once on first unlock after the v10→v11 migration.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("UPDATE album SET vault_id = :vaultId WHERE vault_id IS NULL")
+    suspend fun backfillVaultId(vaultId: String): Int
 }

@@ -22,7 +22,33 @@ import androidx.room.PrimaryKey
 import onlasdan.gallery.encryption.domain.models.VaultProtectionParams
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 
-@Entity(tableName = "vault_protection", indices = [Index("type", unique = true)])
+/**
+ * Vault protection storage row — wraps a VMK with a password / biometric /
+ * recovery-phrase-derived KEK.
+ *
+ * ## Sprint 2 / M7 — Multi-Vault
+ *
+ * Previously this table had `indices = [Index("type", unique = true)]`,
+ * enforcing a single row per protection type. That constraint is now
+ * REMOVED for `Password` to allow unlimited password-protected vaults:
+ *
+ *   vault_protection row 1: type=Password, wrappedVMK=A  (vault A's VMK)
+ *   vault_protection row 2: type=Password, wrappedVMK=B  (vault B's VMK)
+ *   vault_protection row 3: type=RecoveryPhrase, wrappedVMK=A  (only first vault)
+ *
+ * Each distinct password derives a distinct KEK; the KEK successfully
+ * unwraps exactly ONE row's wrappedVMK — that row's VMK identifies which
+ * vault the user unlocked. The app does not store "real" vs "decoy" —
+ * every vault is treated identically.
+ *
+ * `Biometric` and `RecoveryPhrase` types remain single-row in practice
+ * (only the first vault has them), but the unique index is dropped for
+ * uniformity — the DAO-level queries enforce single-row semantics where
+ * needed.
+ *
+ * @since v11 — Sprint 2 / M7 multi-vault
+ */
+@Entity(tableName = "vault_protection")
 data class VaultProtectionTable(
     @PrimaryKey
     val id: String,

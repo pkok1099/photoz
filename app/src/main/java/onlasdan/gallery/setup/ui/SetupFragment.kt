@@ -38,6 +38,8 @@ import onlasdan.gallery.BR
 import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.R
 import onlasdan.gallery.databinding.FragmentSetupBinding
+import onlasdan.gallery.encryption.domain.PasswordStrength
+import onlasdan.gallery.encryption.domain.StrongPasswordPolicy
 import onlasdan.gallery.gallery.ui.navigation.NavigateToGallery
 import onlasdan.gallery.other.extensions.empty
 import onlasdan.gallery.other.extensions.finishOnBackWhileStarted
@@ -70,28 +72,41 @@ class SetupFragment : BindableFragment<FragmentSetupBinding>(R.layout.fragment_s
         finishOnBackWhileStarted()
 
         if (BuildConfig.DEBUG) {
-            viewModel.password = "abc123"
-            viewModel.confirmPassword = "abc123"
+            // ─── Sprint 1 / P7: DEBUG auto-fill must pass the new strong policy ──
+            // The old "abc123" (6 chars, 2 classes) is rejected by the new
+            // StrongPasswordPolicy (too short + only 2 classes). Use a 12-char
+            // passphrase with all 4 classes so debug builds still auto-fill
+            // and the developer can tap "Create" without retyping.
+            // DO NOT ship this in release — it's gated by BuildConfig.DEBUG.
+            viewModel.password = "Debug123!pass"
+            viewModel.confirmPassword = "Debug123!pass"
         }
 
         viewModel.addOnPropertyChange<String>(BR.password) {
+            // ─── Sprint 1 / P7: Strong Password Enforcement ────────────────────
+            // The strength indicator now reflects [StrongPasswordPolicy.strength],
+            // which considers length, character class diversity, PIN detection,
+            // and common-password blacklist — not just length buckets as before.
+            //
+            // The "Create" button is gated by [StrongPasswordPolicy.isAcceptable]
+            // via [viewModel.validatePassword] (called from [enableOrDisableSetup]).
+            // The user sees the strength meter change AND a contextual reason
+            // ("PINs not allowed" / "Minimum 8 characters" / "Common password")
+            // when their input falls below the bar.
             if (it.isNotEmpty()) {
-                val value = when (it.length) {
-                    1, 2, 3, 4, 5 -> {
-                        binding.setupPasswordStrengthValue.setTextColor(requireContext().getColor(R.color.darkRed))
-                        getString(R.string.setup_password_strength_weak)
-                    }
-                    6, 7, 8, 9, 10 -> {
-                        binding.setupPasswordStrengthValue.setTextColor(requireContext().getColor(R.color.darkYellow))
-                        getString(R.string.setup_password_strength_moderate)
-                    }
-                    else -> {
-                        binding.setupPasswordStrengthValue.setTextColor(requireContext().getColor(R.color.darkGreen))
-                        getString(R.string.setup_password_strength_strong)
-                    }
+                val strength = StrongPasswordPolicy.strength(it)
+                val (labelRes, colorRes) = when (strength) {
+                    PasswordStrength.EMPTY -> R.string.setup_password_strength_weak to R.color.darkRed
+                    PasswordStrength.TOO_SHORT -> R.string.setup_password_too_short to R.color.darkRed
+                    PasswordStrength.PIN_REJECTED -> R.string.setup_password_pin_rejected to R.color.darkRed
+                    PasswordStrength.COMMON -> R.string.setup_password_common to R.color.darkRed
+                    PasswordStrength.WEAK -> R.string.setup_password_strength_weak to R.color.darkRed
+                    PasswordStrength.MODERATE -> R.string.setup_password_strength_moderate to R.color.darkYellow
+                    PasswordStrength.STRONG -> R.string.setup_password_strength_strong to R.color.darkGreen
                 }
+                binding.setupPasswordStrengthValue.setTextColor(requireContext().getColor(colorRes))
+                binding.setupPasswordStrengthValue.text = getString(labelRes)
                 binding.setupPasswordStrengthLayout.show()
-                binding.setupPasswordStrengthValue.text = value
             } else {
                 binding.setupPasswordStrengthLayout.hide()
             }

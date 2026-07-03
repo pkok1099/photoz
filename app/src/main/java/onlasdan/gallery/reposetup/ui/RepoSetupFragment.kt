@@ -34,7 +34,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -227,6 +229,13 @@ private fun RepoSetupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    // ─── Sprint 1 / P5: Edge-to-Edge ─────────────────────────────
+                    // Apply status bar inset so the centered content (title, buttons,
+                    // text fields) isn't drawn under the status bar. The navigation
+                    // bar inset is handled by the activity's bottom Compose menu (not
+                    // shown on this screen — RepoSetup blocks navigation until done).
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,

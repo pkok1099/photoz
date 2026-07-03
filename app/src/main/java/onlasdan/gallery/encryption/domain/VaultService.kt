@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 PhotoZ
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -24,11 +24,12 @@ import onlasdan.gallery.encryption.domain.models.UnlockRequest
 import onlasdan.gallery.encryption.domain.models.VaultProtection
 import onlasdan.gallery.encryption.domain.models.VaultProtectionParams
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
+import onlasdan.gallery.encryption.domain.models.VaultSession
 import onlasdan.gallery.encryption.domain.crypto.KeyGen
 import onlasdan.gallery.encryption.domain.crypto.IV_SIZE
 import onlasdan.gallery.encryption.domain.crypto.SALT_SIZE
-import onlasdan.gallery.encryption.domain.models.VaultSession
 import onlasdan.gallery.settings.data.Config
+import timber.log.Timber
 import java.security.SecureRandom
 import java.util.UUID
 import javax.crypto.Cipher
@@ -46,32 +47,75 @@ class VaultService @Inject constructor(
     private val recoveryPhraseProtectionHandler: VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase>,
     private val keyGen: KeyGen,
     private val config: Config,
+    /**
+     * Sprint 2 / M7 — vault_id backfill hook.
+     *
+     * When non-null, [unlock] calls it after a successful unlock so the
+     * backfill use-case can UPDATE all rows with `vault_id IS NULL` to
+     * the freshly-computed vault_id. The hook is injected (rather than
+     * VaultService depending on PhotoDao directly) to keep the encryption
+     * module decoupled from the data module.
+     *
+     * Injected via [onlasdan.gallery.encryption.di.EncryptionModule.provideVaultIdBackfillHook].
+     */
+    private val vaultIdBackfillHook: VaultIdBackfillHook? = null,
 ) {
     suspend fun unlock(request: UnlockRequest): Result<VaultSession> {
         val type = request.protectionType
-        var protection = vaultProtectionRepository.getProtection(type)
 
         return runCatching {
-            val vmk = when (request) {
+            val vmk: javax.crypto.SecretKey = when (request) {
                 is UnlockRequest.Password -> {
-                    if (protection == null) {
-                        protection = passwordProtectionHandler.migrate(request)
-                        vaultProtectionRepository.createProtection(protection)
-                        passwordProtectionHandler.onMigrationPersisted()
-                    }
+                    // ─── Sprint 2 / M7: Multi-vault unlock ───────────────────────
+                    // Iterate ALL VaultProtection(Password) rows. For each, derive
+                    // KEK from the user's password + row's salt, try to unwrap the
+                    // row's wrappedVMK. The GCM/CBC auth verification naturally
+                    // fails for wrong rows — only the correct row's VMK emerges.
+                    //
+                    // First success = active vault. The app has no concept of
+                    // "real" vs "decoy" — every successful unlock is treated
+                    // identically.
+                    //
+                    // Performance: N rows × PBKDF2(100k iters) ≈ 100N ms.
+                    // N=1 (most common) → 100ms. N=5 → 500ms. N=10 → 1s.
+                    // Cellebrite-style brute force is unaffected — they'd have
+                    // to try every password against every row.
+                    val passwordProtections = vaultProtectionRepository.getAllProtections(
+                        VaultProtectionType.Password
+                    )
 
-                    passwordProtectionHandler.unlock(request, protection)
+                    if (passwordProtections.isEmpty()) {
+                        // ─── Legacy migration path (1.x.x / 2.x.x users) ───────
+                        // No Password rows in the new format — try migrating from
+                        // legacyPasswordHash. This is the original code path,
+                        // preserved for users upgrading from a pre-M7 build.
+                        if (passwordProtectionHandler.canMigrate()) {
+                            val migrated = passwordProtectionHandler.migrate(request)
+                            vaultProtectionRepository.createProtection(migrated)
+                            passwordProtectionHandler.onMigrationPersisted()
+                            passwordProtectionHandler.unlock(request, migrated)
+                        } else {
+                            // No password protection AND nothing to migrate —
+                            // vault isn't set up. Throw to surface as wrong-password.
+                            throw IllegalStateException("No password protection found and no legacy migration available")
+                        }
+                    } else {
+                        unlockMultiVaultPassword(request, passwordProtections)
+                    }
                 }
                 is UnlockRequest.Biometric -> {
+                    val protection = vaultProtectionRepository.getProtection(type)
                     if (protection == null) {
-                        protection = biometricProtectionHandler.migrate(request)
-                        vaultProtectionRepository.createProtection(protection)
+                        val migrated = biometricProtectionHandler.migrate(request)
+                        vaultProtectionRepository.createProtection(migrated)
                         biometricProtectionHandler.onMigrationPersisted()
+                        biometricProtectionHandler.unlock(request, migrated)
+                    } else {
+                        biometricProtectionHandler.unlock(request, protection)
                     }
-
-                    biometricProtectionHandler.unlock(request, protection)
                 }
                 is UnlockRequest.RecoveryPhrase -> {
+                    val protection = vaultProtectionRepository.getProtection(type)
                     requireNotNull(protection)
                     recoveryPhraseProtectionHandler.unlock(request, protection)
                 }
@@ -79,10 +123,47 @@ class VaultService @Inject constructor(
 
             config.lastUsedUnlockMethod = request.protectionType
 
-            VaultSession(
-                vmk = vmk,
-            )
+            val session = VaultSession(vmk = vmk)
+
+            // ─── Sprint 2 / M7: vault_id backfill (one-time migration) ─────────
+            // On first unlock after v10→v11 upgrade, all Photo/Album/HashRegistryEntry
+            // rows have vault_id = NULL. Backfill them with the current session's
+            // vault_id. Subsequent unlocks find no NULL rows and skip this cheaply.
+            //
+            // Non-fatal: if backfill fails (DB busy, etc.), the gallery just shows
+            // the user's photos as usual — the vault_id filter falls back to
+            // "match current vault_id OR match NULL", which catches the un-backfilled
+            // rows. The next successful unlock will retry the backfill.
+            try {
+                vaultIdBackfillHook?.backfillVaultId(session.vaultId)
+            } catch (e: Exception) {
+                Timber.w(e, "vault_id backfill failed (non-fatal) — will retry next unlock")
+            }
+
+            session
         }
+    }
+
+    /**
+     * Try unwrapping each [passwordProtections] row with the user's password.
+     * Returns the first VMK that successfully unwraps (auth tag verifies).
+     * Throws if no row unwraps successfully (= wrong password).
+     */
+    private suspend fun unlockMultiVaultPassword(
+        request: UnlockRequest.Password,
+        passwordProtections: List<VaultProtection>,
+    ): javax.crypto.SecretKey {
+        for (protection in passwordProtections) {
+            try {
+                return passwordProtectionHandler.unlock(request, protection)
+            } catch (e: Exception) {
+                // Auth tag verification failed (wrong password for THIS row) —
+                // try the next row. The exception type varies (AEADBadTagException
+                // for GCM, BadPaddingException for CBC) so we catch broadly.
+                Timber.d("unlockMultiVaultPassword: row ${protection.id} rejected password — trying next")
+            }
+        }
+        throw IllegalStateException("Password did not unlock any vault")
     }
 
     suspend fun create(request: CreateRequest) {
@@ -93,6 +174,39 @@ class VaultService @Inject constructor(
         }
 
         vaultProtectionRepository.createProtection(protection)
+    }
+
+    /**
+     * Create a new vault protected by [password].
+     *
+     * Sprint 2 / M7 — Multi-vault entry point. Called from Settings →
+     * "Create new vault". Generates a fresh VMK (distinct from the current
+     * session's VMK), wraps it with the new password, persists a NEW
+     * VaultProtection(Password) row. The new vault is empty and starts
+     * local-only (no recovery phrase, no sync).
+     *
+     * Caller is responsible for:
+     *  1. Verifying [password] doesn't already unlock an existing vault
+     *     (call [unlock] first and expect it to fail).
+     *  2. Resetting the current session and re-unlocking with [password]
+     *     to activate the new vault.
+     *
+     * @return the [VaultSession] for the newly-created vault (caller may
+     *   immediately activate it via [SessionRepository.set]).
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    suspend fun createNewVault(password: String): VaultSession {
+        // create() generates a fresh VMK internally and wraps it with the password.
+        // The new VaultProtection row is persisted via the repository.
+        create(CreateRequest.Password(password))
+
+        // Unlock the new vault to get its VMK + computed vault_id.
+        // The unlock path will iterate all Password rows; the new row's wrappedVMK
+        // is the only one that successfully unwraps with this password (assuming
+        // the password is unique — caller MUST verify this before calling).
+        val result = unlock(UnlockRequest.Password(password))
+        return result.getOrThrow()
     }
 
     /**
@@ -186,4 +300,21 @@ class VaultService @Inject constructor(
 
         return protectionsAreSetup || canMigrate
     }
+}
+
+/**
+ * Hook called by [VaultService.unlock] after a successful unlock to backfill
+ * any rows with `vault_id IS NULL` (created before v11 migration).
+ *
+ * Implemented by [onlasdan.gallery.encryption.domain.VaultIdBackfillUseCase]
+ * in the data module (which has access to PhotoDao / AlbumDao / HashRegistryDao).
+ *
+ * @since v11 — Sprint 2 / M7 multi-vault
+ */
+fun interface VaultIdBackfillHook {
+    /**
+     * UPDATE all rows with `vault_id IS NULL` to set `vault_id = [vaultId]`.
+     * Called from the encryption module after a successful unlock.
+     */
+    suspend fun backfillVaultId(vaultId: String)
 }

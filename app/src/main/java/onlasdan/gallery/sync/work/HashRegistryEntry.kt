@@ -81,4 +81,22 @@ data class HashRegistryEntry(
 
     @ColumnInfo(name = "deleted")
     val deleted: Boolean = false,
+
+    /**
+     * Cryptographic vault identifier — Sprint 2 / M7 (Multi-Vault).
+     *
+     * Same semantics as [onlasdan.gallery.model.database.entity.Photo.vaultId].
+     * Registry entries are scoped per-vault: when [HashRegistry.flushRegistryIfBatchComplete]
+     * serializes the local cache to `registry.json.crypt` for upload, it filters
+     * `WHERE vault_id = <syncing_vault_id>` so only the syncing vault's entries
+     * go to the remote. Additional (decoy) vaults' entries stay in the local
+     * cache only — they never reach the remote, so forensic inspection of the
+     * cloud storage cannot reveal the existence of additional vaults.
+     *
+     * Nullable for v10→v11 migration backfill (see Photo.vaultId doc).
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @ColumnInfo(name = "vault_id", defaultValue = "NULL")
+    val vaultId: String? = null,
 )

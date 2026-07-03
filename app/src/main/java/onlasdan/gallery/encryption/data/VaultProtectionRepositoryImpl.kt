@@ -31,12 +31,24 @@ class VaultProtectionRepositoryImpl @Inject constructor(
         dao.getVaultProtection(type)?.toDomain()
     }
 
+    override suspend fun getAllProtections(type: VaultProtectionType): List<VaultProtection> = withContext(IO) {
+        dao.getAllByType(type).map { it.toDomain() }
+    }
+
+    override suspend fun countProtections(type: VaultProtectionType): Int = withContext(IO) {
+        dao.countByType(type)
+    }
+
     override suspend fun createProtection(protection: VaultProtection) = withContext(IO) {
         dao.insert(protection.toData())
     }
 
     override suspend fun removeProtection(type: VaultProtectionType) = withContext(IO) {
         dao.delete(type)
+    }
+
+    override suspend fun removeProtectionById(id: String) = withContext(IO) {
+        dao.deleteById(id)
     }
 
     override suspend fun updateProtection(protection: VaultProtection) = withContext(IO) {

@@ -24,6 +24,7 @@ import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.encryption.domain.models.LegacySession
 import onlasdan.gallery.encryption.domain.models.VaultSession
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -157,6 +158,84 @@ class CryptoEnginesTest {
         assertNull("Unrecognized version byte must return null, not throw", result)
     }
 
+    /**
+     * Sprint 1 / P6 — verify the new GCM encrypt path produces a version-3 header.
+     *
+     * Format: [0x03][IV(12)][GCM ciphertext + 16-byte tag]
+     */
+    @Test
+    fun `GCM encrypt produces version 3 header with 12-byte IV`() {
+        val vmk = keyGen.generateVaultMasterKey()
+        val session = VaultSession(vmk)
+        val plaintext = "Sprint 1 P6 GCM test".toByteArray()
+
+        val out = ByteArrayOutputStream()
+        cbcEngine.createEncryptStream(out, session, useGcm = true)!!.use { it.write(plaintext) }
+        val ciphertext = out.toByteArray()
+
+        assertEquals("Version byte must be 0x03 for GCM", 0x03.toByte(), ciphertext[0])
+        // Header is 1 + 12 = 13 bytes. Body is ciphertext + 16-byte tag.
+        // For a 20-byte plaintext, GCM ciphertext is 20 bytes + 16 tag = 36 bytes.
+        // Total: 13 + 36 = 49 bytes.
+        assertEquals("Total length must be 1 (ver) + 12 (IV) + plaintext + 16 (tag)",
+            (1 + 12 + plaintext.size + 16).toLong(), ciphertext.size.toLong())
+    }
+
+    /**
+     * Sprint 1 / P6 — verify GCM encrypt → decrypt round-trip recovers the original plaintext.
+     */
+    @Test
+    fun `GCM encrypt then decrypt round-trip recovers plaintext`() {
+        val vmk = keyGen.generateVaultMasterKey()
+        val session = VaultSession(vmk)
+        val plaintext = "Round-trip GCM test 12345".toByteArray()
+
+        val out = ByteArrayOutputStream()
+        cbcEngine.createEncryptStream(out, session, useGcm = true)!!.use { it.write(plaintext) }
+        val ciphertext = out.toByteArray()
+
+        val decrypted = cbcEngine.createDecryptStream(
+            ByteArrayInputStream(ciphertext), session
+        )!!.readBytes()
+
+        assertArrayEquals(plaintext, decrypted)
+    }
+
+    /**
+     * Sprint 1 / P6 — verify that a tampered GCM ciphertext (bit-flipped) is detected
+     * by the authentication tag and throws on read or close. This is the whole point
+     * of GCM over CBC: bit-flipping attacks that CBC silently accepts are caught here.
+     *
+     * GCM's authentication tag is verified when the Cipher is finalized — for
+     * CipherInputStream, that happens on the last `read()` OR on `close()`.
+     * We call both (read + close) to maximize the chance of catching the
+     * AEADBadTagException regardless of where the JCE provider chooses to
+     * verify the tag.
+     */
+    @Test(expected = Exception::class)
+    fun `GCM decrypt detects tampered ciphertext via authentication tag`() {
+        val vmk = keyGen.generateVaultMasterKey()
+        val session = VaultSession(vmk)
+        val plaintext = "Tamper detection test".toByteArray()
+
+        val out = ByteArrayOutputStream()
+        cbcEngine.createEncryptStream(out, session, useGcm = true)!!.use { it.write(plaintext) }
+        val ciphertext = out.toByteArray().copyOf()
+
+        // Flip a byte in the ciphertext body (after the 13-byte header).
+        // The authentication tag will fail to verify on decrypt.
+        ciphertext[ciphertext.size - 5] = (ciphertext[ciphertext.size - 5].toInt() xor 0x01).toByte()
+
+        // Read all bytes AND close — the AEADBadTagException is thrown on
+        // either the final read() (when the cipher finalizes) or on close().
+        val stream = cbcEngine.createDecryptStream(ByteArrayInputStream(ciphertext), session)!!
+        try {
+            stream.readBytes()
+        } finally {
+            stream.close()
+        }
+    }
+
     // --- helpers ---
 
     private fun gcmEncrypt(plaintext: ByteArray, session: LegacySession): ByteArray {
@@ -170,7 +249,11 @@ class CryptoEnginesTest {
 
     private fun cbcEncrypt(plaintext: ByteArray, session: VaultSession): ByteArray {
         val out = ByteArrayOutputStream()
-        cbcEngine.createEncryptStream(out, session)!!.use { it.write(plaintext) }
+        // Sprint 1 / P6: pass useGcm = false explicitly — this helper is named
+        // cbcEncrypt and is used by tests that verify CBC-specific behavior
+        // (version byte 0x02, block-chain IV property for streaming). The
+        // engine's default is now GCM (version 3).
+        cbcEngine.createEncryptStream(out, session, useGcm = false)!!.use { it.write(plaintext) }
         return out.toByteArray()
     }
 

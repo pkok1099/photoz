@@ -349,8 +349,19 @@ class HashRegistry @Inject constructor(
             return@withContext
         }
 
-        val entries = dao.getAll()
-        diag("uploadToRemote: serializing ${entries.size} entries")
+        // Sprint 2 / M7 — only serialize the syncing vault's entries.
+        // Additional (decoy) vaults' entries stay local-only and never reach
+        // the remote, so forensic inspection of cloud storage cannot reveal
+        // the existence of additional vaults.
+        val vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull()
+        val entries = if (vaultId != null) {
+            dao.getAllForVaultIncludingDeleted(vaultId)
+        } else {
+            // Fallback for the brief window between unlock and session.set
+            // (shouldn't happen for the upload worker — it requires a session).
+            dao.getAllIncludingDeleted()
+        }
+        diag("uploadToRemote: serializing ${entries.size} entries for vault_id=$vaultId")
 
         val json = serializeRegistry(entries)
         val plaintext = json.toByteArray(Charsets.UTF_8)
@@ -1098,6 +1109,10 @@ class HashRegistry @Inject constructor(
                         thumbnailOffset = thumbOffset,
                         thumbnailLength = thumbLength,
                         deleted = deleted,
+                        // Sprint 2 / M7 — tag downloaded entries with the
+                        // syncing vault's vault_id (the registry on the remote
+                        // only ever contains the syncing vault's entries).
+                        vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
                     )
                 )
             } catch (e: Exception) {

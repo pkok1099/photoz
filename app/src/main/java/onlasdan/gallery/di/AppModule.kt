@@ -68,6 +68,17 @@ object AppModule {
         } else {
             this
         }
+
+        // ─── Sprint 2 / M7 — v10 → v11 migration ──────────────────────────
+        // No manual migration needed: Room's AutoMigration handles BOTH:
+        //   1. The additive column additions (vault_id on photo / album /
+        //      hash_registry) — auto-generated ALTER TABLE ADD COLUMN.
+        //   2. The DROP INDEX for the removed unique index on
+        //      vault_protection.type — Room auto-generates DROP INDEX when
+        //      an @Index is removed from an entity.
+        // The vault_id columns are nullable with default NULL, so existing
+        // rows survive the migration with NULL vault_id and are backfilled
+        // lazily on the first unlock (see VaultIdBackfillUseCase).
     }.build()
 
     @Provides

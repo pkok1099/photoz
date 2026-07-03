@@ -119,6 +119,17 @@ class RepoManager @Inject constructor(
     // called from [RepoSetupViewModel.submitPassword] AFTER `sessionRepository.set`
     // (not from [restoreThumbnailsAfterLogin], which runs BEFORE unlock).
     private val hashRegistry: HashRegistry,
+    /**
+     * Sprint 2 / M7 — Multi-vault.
+     *
+     * Used to fetch the current session's `vault_id` when creating Photo rows
+     * during restore. Restored photos are tagged with the syncing vault's
+     * vault_id so they appear in the correct gallery view.
+     *
+     * The session is set in [RepoSetupViewModel.submitPassword] BEFORE any
+     * restore path runs, so this is safe to access.
+     */
+    private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
 ) {
 
     // ─── DIAGNOSTIC LOGGING (RcloneDiag pattern, same as RcloneController) ────
@@ -678,6 +689,8 @@ class RepoManager @Inject constructor(
                 uuid = uuid,
                 syncState = SyncState.UPLOADED,
                 relativePath = null,
+                // Sprint 2 / M7 — tag with the syncing vault's vault_id
+                vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
             )
             try {
                 photoDao.insert(photo)
@@ -1035,6 +1048,8 @@ class RepoManager @Inject constructor(
             relativePath = entry.albumPath,
             contentHash = entry.contentHash,
             albumPath = entry.albumPath,
+            // Sprint 2 / M7 — tag with the syncing vault's vault_id
+            vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
         )
         try {
             photoDao.insert(photo)
@@ -1073,14 +1088,18 @@ class RepoManager @Inject constructor(
         if (albumName.isBlank()) return
         if (albumName == photo.fileName.trim()) return
 
-        val existing = albumDao.getByName(albumName)
+        // Sprint 2 / M7 — scope the lookup to the syncing vault's vault_id.
+        val vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull() ?: return
+        val existing = albumDao.getByName(albumName, vaultId)
         val albumUUID = existing?.uuid ?: run {
             val newAlbum = AlbumTable(
                 name = albumName,
                 modifiedAt = System.currentTimeMillis(),
+                // Sprint 2 / M7 — tag with syncing vault's vault_id
+                vaultId = vaultId,
             )
             albumDao.insert(newAlbum)
-            albumDao.getByName(albumName)?.uuid ?: return
+            albumDao.getByName(albumName, vaultId)?.uuid ?: return
         }
         albumDao.link(listOf(photo.uuid), albumUUID)
         diag("ensureAlbumForRestoredPhoto: linked ${photo.uuid} to album '$albumName' ($albumUUID)")

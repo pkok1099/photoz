@@ -32,6 +32,7 @@ class LegacyGcmCryptoEngine @Inject constructor(): CryptoEngine {
     override fun createEncryptStream(
         output: OutputStream,
         session: Session,
+        useGcm: Boolean,
     ): CipherOutputStream? {
         require(session is LegacySession)
 

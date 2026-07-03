@@ -139,6 +139,30 @@ data class Photo(
      */
     @ColumnInfo(name = COL_DELETED_AT, defaultValue = "0")
     var deletedAt: Long = 0L,
+
+    /**
+     * Cryptographic vault identifier — Sprint 2 / M7 (Multi-Vault).
+     *
+     * Computed as `HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()`
+     * at unlock time (see [onlasdan.gallery.encryption.domain.models.VaultSession.vaultId]).
+     * Stored on every Photo / Album / HashRegistryEntry row so queries can
+     * filter `WHERE vault_id = ?` using the current session's vault_id.
+     *
+     * Nullable for backwards compatibility: rows created before the v11
+     * migration have `vault_id = NULL`. On the first unlock after upgrade,
+     * [onlasdan.gallery.encryption.domain.VaultService.unlock] backfills
+     * all NULL rows with the vault_id computed from the unlocking VMK
+     * (transparent one-time migration cost).
+     *
+     * NO `is_real` / `is_decoy` flag exists — every vault is treated
+     * identically. The vault_id is the ONLY discriminator, and it is
+     * derived cryptographically from the VMK, not stored as metadata.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @ColumnInfo(name = COL_VAULT_ID, defaultValue = "NULL")
+    @Expose
+    var vaultId: String? = null,
 ) {
 
     val internalFileName: String
@@ -172,5 +196,8 @@ data class Photo(
 
         /** Soft-delete timestamp column. 0 = live, non-zero = in trash. @since v10 recycle bin */
         const val COL_DELETED_AT = "deleted_at"
+
+        /** Vault identifier column. @since v11 Sprint 2 / M7 multi-vault */
+        const val COL_VAULT_ID = "vault_id"
     }
 }

@@ -173,6 +173,26 @@ class AesCbcRandomAccessDataSource(
             EncryptionVersionByte.Two -> {
                 headerBuf.get(fileIv)
             }
+            EncryptionVersionByte.Three -> {
+                // ─── Sprint 1 / P6: GCM videos are NOT supported here ─────────
+                // Video originals are still encrypted with CBC (version 2) by
+                // PhotoRepository.createPhotoFile (which passes useGcm=false
+                // for PhotoType.isVideo). If we ever see a version-3 file in
+                // this DataSource, either:
+                //   (a) a future change started encrypting videos with GCM
+                //       without updating this DataSource to handle GCM's
+                //       CTR-mode random access — a bug; OR
+                //   (b) the file is not actually a video but somehow ended up
+                //       being opened by ExoPlayer — also a bug.
+                // Either way, fail loudly rather than silently corrupting
+                // playback by treating GCM ciphertext as CBC.
+                throw IOException(
+                    "AesCbcRandomAccessDataSource: refusing to stream version-3 (GCM) " +
+                        "file — GCM video streaming is not yet supported. " +
+                        "Video originals should be encrypted with CBC (version 2). " +
+                        "Check PhotoRepository.createPhotoFile's useGcm flag."
+                )
+            }
         }
 
         // --- Resolve key  ---

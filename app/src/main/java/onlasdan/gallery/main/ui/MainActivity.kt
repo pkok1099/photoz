@@ -28,6 +28,7 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavOptions
 import androidx.navigation.findNavController
+import com.google.android.material.color.DynamicColors
 import dagger.hilt.android.AndroidEntryPoint
 import onlasdan.gallery.R
 import onlasdan.gallery.databinding.ActivityMainBinding
@@ -59,6 +60,16 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // ─── Sprint 1 / P4: Dynamic Color (Material You) ─────────────────────
+        // Overlays wallpaper-derived colors onto the AppTheme (which now extends
+        // Theme.Material3.DayNight.NoActionBar.Bridge). On Android 12+ (always,
+        // since minSdk=35) this pulls primary/secondary/tertiary colors from the
+        // user's wallpaper, giving PhotoZ a personalized look matching the system.
+        // Devices without dynamic color support (e.g. emulator with default
+        // wallpaper) fall back to the colorPrimary/colorAccent defined in colors.xml.
+        // Safe to call unconditionally — the API is a no-op below API 31.
+        DynamicColors.applyToActivityIfAvailable(this)
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {

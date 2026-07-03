@@ -103,4 +103,39 @@ interface HashRegistryDao {
      */
     @Query("DELETE FROM hash_registry WHERE content_hash = :hash")
     suspend fun deleteByHash(hash: String)
+
+    // ─── Sprint 2 / M7 — Multi-vault queries ──────────────────────────────
+
+    /**
+     * Backfill `vault_id` for all registry entries that have it NULL.
+     *
+     * Called once on first unlock after the v10→v11 migration.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("UPDATE hash_registry SET vault_id = :vaultId WHERE vault_id IS NULL")
+    suspend fun backfillVaultId(vaultId: String): Int
+
+    /**
+     * Returns ALL non-deleted registry entries for a specific vault.
+     *
+     * Used by [HashRegistry.flushRegistryIfBatchComplete] to serialize only
+     * the syncing vault's entries to `registry.json.crypt` for upload.
+     * Additional (decoy) vaults' entries stay local-only and never reach
+     * the remote, so forensic inspection of cloud storage cannot reveal
+     * the existence of additional vaults.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("SELECT * FROM hash_registry WHERE deleted = 0 AND vault_id = :vaultId")
+    suspend fun getAllForVault(vaultId: String): List<HashRegistryEntry>
+
+    /**
+     * Returns ALL registry entries (including deleted tombstones) for a
+     * specific vault. Used by the registry GC to walk tombstones.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("SELECT * FROM hash_registry WHERE vault_id = :vaultId")
+    suspend fun getAllForVaultIncludingDeleted(vaultId: String): List<HashRegistryEntry>
 }

@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 PhotoZ
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package onlasdan.gallery.encryption.domain
 
 import androidx.lifecycle.LiveData
-import onlasdan.gallery.encryption.domain.PasswordUtils.PASSWORD_MIN_LENGTH
 
 /**
  * Utils to validate passwords.
@@ -28,10 +27,13 @@ import onlasdan.gallery.encryption.domain.PasswordUtils.PASSWORD_MIN_LENGTH
 object PasswordUtils {
 
     /**
-     * Validates a password string using [PASSWORD_MIN_LENGTH].
+     * Validates a password string.
+     *
+     * @since Sprint 1 / P7 — delegates to [StrongPasswordPolicy.isAcceptable]
+     *   which enforces: min 8 chars, not a PIN, character class diversity,
+     *   not in the common-password list.
      */
-    fun validatePassword(password: String) = password.isNotEmpty()
-            && password.length >= PASSWORD_MIN_LENGTH
+    fun validatePassword(password: String) = StrongPasswordPolicy.isAcceptable(password)
 
     /**
      * Indicates if two password equal.
@@ -52,6 +54,4 @@ object PasswordUtils {
 
     fun validatePasswords(password: LiveData<String>, confirmPassword: LiveData<String>) =
         validatePasswords(password.value!!, confirmPassword.value!!)
-
-    private const val PASSWORD_MIN_LENGTH = 6
 }

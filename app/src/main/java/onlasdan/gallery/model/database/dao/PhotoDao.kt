@@ -78,20 +78,35 @@ interface PhotoDao {
     @Query("SELECT * FROM photo ORDER BY importedAt DESC")
     suspend fun findAllPhotosByImportDateDesc(): List<Photo>
 
-    @Query("SELECT * FROM photo WHERE deleted_at = 0 ORDER BY importedAt DESC")
-    fun observeAll(): Flow<List<Photo>>
+    /**
+     * Sprint 2 / M7 — Observe live photos for the CURRENT vault.
+     *
+     * Filters `WHERE (vault_id = :vaultId OR vault_id IS NULL)`:
+     *  - `vault_id = :vaultId` matches the current vault's photos.
+     *  - `vault_id IS NULL` matches rows that haven't been backfilled yet
+     *    (one-time state right after the v10→v11 migration, before the
+     *    first unlock's backfill pass). Including them ensures the gallery
+     *    shows the user's existing photos immediately, rather than appearing
+     *    empty until the backfill runs.
+     *
+     * After the backfill (which runs synchronously on the first unlock),
+     * no rows have `vault_id IS NULL`, so the OR clause is a no-op.
+     */
+    @Query("SELECT * FROM photo WHERE deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL) ORDER BY importedAt DESC")
+    fun observeAll(vaultId: String): Flow<List<Photo>>
 
     /**
-     * Count all photos.
+     * Count all live photos in the current vault.
      */
-    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0")
-    suspend fun countAll(): Int
+    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL)")
+    suspend fun countAll(vaultId: String): Int
 
     // Sorted
 
-    fun observeAllSorted(sort: Sort): Flow<List<Photo>> {
+    fun observeAllSorted(sort: Sort, vaultId: String): Flow<List<Photo>> {
         val query = SimpleSQLiteQuery(
-            "SELECT * FROM photo WHERE deleted_at = 0 ORDER BY ${sort.field.columnName} ${sort.order.sql}"
+            "SELECT * FROM photo WHERE deleted_at = 0 AND (vault_id = ? OR vault_id IS NULL) ORDER BY ${sort.field.columnName} ${sort.order.sql}",
+            arrayOf(vaultId)
         )
 
         return observeAll(query)
@@ -110,9 +125,10 @@ interface PhotoDao {
 
     @Query(
         "SELECT * FROM photo WHERE syncState IN " +
-            "(:pending, :failed) ORDER BY importedAt ASC"
+            "(:pending, :failed) AND (vault_id = :vaultId OR vault_id IS NULL) ORDER BY importedAt ASC"
     )
     suspend fun findPhotosInSyncState(
+        vaultId: String,
         pending: SyncState = SyncState.UPLOAD_PENDING,
         failed: SyncState = SyncState.UPLOAD_FAILED,
     ): List<Photo>
@@ -132,12 +148,16 @@ interface PhotoDao {
     /**
      * Find a Photo with the given content_hash, excluding a specific UUID.
      * Used for dedup at import time — if another photo with the same content
-     * already exists, the just-imported duplicate is deleted.
+     * already exists, the just-imported duplicate is deleted (or, in M7
+     * multi-vault, symlinked).
+     *
+     * Sprint 2 / M7: scoped to the current vault — a decoy vault's photo with
+     * the same hash as a real vault's photo is NOT considered a duplicate.
      *
      * @since Bug 1 fix — dedup at import time
      */
-    @Query("SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid LIMIT 1")
-    suspend fun findByContentHash(hash: String, excludeUuid: String): Photo?
+    @Query("SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1")
+    suspend fun findByContentHash(hash: String, excludeUuid: String, vaultId: String): Photo?
 
     /**
      * Backfill a Photo row's placeholder metadata (filename, size, type,
@@ -194,23 +214,29 @@ interface PhotoDao {
     // region RECYCLE BIN — @since v10 soft delete
 
     /**
-     * Observe all photos currently in the trash (deleted_at > 0), ordered by
-     * most-recently-deleted first. Drives the Trash screen's list.
+     * Observe all photos currently in the trash (deleted_at > 0) for the
+     * current vault, ordered by most-recently-deleted first. Drives the
+     * Trash screen's list.
+     *
+     * Sprint 2 / M7: scoped to the current vault via `vault_id` filter.
      *
      * @since v10 recycle bin
      */
-    @Query("SELECT * FROM photo WHERE deleted_at > 0 ORDER BY deleted_at DESC")
-    fun observeTrash(): Flow<List<Photo>>
+    @Query("SELECT * FROM photo WHERE deleted_at > 0 AND (vault_id = :vaultId OR vault_id IS NULL) ORDER BY deleted_at DESC")
+    fun observeTrash(vaultId: String): Flow<List<Photo>>
 
     /**
-     * Snapshot of all photos in the trash. Used by the auto-cleanup pass
+     * Snapshot of all photos in the trash for the current vault. Used by the
+     * auto-cleanup pass
      * [onlasdan.gallery.model.repositories.PhotoRepository.cleanupExpiredTrash]
      * to find rows whose 30-day retention has expired.
      *
+     * Sprint 2 / M7: scoped to the current vault.
+     *
      * @since v10 recycle bin
      */
-    @Query("SELECT * FROM photo WHERE deleted_at > 0")
-    suspend fun findAllTrash(): List<Photo>
+    @Query("SELECT * FROM photo WHERE deleted_at > 0 AND (vault_id = :vaultId OR vault_id IS NULL)")
+    suspend fun findAllTrash(vaultId: String): List<Photo>
 
     /**
      * Soft-delete a single photo: stamp `deleted_at` with the given epoch-ms
@@ -259,4 +285,34 @@ interface PhotoDao {
     suspend fun countTrash(): Int
 
     // endregion
+
+    // ─── Sprint 2 / M7 — Multi-vault queries ──────────────────────────────
+
+    /**
+     * Backfill `vault_id` for all rows that have it NULL.
+     *
+     * Called once on first unlock after the v10→v11 migration. Subsequent
+     * calls are no-ops (no NULL rows remain).
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("UPDATE photo SET vault_id = :vaultId WHERE vault_id IS NULL")
+    suspend fun backfillVaultId(vaultId: String): Int
+
+    /**
+     * Count live photos in a specific vault. Used by storage analytics and
+     * the gallery's empty-state check.
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0 AND vault_id = :vaultId")
+    suspend fun countLiveByVault(vaultId: String): Int
+
+    /**
+     * Count ALL photos in a specific vault (live + trash).
+     *
+     * @since v11 — Sprint 2 / M7 multi-vault
+     */
+    @Query("SELECT COUNT(*) FROM photo WHERE vault_id = :vaultId")
+    suspend fun countByVault(vaultId: String): Int
 }

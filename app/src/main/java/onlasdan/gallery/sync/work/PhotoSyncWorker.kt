@@ -741,6 +741,12 @@ class PhotoSyncWorker @AssistedInject constructor(
                     thumbnailOffset = 0L,
                     thumbnailLength = thumbPath.takeIf { it.exists() }?.length() ?: 0L,
                     deleted = false,
+                    // Sprint 2 / M7 — tag with the current vault's vault_id.
+                    // The upload worker only runs for the syncing vault (the
+                    // one with a recovery phrase), so this entry will be
+                    // included in the next registry flush. Additional vaults
+                    // never trigger uploads (no recovery phrase → no sync).
+                    vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
                 )
                 hashRegistry.addEntry(entry)
                 diag("performUpload: added registry entry contentHash=$contentHash uuid=$uuid")

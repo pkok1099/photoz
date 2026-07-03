@@ -19,3 +19,12 @@ package onlasdan.gallery.encryption.domain.crypto
 const val IV_SIZE = 16
 const val SALT_SIZE = 16
 const val BLOCK_SIZE = 16
+
+// ─── Sprint 1 / P6: AES-256-GCM for new files ──────────────────────────────
+// GCM uses a 12-byte IV (96-bit) — the NIST-recommended size for best performance.
+// The authentication tag is 16 bytes (128-bit) — the maximum strength.
+// GCM's tag is appended automatically by the JCE provider when the Cipher is
+// finalized (close on CipherOutputStream). On decrypt, the JCE provider reads
+// the trailing 16 bytes as the tag and verifies it on doFinal().
+const val GCM_IV_SIZE = 12
+const val GCM_TAG_SIZE = 16
