@@ -25,6 +25,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,19 +33,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,13 +60,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -282,57 +290,164 @@ private fun NeedsRemoteChoiceContent(
     remotes: List<RcloneConfigManager.RemoteInfo>,
     viewModel: RepoSetupViewModel,
 ) {
+    // Single-page remote picker (Item 3 redesign).
+    //
+    // Layout (top-to-bottom):
+    //   1. Title — "Pick which remote to use for backup"
+    //   2. "Check All" button — probes every remote in the imported rclone.conf
+    //      via [RepoSetupViewModel.checkAllRemotes] and annotates each row with
+    //      "Repo found" / "No repo" / "Checking…" / "Error". Optional — the
+    //      user can pick a remote without checking first.
+    //   3. Scrollable list of remotes — each row is a radio button + name +
+    //      type + status badge. Tapping a row selects that remote.
+    //   4. Inline password field — visible below the list. The user can type
+    //      their vault password preemptively; if the chosen remote turns out
+    //      to have an existing repo with PASSWORD_PLUS_PHRASE escrow, the
+    //      password is auto-submitted via [RepoSetupViewModel.submitPassword]
+    //      so the user goes straight to the gallery without re-typing it on
+    //      the dedicated NeedsPasswordEntry screen. For other cases (no repo,
+    //      PHRASE_ONLY escrow, no escrow), the password is ignored and the
+    //      existing state-machine flow takes over.
+    //   5. "Connect" button — triggers the existing
+    //      `chooseRemote(selected)` flow which transitions through Checking
+    //      → Connecting → RestoringBackup → (NeedsPasswordEntry |
+    //      NeedsPhraseEntry | NoEscrowAvailable | Completed | Unlocked).
+
+    val remoteStatuses by viewModel.remoteStatuses.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<String?>(null) }
-    var expanded by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
 
-    val selectedRemote = remotes.find { it.name == selected }
-    val displayText = selectedRemote?.let {
-        it.name + (it.type?.let { " ($it)" } ?: "")
-    } ?: ""
+    val statusesByRemote: Map<String, RemoteStatus> = remoteStatuses.associateBy { it.remote.name }
 
-    Text(
-        text = stringResource(R.string.repo_setup_pick_remote),
-        style = MaterialTheme.typography.titleLarge,
-    )
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = Modifier.padding(top = 16.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        OutlinedTextField(
-            value = displayText,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Remote") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
+        Text(
+            text = stringResource(R.string.repo_setup_pick_remote),
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
+
+        OutlinedButton(
+            onClick = { viewModel.checkAllRemotes() },
+            modifier = Modifier.padding(top = 16.dp),
         ) {
-            remotes.forEach { remote ->
-                val typeSuffix = remote.type?.let { " ($it)" } ?: ""
-                DropdownMenuItem(
-                    text = { Text(remote.name + typeSuffix) },
-                    onClick = {
-                        selected = remote.name
-                        expanded = false
-                    },
-                )
+            Text(stringResource(R.string.repo_setup_check_all))
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Scrollable remote list. Capped at 320.dp so the password field +
+        // Connect button remain visible even when there are many remotes.
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp),
+            ) {
+                items(remotes) { remote ->
+                    val status = statusesByRemote[remote.name]?.status
+                    RemoteRow(
+                        remote = remote,
+                        status = status,
+                        selected = selected == remote.name,
+                        onSelect = { selected = remote.name },
+                    )
+                }
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text(stringResource(R.string.repo_setup_password_label)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done,
+            ),
+            supportingText = {
+                Text(stringResource(R.string.repo_setup_password_hint))
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        Button(
+            onClick = {
+                val picked = selected ?: return@Button
+                viewModel.chooseRemote(picked, pendingPassword = password)
+            },
+            enabled = selected != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.repo_setup_connect))
+        }
+    }
+}
+
+@Composable
+private fun RemoteRow(
+    remote: RcloneConfigManager.RemoteInfo,
+    status: RemoteCheckStatus?,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val typeSuffix = remote.type?.let { " ($it)" } ?: ""
+    val (statusText, statusColor) = when (status) {
+        RemoteCheckStatus.REPO_FOUND ->
+            stringResource(R.string.repo_setup_remote_status_repo_found) to
+                MaterialTheme.colorScheme.primary
+        RemoteCheckStatus.NO_REPO ->
+            stringResource(R.string.repo_setup_remote_status_no_repo) to
+                MaterialTheme.colorScheme.tertiary
+        RemoteCheckStatus.CHECKING ->
+            stringResource(R.string.repo_setup_remote_status_checking) to
+                MaterialTheme.colorScheme.secondary
+        RemoteCheckStatus.ERROR ->
+            stringResource(R.string.repo_setup_remote_status_error) to
+                MaterialTheme.colorScheme.error
+        RemoteCheckStatus.UNCHECKED, null ->
+            stringResource(R.string.repo_setup_remote_status_unchecked) to
+                MaterialTheme.colorScheme.outline
     }
 
-    Button(
-        onClick = { selected?.let { viewModel.chooseRemote(it) } },
-        enabled = selected != null,
-        modifier = Modifier.padding(top = 24.dp),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable { onSelect() }
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(stringResource(R.string.common_ok))
+        RadioButton(
+            selected = selected,
+            onClick = onSelect,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = remote.name + typeSuffix,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = statusText,
+                fontSize = 13.sp,
+                color = statusColor,
+            )
+        }
     }
 }
 

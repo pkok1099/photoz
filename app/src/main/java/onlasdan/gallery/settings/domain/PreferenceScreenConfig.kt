@@ -30,6 +30,8 @@ import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN
 import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD
+import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY_DEFAULT
 import onlasdan.gallery.settings.domain.models.LockTimeout
@@ -143,21 +145,20 @@ val PreferenceScreenConfigContent = buildList {
                     summary = R.string.settings_sync_wifi_only_summary,
                     default = SYNC_WIFI_ONLY_DEFAULT,
                 ),
-                // ─── Item 2 fix: removed `syncDeleteAfterUpload` toggle ───────
-                // Deletion of the local `.crypt` after a verified upload is
-                // now UNCONDITIONAL (see PhotoSyncWorker.Item 1 fix). The
-                // toggle was redundant — keeping it would have misled users
-                // into thinking they could opt out. The Config key/value is
-                // retained in [Config] for backwards-compat with existing
-                // prefs files but is no longer surfaced in the UI.
-                //
-                // Preference.Switch(
-                //     key = SYNC_DELETE_AFTER_UPLOAD,
-                //     icon = R.drawable.ic_delete,
-                //     title = R.string.settings_sync_delete_after_upload_title,
-                //     summary = R.string.settings_sync_delete_after_upload_summary,
-                //     default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
-                // ),
+                // ─── Item 2: restored `syncDeleteAfterUpload` toggle ─────────
+                // When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] deletes
+                // the local `.crypt` original after a verified upload. When OFF,
+                // the local copy is kept for offline access and the user can
+                // reclaim space later via the "Clean cached originals" row
+                // below. Default OFF to preserve existing behaviour and avoid
+                // surprising data loss.
+                Preference.Switch(
+                    key = SYNC_DELETE_AFTER_UPLOAD,
+                    icon = R.drawable.ic_delete,
+                    title = R.string.settings_sync_delete_after_upload_title,
+                    summary = R.string.settings_sync_delete_after_upload_summary,
+                    default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
+                ),
                 // @since registry-gc feature — manual cleanup of soft-deleted
                 // entries' remote originals + thumbnail pack compaction. The
                 // row's onClick callback (registered in SettingsCallbacks)
@@ -168,6 +169,19 @@ val PreferenceScreenConfigContent = buildList {
                     icon = R.drawable.ic_refresh,
                     title = R.string.settings_cleanup_backup_title,
                     summary = R.string.settings_cleanup_backup_summary,
+                ),
+                // @since Item 2 — manual one-shot cleanup of cached local
+                // originals. Deletes the `.crypt` file for every photo whose
+                // syncState == UPLOADED. SAFETY: never touches LOCAL_ONLY or
+                // UPLOAD_PENDING photos (those have not yet been verified on
+                // the remote). Thumbnails are always kept so the gallery
+                // continues to show the photo. The original is re-downloaded
+                // on demand via [SyncRestorer.ensureLocalOriginal].
+                Preference.Simple(
+                    key = SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS,
+                    icon = R.drawable.ic_delete,
+                    title = R.string.settings_clean_cached_originals_title,
+                    summary = R.string.settings_clean_cached_originals_summary,
                 ),
             ),
         )

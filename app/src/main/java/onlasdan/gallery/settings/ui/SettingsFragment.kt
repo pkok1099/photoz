@@ -78,5 +78,11 @@ class SettingsFragment : Fragment() {
          *  thumbnail packs with >30% tombstoned entries, then deletes the remote
          *  originals for tombstoned entries. @since registry-gc feature */
         const val KEY_ACTION_CLEANUP_BACKUP = "action_cleanup_backup"
+
+        /** Action key for the "Clean cached originals" row. Deletes the local
+         *  `.crypt` files for photos that are already safely uploaded (state ==
+         *  UPLOADED). Never touches LOCAL_ONLY or UPLOAD_PENDING files.
+         *  @since Item 2 — manual one-shot cleanup of cached originals */
+        const val KEY_ACTION_CLEAN_CACHED_ORIGINALS = "action_clean_cached_originals"
     }
 }

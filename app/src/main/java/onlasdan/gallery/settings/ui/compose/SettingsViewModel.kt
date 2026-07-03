@@ -18,6 +18,7 @@ package onlasdan.gallery.settings.ui.compose
 
 import android.app.Application
 import android.net.Uri
+import android.text.format.Formatter
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,9 +38,11 @@ import onlasdan.gallery.settings.domain.Preference
 import onlasdan.gallery.settings.domain.PreferenceScreenConfig
 import onlasdan.gallery.settings.domain.PreferenceScreenConfigContent
 import onlasdan.gallery.settings.domain.models.SettingsEnum
+import onlasdan.gallery.sync.domain.SyncState
 import onlasdan.gallery.sync.rclone.RcloneConfigManager
 import onlasdan.gallery.sync.work.HashRegistry
 import onlasdan.gallery.uicomponnets.Dialogs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +50,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -281,6 +286,78 @@ class SettingsViewModel @Inject constructor(
                     ),
                 )
             }
+        }
+    }
+
+    /**
+     * One-shot cleanup of cached local encrypted originals.
+     *
+     * Iterates every photo whose `syncState == UPLOADED` and deletes the
+     * corresponding local `.crypt` original file (located at
+     * `filesDir/<internalFileName>`). Thumbnails (`.crypt.tn`) are NEVER
+     * touched — the gallery continues to display them. The original is
+     * re-downloaded on demand via [onlasdan.gallery.sync.rclone.SyncRestorer.ensureLocalOriginal]
+     * when the user opens a photo.
+     *
+     * SAFETY: photos whose `syncState` is NOT `UPLOADED` (i.e. `LOCAL_ONLY`
+     * or `UPLOAD_PENDING`) are skipped entirely — their local original is the
+     * only copy and must never be deleted here. This guards against accidental
+     * data loss if the user taps this button before a sync has completed.
+     *
+     * Triggered from Settings → "Clean cached originals". Surfaces the result
+     * via toast — started / success (with count + human-readable bytes freed)
+     * / failed / nothing to do.
+     *
+     * @return the (count, bytesFreed) pair, also surfaced via toast. The
+     * return value is primarily for testability — the UI does not consume it.
+     *
+     * @since Item 2 — manual one-shot cleanup of cached originals
+     */
+    suspend fun cleanCachedOriginals(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        Dialogs.showLongToast(app, app.getString(R.string.settings_clean_cached_originals_toast_started))
+        try {
+            val photos = photoRepository.findAllPhotosByImportDateDesc()
+            var count = 0
+            var bytesFreed = 0L
+            for (photo in photos) {
+                // SAFETY: never delete the local original for photos that
+                // haven't been verified on the remote. `UPLOADED` is the only
+                // safe state — the encrypted original has been verified at the
+                // remote by content-hash check and can be re-downloaded on
+                // demand.
+                if (photo.syncState != SyncState.UPLOADED) continue
+                val origFile = File(app.filesDir, photo.internalFileName)
+                if (origFile.exists()) {
+                    bytesFreed += origFile.length()
+                    if (origFile.delete()) {
+                        count++
+                    }
+                }
+            }
+            when {
+                count == 0 -> Dialogs.showLongToast(
+                    app,
+                    app.getString(R.string.settings_clean_cached_originals_toast_nothing),
+                )
+                else -> Dialogs.showLongToast(
+                    app,
+                    app.getString(
+                        R.string.settings_clean_cached_originals_toast_success,
+                        count,
+                        Formatter.formatFileSize(app, bytesFreed),
+                    ),
+                )
+            }
+            count to bytesFreed
+        } catch (e: Exception) {
+            Dialogs.showLongToast(
+                app,
+                app.getString(
+                    R.string.settings_clean_cached_originals_toast_failed,
+                    e.message ?: e.javaClass.simpleName,
+                ),
+            )
+            0 to 0L
         }
     }
 }

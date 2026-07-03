@@ -455,7 +455,7 @@ class HashRegistry @Inject constructor(
     }
 
     /**
-     * Pack pending thumbnails into ≤50 MB packs, upload each pack, and update
+     * Pack pending thumbnails into ≤5 MB packs, upload each pack, and update
      * the matching registry entries with `thumbnailPack` / `thumbnailOffset`
      * / `thumbnailLength`.
      *
@@ -547,7 +547,7 @@ class HashRegistry @Inject constructor(
         }
         diag("flushPendingThumbnailPacks: ${pendingThumbs.size} readable thumbnails to pack")
 
-        // Walk the pending thumbnails in order, packing them into ≤50 MB packs.
+        // Walk the pending thumbnails in order, packing them into ≤5 MB packs.
         // Each pack gets a sequential name (pack-0001, pack-0002, ...). The
         // pack counter starts at the current max pack number on the remote + 1,
         // so we don't overwrite existing packs. For simplicity (and because
@@ -555,7 +555,7 @@ class HashRegistry @Inject constructor(
         // derived from the current time — collisions are astronomically
         // unlikely and would just cause a redundant re-upload.
         var packIndex = 0
-        var currentPackBytes = ByteArray(0)
+        val currentPackStream = java.io.ByteArrayOutputStream()
         val currentPackEntries = mutableListOf<PendingThumb>()
 
         suspend fun uploadCurrentPack() {
@@ -563,9 +563,9 @@ class HashRegistry @Inject constructor(
             val packName = "pack-${System.currentTimeMillis()}-${packIndex.toString().padStart(4, '0')}"
             val packFile = File(app.cacheDir, "$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
             try {
-                packFile.writeBytes(currentPackBytes)
+                packFile.writeBytes(currentPackStream.toByteArray())
                 val remotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-                diag("flushPendingThumbnailPacks: uploading pack $packName (${currentPackBytes.size} bytes, ${currentPackEntries.size} thumbnails) → $remotePath")
+                diag("flushPendingThumbnailPacks: uploading pack $packName (${currentPackStream.size()} bytes, ${currentPackEntries.size} thumbnails) → $remotePath")
                 rcloneController.uploadFile(packFile.absolutePath, remotePath).getOrThrow()
                 diag("flushPendingThumbnailPacks: pack $packName upload OK")
 
@@ -592,7 +592,7 @@ class HashRegistry @Inject constructor(
                 packFile.delete()
             }
             packIndex++
-            currentPackBytes = ByteArray(0)
+            currentPackStream.reset()
             currentPackEntries.clear()
         }
 
@@ -600,22 +600,19 @@ class HashRegistry @Inject constructor(
         for (pt in pendingThumbs) {
             // If adding this thumbnail would exceed the max pack size AND the
             // current pack is non-empty, flush the current pack first.
-            if (currentPackBytes.isNotEmpty() &&
-                (currentPackBytes.size + pt.bytes.size) > maxSize
+            if (currentPackStream.size() > 0 &&
+                (currentPackStream.size() + pt.bytes.size) > maxSize
             ) {
                 uploadCurrentPack()
             }
             // Append this thumbnail to the current pack.
-            val newPack = ByteArray(currentPackBytes.size + pt.bytes.size)
-            System.arraycopy(currentPackBytes, 0, newPack, 0, currentPackBytes.size)
-            System.arraycopy(pt.bytes, 0, newPack, currentPackBytes.size, pt.bytes.size)
-            currentPackBytes = newPack
+            currentPackStream.write(pt.bytes)
             currentPackEntries.add(pt)
 
             // Edge case: if a SINGLE thumbnail exceeds the max pack size, flush
             // it as its own (oversized) pack. This is rare (thumbnails are
             // typically a few KB) but handles the case gracefully.
-            if (currentPackBytes.size >= maxSize) {
+            if (currentPackStream.size() >= maxSize) {
                 uploadCurrentPack()
             }
         }

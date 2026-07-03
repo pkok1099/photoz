@@ -234,6 +234,15 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
             false
         }
 
+        // @since Item 2 — "Clean cached originals" row. Triggers the
+        // ViewModel's cleanCachedOriginals() which deletes the local `.crypt`
+        // originals for photos whose syncState == UPLOADED. The ViewModel
+        // surfaces the result (count + bytes freed) via toast.
+        viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS) {
+            settingsScope.launch { viewModel.cleanCachedOriginals() }
+            false
+        }
+
         viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_FEEDBACK) {
             val email = context.getString(R.string.settings_other_feedback_mail_emailaddress)
             val subject =

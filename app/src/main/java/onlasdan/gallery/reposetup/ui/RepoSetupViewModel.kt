@@ -38,6 +38,37 @@ import timber.log.Timber
 import javax.inject.Inject
 
 /**
+ * Per-remote check status used by the single-page remote picker
+ * ([RepoSetupState.NeedsRemoteChoice]).
+ *
+ * - [UNCHECKED] — user hasn't probed this remote yet (initial state).
+ * - [CHECKING] — `hasRepo` is in flight for this remote.
+ * - [REPO_FOUND] — marker file exists on the remote; login flow applies.
+ * - [NO_REPO] — remote is reachable but no marker; register flow applies.
+ * - [ERROR] — remote unreachable / auth failure / network error. The user
+ *   can still pick this remote and try Connect — the error is informational.
+ *
+ * @since Item 3 — single-page remote picker with per-remote status
+ */
+sealed interface RemoteCheckStatus {
+    data object UNCHECKED : RemoteCheckStatus
+    data object CHECKING : RemoteCheckStatus
+    data object REPO_FOUND : RemoteCheckStatus
+    data object NO_REPO : RemoteCheckStatus
+    data object ERROR : RemoteCheckStatus
+}
+
+/**
+ * One row in the single-page remote picker.
+ *
+ * @since Item 3 — single-page remote picker with per-remote status
+ */
+data class RemoteStatus(
+    val remote: RcloneConfigManager.RemoteInfo,
+    val status: RemoteCheckStatus,
+)
+
+/**
  * State of the mandatory repo setup flow.
  *
  * @since PR1 sync — mandatory repo setup
@@ -163,6 +194,37 @@ class RepoSetupViewModel @Inject constructor(
     private val _state = MutableStateFlow<RepoSetupState>(RepoSetupState.NeedsConfig)
     val state: StateFlow<RepoSetupState> = _state.asStateFlow()
 
+    /**
+     * Per-remote check status, surfaced to the single-page remote picker.
+     *
+     * Populated when [checkAllRemotes] runs — each remote in the imported
+     * rclone.conf is probed via [RepoManager.hasRepo] (which calls
+     * `rcloneController.listRemote("$remoteName:", REPO_DIR)` directly,
+     * WITHOUT mutating [Config.syncChosenRemote]).
+     *
+     * Reset to `emptyList()` whenever the user navigates back to
+     * [RepoSetupState.NeedsRemoteChoice] (e.g. after an error + dismiss).
+     *
+     * @since Item 3 — single-page remote picker with per-remote status
+     */
+    private val _remoteStatuses = MutableStateFlow<List<RemoteStatus>>(emptyList())
+    val remoteStatuses: StateFlow<List<RemoteStatus>> = _remoteStatuses.asStateFlow()
+
+    /**
+     * Password typed in the single-page picker's inline password field.
+     *
+     * When the user taps "Connect" with a non-empty password and the chosen
+     * remote turns out to have an existing repo + PASSWORD_PLUS_PHRASE escrow,
+     * the password is auto-submitted via [submitPassword] (saving the user
+     * from re-typing it on the dedicated [RepoSetupState.NeedsPasswordEntry]
+     * screen). Cleared after submission (success or failure) so a retry on
+     * the dedicated screen starts fresh.
+     *
+     * @since Item 3 — single-page remote picker with inline password
+     */
+    private val _pendingPassword = MutableStateFlow("")
+    val pendingPassword: StateFlow<String> = _pendingPassword.asStateFlow()
+
     init {
         // Check if config + remote are already set (e.g. user configured in Settings
         // but repo wasn't confirmed yet). If so, skip ahead to the checking stage.
@@ -216,12 +278,83 @@ class RepoSetupViewModel @Inject constructor(
 
     /**
      * User picked a remote. Persist it, then check reachability + detect register vs login.
+     *
+     * @param pendingPassword optional password typed in the single-page
+     * picker's inline password field. If non-blank, the password is stashed
+     * via [setPendingPassword] so that when the login flow lands in
+     * [RepoSetupState.NeedsPasswordEntry], the password is auto-submitted
+     * via [submitPassword] (saving the user from re-typing it). Blank means
+     * the user didn't type a password — the dedicated NeedsPasswordEntry
+     * screen will be shown as before.
+     *
+     * @since Item 3 — single-page remote picker with inline password
      */
-    fun chooseRemote(name: String) {
+    fun chooseRemote(name: String, pendingPassword: String = "") {
+        if (pendingPassword.isNotEmpty()) {
+            _pendingPassword.value = pendingPassword
+        }
         viewModelScope.launch {
             rcloneConfigManager.chooseRemote(name)
             _state.value = RepoSetupState.Checking
             checkRemoteAndDetectRepo()
+        }
+    }
+
+    /**
+     * Stash the password typed in the single-page picker's inline field.
+     * Consumed (and cleared) by [submitPassword] when the login flow lands
+     * in [RepoSetupState.NeedsPasswordEntry].
+     *
+     * @since Item 3 — single-page remote picker with inline password
+     */
+    fun setPendingPassword(password: String) {
+        _pendingPassword.value = password
+    }
+
+    /**
+     * Probe every remote in the imported rclone.conf for repo existence,
+     * updating [remoteStatuses] as each check completes.
+     *
+     * Uses [RepoManager.hasRepo] (which calls `rcloneController.listRemote`
+     * directly — NO mutation of [Config.syncChosenRemote]) so the user can
+     * inspect every remote before picking one. Each remote's check runs in
+     * its own coroutine so the UI updates per-remote as results arrive
+     * (rather than blocking on the slowest remote).
+     *
+     * The list is initialized to all remotes with status [RemoteCheckStatus.CHECKING]
+     * so the user sees "Checking…" on every row immediately, then each row
+     * transitions to [REPO_FOUND] / [NO_REPO] / [ERROR] as its check
+     * completes. Remotes added to the config after this call won't appear
+     * until checkAllRemotes is invoked again.
+     *
+     * Idempotent: calling it again re-probes every remote from scratch.
+     *
+     * @since Item 3 — single-page remote picker with per-remote status
+     */
+    fun checkAllRemotes() {
+        viewModelScope.launch {
+            val remotes = rcloneConfigManager.availableRemotes()
+            if (remotes.isEmpty()) {
+                _remoteStatuses.value = emptyList()
+                return@launch
+            }
+            // Initialize every row to CHECKING so the user sees immediate
+            // feedback. Each remote's check runs concurrently and updates
+            // its own row on completion.
+            _remoteStatuses.value = remotes.map { RemoteStatus(it, RemoteCheckStatus.CHECKING) }
+            for (remote in remotes) {
+                launch {
+                    val hasRepo = repoManager.hasRepo(remote.name)
+                    val newStatus = when (hasRepo) {
+                        true -> RemoteCheckStatus.REPO_FOUND
+                        false -> RemoteCheckStatus.NO_REPO
+                        null -> RemoteCheckStatus.ERROR
+                    }
+                    _remoteStatuses.value = _remoteStatuses.value.map {
+                        if (it.remote.name == remote.name) it.copy(status = newStatus) else it
+                    }
+                }
+            }
         }
     }
 
@@ -276,7 +409,19 @@ class RepoSetupViewModel @Inject constructor(
                         // (no escrow — user goes through SetupFragment instead).
                         when (loginResult.escrow) {
                             RepoManager.EscrowType.PASSWORD_PLUS_PHRASE -> {
-                                _state.value = RepoSetupState.NeedsPasswordEntry()
+                                // @since Item 3 — if the user typed a password in
+                                // the single-page picker's inline field, auto-submit
+                                // it now. This saves the user from re-typing the
+                                // password on the dedicated NeedsPasswordEntry
+                                // screen. Wrong password → submitPassword sets
+                                // NeedsPasswordEntry(error) → user retries there.
+                                val pending = _pendingPassword.value
+                                if (pending.isNotEmpty()) {
+                                    _state.value = RepoSetupState.NeedsPasswordEntry(loading = true)
+                                    submitPassword(pending)
+                                } else {
+                                    _state.value = RepoSetupState.NeedsPasswordEntry()
+                                }
                             }
                             RepoManager.EscrowType.PHRASE_ONLY -> {
                                 _state.value = RepoSetupState.NeedsPhraseEntry
@@ -373,6 +518,12 @@ class RepoSetupViewModel @Inject constructor(
     fun submitPassword(password: String) {
         viewModelScope.launch {
             _state.value = RepoSetupState.NeedsPasswordEntry(loading = true, error = null)
+
+            // @since Item 3 — clear the pending password (whether it was set
+            // from the single-page picker or from this call). It's been
+            // consumed; any retry on the dedicated NeedsPasswordEntry screen
+            // starts fresh.
+            _pendingPassword.value = ""
 
             val wrapped = repoManager.getDownloadedWrappedPhrase()
             if (wrapped == null) {

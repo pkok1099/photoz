@@ -73,7 +73,7 @@ object SyncConfig {
     // the optimization can be added later without a format change.
     const val REGISTRY_FILENAME = "registry.json.crypt"
     const val REGISTRY_REMOTE_PATH = "$REPO_DIR/registry.json.crypt"
-    const val THUMBNAIL_PACK_SIZE_BYTES: Long = 50L * 1024 * 1024 // 50 MB per pack
+    const val THUMBNAIL_PACK_SIZE_BYTES: Long = 5L * 1024 * 1024 // 5 MB per pack (~300 thumbnails at 17KB each)
     const val THUMBNAIL_PACK_DIR = "$REPO_DIR/thumbnails"
     const val THUMBNAIL_PACK_PREFIX = "pack-"
     const val THUMBNAIL_PACK_SUFFIX = ".pack"

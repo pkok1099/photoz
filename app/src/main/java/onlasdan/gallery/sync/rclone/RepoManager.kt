@@ -301,6 +301,56 @@ class RepoManager @Inject constructor(
     }
 
     /**
+     * Lightweight repo-existence check for a SPECIFIC remote name, without
+     * mutating [Config.syncChosenRemote].
+     *
+     * Used by [onlasdan.gallery.reposetup.ui.RepoSetupViewModel.checkAllRemotes]
+     * to annotate every remote in the imported rclone.conf with "Repo found"
+     * vs "No repo" before the user picks one. The full [detectRepo] flow
+     * (which downloads + parses the marker) is overkill for the picker UI —
+     * we just need to know whether the repo dir contains the marker file.
+     *
+     * The check uses [RcloneController.listRemote] directly (rcd serves any
+     * remote in the imported rclone.conf, not just the chosen one), so we
+     * don't need to swap [Config.syncChosenRemote] in/out around the call.
+     *
+     * @return `true` if a repo marker file exists on the remote, `false` if
+     * the remote is reachable but no marker exists, `null` if the remote
+     * could not be reached (network/auth error) — caller treats `null` as
+     * "error" and surfaces it as such in the picker UI.
+     *
+     * @since Item 3 — single-page remote picker with per-remote status
+     */
+    suspend fun hasRepo(remoteName: String): Boolean? = withContext(Dispatchers.IO) {
+        if (remoteName.isBlank()) return@withContext null
+        try {
+            val result = rcloneController.listRemote("$remoteName:", REPO_DIR)
+            if (result.isFailure) {
+                val err = result.exceptionOrNull()?.message ?: "unknown error"
+                // Mirror detectRepo()'s dir-not-found classification — a missing
+                // repo dir is NOT an error here, it just means "no repo".
+                val isDirNotFound = err.contains("directory not found", ignoreCase = true) ||
+                    err.contains("error in ListJSON", ignoreCase = true) ||
+                    (err.contains("not found", ignoreCase = true) &&
+                        !err.contains("binary", ignoreCase = true) &&
+                        !err.contains("rclone", ignoreCase = true))
+                if (isDirNotFound) {
+                    return@withContext false
+                }
+                android.util.Log.e("RcloneDiag", "hasRepo($remoteName): listRemote FAILED: $err")
+                return@withContext null
+            }
+            val files = result.getOrThrow()
+            val hasMarker = files.any { it.name == MARKER_FILENAME }
+            android.util.Log.e("RcloneDiag", "hasRepo($remoteName): ${files.size} files, marker=$hasMarker")
+            hasMarker
+        } catch (e: Exception) {
+            android.util.Log.e("RcloneDiag", "hasRepo($remoteName): CAUGHT ${e.javaClass.name}: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
      * Register a new repo on the remote. Writes the marker file, then independently re-lists
      * to verify the write landed. Only after verification succeeds is the repo confirmed.
      *

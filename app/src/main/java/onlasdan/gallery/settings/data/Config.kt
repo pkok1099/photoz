@@ -208,24 +208,16 @@ class Config(context: Context) {
      * local copies) to preserve existing behaviour and avoid surprising
      * data loss.
      *
-     * ─── Item 1/2 fix — NOW UNUSED ───────────────────────────────────
-     * As of the Item 1 fix, deletion of the local encrypted original
-     * after a verified upload is **unconditional** in
-     * [onlasdan.gallery.sync.work.PhotoSyncWorker] (see
-     * `deleteLocalOriginalAfterUpload`). This setting is no longer read
-     * by any code path — the toggle has been removed from the Settings
-     * UI (see [onlasdan.gallery.settings.domain.PreferenceScreenConfig]).
-     *
-     * The property + SharedPreferences key + default are kept here for
-     * backwards-compat with existing prefs files (so an upgrade doesn't
-     * lose the stored value if a future change re-introduces the
-     * toggle). New installs will simply write the default `false` and
-     * never read it back.
+     * ─── Item 2 (toggle restored) ───────────────────────────────────
+     * The toggle is now surfaced again in Settings (Cloud Sync section).
+     * When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] deletes the
+     * local `.crypt` original after a verified upload. When OFF, the
+     * local copy is kept for offline access and the user can reclaim
+     * space later via the "Clean cached originals" button.
      *
      * @since sync settings feature — delete-after-upload toggle
-     * @since Item 2 — setting is now redundant; deletion is unconditional
+     * @since Item 2 — toggle restored; deletion is gated on this setting
      */
-    @Suppress("unused")
     var syncDeleteAfterUpload: Boolean
         get() = getBoolean(SYNC_DELETE_AFTER_UPLOAD, SYNC_DELETE_AFTER_UPLOAD_DEFAULT)
         set(value) = putBoolean(SYNC_DELETE_AFTER_UPLOAD, value)
