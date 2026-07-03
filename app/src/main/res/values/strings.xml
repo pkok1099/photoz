@@ -453,7 +453,12 @@
     <string name="repo_setup_retry">Retry</string>
 
     <!-- Gallery sync status — @since PR2 sync — per-thumbnail badges + global indicator -->
-    <string name="gallery_sync_status_syncing">Syncing %1$d…</string>
+    <!-- Item 3 fix: text changed from "Syncing %1$d…" to "%1$d to sync" because
+         the count now includes LOCAL_ONLY photos (waiting for the worker to pick
+         them up) in addition to UPLOAD_PENDING ones. "Syncing…" implied an active
+         upload which wasn't always accurate (e.g. WorkManager scheduling delay
+         or retry backoff). "N to sync" is honest for both states. -->
+    <string name="gallery_sync_status_syncing">%1$d photos to sync</string>
     <string name="gallery_sync_status_all_synced">All synced</string>
 
     <!-- Gallery Photos/Files filter — @since file-upload feature -->

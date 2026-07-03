@@ -339,13 +339,19 @@ class PhotoSyncWorker @AssistedInject constructor(
                 diag("doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
                     "total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}")
                 onBatchCompleteIfDone()
-                // @since sync-settings feature — read the user-configurable
-                //  delete-after-upload flag from Config (was previously a
-                //  hardcoded SyncConfig constant). Default is `false` (keep
-                //  local copies) to preserve prior behaviour.
-                if (config.syncDeleteAfterUpload) {
-                    deleteLocalOriginalAfterUpload(photo)
-                }
+                // ─── Unconditional local-original deletion (Item 1) ───────────
+                // After a verified upload the local encrypted `.crypt` original
+                // is ALWAYS deleted. This frees device storage and matches the
+                // "remote is the source of truth" model — the gallery tile
+                // still shows the (kept) local thumbnail, and the original is
+                // transparently re-downloaded on-demand via [SyncRestorer.ensureLocalOriginal]
+                // when the user opens the photo.
+                //
+                // Previously this was gated behind `config.syncDeleteAfterUpload`
+                // (default false). That setting is now redundant — deletion is
+                // unconditional. The Config key is kept for backwards-compat
+                // with existing prefs but no longer read here (see Config.kt).
+                deleteLocalOriginalAfterUpload(photo)
                 Result.success()
             }
 

@@ -183,10 +183,23 @@ fun GalleryScreen(
 /**
  * Lightweight global sync status chip for the gallery top bar.
  *
- * Shows the count of photos still queued for upload. When the queue is empty, shows a subtle
- * "all synced" state. Kept minimal on purpose — this is a status hint, not a primary action.
+ * Shows the count of photos still queued for sync (LOCAL_ONLY or UPLOAD_PENDING).
+ * When the queue is empty (every photo is UPLOADED or UPLOAD_FAILED), shows a
+ * subtle "all synced" state. Kept minimal on purpose — this is a status hint,
+ * not a primary action.
+ *
+ * ─── Item 3 fix: stuck-progress-indicator ──────────────────────────────
+ * The pending count now includes both `LOCAL_ONLY` and `UPLOAD_PENDING`
+ * photos (computed in [onlasdan.gallery.gallery.ui.GalleryUiStateFactory]).
+ * Previously it counted only `UPLOAD_PENDING`, which caused the chip to
+ * appear stuck whenever a worker was in WorkManager scheduling delay or
+ * retry-backoff (the photo was still `UPLOAD_PENDING` but no upload was
+ * actively running). The accompanying string was changed from
+ * "Syncing N…" → "N photos to sync" so the label stays honest across
+ * both states.
  *
  * @since PR2 sync — global sync status indicator
+ * @since Item 3 fix — counts LOCAL_ONLY + UPLOAD_PENDING; text reflects that
  */
 @Composable
 private fun GallerySyncStatusIndicator(

@@ -62,7 +62,27 @@ class GalleryUiStateFactory @Inject constructor() {
             }
 
             val filteredPhotos = textFiltered
-            val filteredPending = filteredPhotos.count { it.syncState == SyncState.UPLOAD_PENDING }
+            // ─── Item 3 fix: count LOCAL_ONLY + UPLOAD_PENDING as "pending sync" ──
+            // Previously this counted only UPLOAD_PENDING. That caused the
+            // indicator to flicker/stick: a freshly-imported photo sits in
+            // LOCAL_ONLY until the worker picks it up and flips it to
+            // UPLOAD_PENDING (line ~307 in PhotoSyncWorker), then to
+            // UPLOADED or UPLOAD_FAILED on completion. During WorkManager's
+            // scheduling delay and during retry-backoff the photo is in
+            // UPLOAD_PENDING but no upload is actively running, so the
+            // indicator would show "Syncing…" indefinitely.
+            //
+            // The new semantics: anything that isn't UPLOADED or
+            // UPLOAD_FAILED is "pending sync". The indicator now appears
+            // at import time (LOCAL_ONLY) and clears only when every photo
+            // has reached a terminal state. The gallery top-bar text was
+            // updated accordingly (see GalleryScreen.kt) to read
+            // "N photos to sync" instead of "Syncing N…" — accurate for
+            // both the LOCAL_ONLY and UPLOAD_PENDING cases.
+            val filteredPending = filteredPhotos.count {
+                it.syncState == SyncState.UPLOAD_PENDING ||
+                    it.syncState == SyncState.LOCAL_ONLY
+            }
 
             // If the selected filter + search yield zero matches, show Empty
             // so the gallery placeholder appears (e.g. user has only photos,

@@ -56,10 +56,19 @@ class GalleryViewModel @Inject constructor(
     // @since v9 followup (Bug 2) — needed by OnRestoreFromBackup to re-download
     // thumbnails from the cloud backup. The gallery's overflow menu has a new
     // "Restore from backup" option that calls [RepoManager.restoreThumbnailsFromPacks]
-    // to re-sync thumbnails + [SyncRestorer.restoreAllOriginals] to download
-    // the full original files back to local storage (path 1:1 inside PhotoZ).
-    private val repoManager: RepoManager,
+    // to re-sync thumbnails and create Photo DB rows for any registry entries
+    // that don't have one yet.
+    //
+    // @since Item 1 fix — [SyncRestorer] is no longer called from this VM:
+    //   restore-from-backup is now thumbnails-only. Originals are fetched
+    //   on-demand by the image viewer / video player via
+    //   [SyncRestorer.ensureLocalOriginal*]. The field is retained because
+    //   [SyncRestorer] is still wired up by Hilt and the function
+    //   [SyncRestorer.restoreAllOriginals] is preserved as a utility for
+    //   future use. Suppressed unused warning accordingly.
+    @Suppress("unused")
     private val syncRestorer: onlasdan.gallery.sync.work.SyncRestorer,
+    private val repoManager: RepoManager,
     private val resources: Resources,
 ) : ViewModel() {
 
@@ -151,18 +160,30 @@ class GalleryViewModel @Inject constructor(
         )
         viewModelScope.launch {
             try {
-                // Step 1: restore thumbnails + create DB rows from registry
+                // Step 1: restore thumbnails + create DB rows from registry.
+                //
+                // ─── Item 1 fix: thumbnails-only restore ──────────────────────
+                // Restore-from-backup now downloads ONLY the thumbnail packs
+                // and creates Photo DB rows for any registry entries that
+                // don't have one yet. Original encrypted files are NOT
+                // downloaded eagerly — they're fetched on-demand when the
+                // user opens a photo, via [SyncRestorer.ensureLocalOriginal]
+                // (or [SyncRestorer.ensureLocalOriginalWithProgress] for
+                // videos). This avoids pulling potentially gigabytes of
+                // originals during a restore, which was slow and burned
+                // mobile data.
+                //
+                // The previous call to `syncRestorer.restoreAllOriginals()`
+                // has been removed. The function itself is kept in
+                // [SyncRestorer] as a utility for future use, but the
+                // restore button no longer triggers it.
                 val thumbsRestored = repoManager.restoreThumbnailsFromPacks()
-
-                // Step 2: restore full original files from remote to local storage
-                // (path 1:1 inside PhotoZ's private storage)
-                val originalsRestored = syncRestorer.restoreAllOriginals()
 
                 eventsChannel.trySend(
                     GalleryNavigationEvent.ShowToast(
                         resources.getString(
                             R.string.menu_restore_from_backup_toast_success,
-                            thumbsRestored + originalsRestored,
+                            thumbsRestored,
                         ),
                     ),
                 )

@@ -32,8 +32,6 @@ import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY_DEFAULT
-import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD
-import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.domain.models.LockTimeout
 import onlasdan.gallery.settings.domain.models.SettingsEnum
 import onlasdan.gallery.settings.domain.models.StartPage
@@ -145,13 +143,21 @@ val PreferenceScreenConfigContent = buildList {
                     summary = R.string.settings_sync_wifi_only_summary,
                     default = SYNC_WIFI_ONLY_DEFAULT,
                 ),
-                Preference.Switch(
-                    key = SYNC_DELETE_AFTER_UPLOAD,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_sync_delete_after_upload_title,
-                    summary = R.string.settings_sync_delete_after_upload_summary,
-                    default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
-                ),
+                // ─── Item 2 fix: removed `syncDeleteAfterUpload` toggle ───────
+                // Deletion of the local `.crypt` after a verified upload is
+                // now UNCONDITIONAL (see PhotoSyncWorker.Item 1 fix). The
+                // toggle was redundant — keeping it would have misled users
+                // into thinking they could opt out. The Config key/value is
+                // retained in [Config] for backwards-compat with existing
+                // prefs files but is no longer surfaced in the UI.
+                //
+                // Preference.Switch(
+                //     key = SYNC_DELETE_AFTER_UPLOAD,
+                //     icon = R.drawable.ic_delete,
+                //     title = R.string.settings_sync_delete_after_upload_title,
+                //     summary = R.string.settings_sync_delete_after_upload_summary,
+                //     default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
+                // ),
                 // @since registry-gc feature — manual cleanup of soft-deleted
                 // entries' remote originals + thumbnail pack compaction. The
                 // row's onClick callback (registered in SettingsCallbacks)
