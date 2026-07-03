@@ -185,7 +185,7 @@ class HashRegistry @Inject constructor(
                 }
             }
             onlasdan.gallery.sync.debug.SyncLogRotator.append(app, entry)
-        } catch (_: Exception) {}
+        } catch (e: Exception) { android.util.Log.e(TAG, "[HashRegistry] diag write FAILED: ${e.message}", e) }
     }
 
     /**
