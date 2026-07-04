@@ -331,6 +331,46 @@ interface PhotoDao {
     suspend fun setFavorite(uuid: String, isFavorite: Boolean)
 
     /**
+     * Sprint 10+ / M10 Part 3 — Set the canonical_uuid for a symlink photo.
+     *
+     * Called by [PhotoRepository.safeImportPhoto] when a duplicate content_hash
+     * is detected — converts the just-imported photo into a symlink that
+     * references the canonical photo's encrypted file.
+     *
+     * @since v15 — Sprint 10+ / M10 Part 3 symlink album
+     */
+    @Query("UPDATE photo SET canonical_uuid = :canonicalUuid WHERE photo_uuid = :uuid")
+    suspend fun updateCanonicalUuid(uuid: String, canonicalUuid: String)
+
+    /**
+     * Sprint 10+ / M10 Part 3 — Find all symlink photos referencing a canonical.
+     *
+     * Used by [PhotoRepository.permanentlyDeletePhoto] to check if a canonical
+     * photo has symlinks before deleting it. If symlinks exist, the oldest is
+     * promoted to canonical (its `canonical_uuid` is cleared + files renamed).
+     *
+     * Ordered by `importedAt ASC` so the oldest symlink is promoted first
+     * (preserves import order — the earliest import "becomes" the canonical).
+     *
+     * @since v15 — Sprint 10+ / M10 Part 3 symlink album
+     */
+    @Query("SELECT * FROM photo WHERE canonical_uuid = :canonicalUuid ORDER BY importedAt ASC")
+    suspend fun findSymlinksOf(canonicalUuid: String): List<Photo>
+
+    /**
+     * Sprint 10+ / M10 Part 3 — Find the canonical owner of a symlink.
+     *
+     * If the photo is a symlink (canonical_uuid != null), returns the canonical
+     * Photo row. If the photo IS the canonical (canonical_uuid == null), returns
+     * itself. Used by the image viewer + sync restorer to resolve which file to
+     * actually read.
+     *
+     * @since v15 — Sprint 10+ / M10 Part 3 symlink album
+     */
+    @Query("SELECT * FROM photo WHERE photo_uuid = :uuid LIMIT 1")
+    suspend fun getWithCanonical(uuid: String): Photo?
+
+    /**
      * Count favorites in the current vault. Used by the Favorites filter chip's
      * badge (e.g. "Favorites (12)") and to decide whether the chip should be
      * enabled.

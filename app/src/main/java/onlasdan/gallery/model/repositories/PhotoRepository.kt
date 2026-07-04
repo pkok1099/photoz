@@ -267,17 +267,47 @@ class PhotoRepository @Inject constructor(
             try {
                 photoDao.updateContentHash(photo.uuid, hashHex)
 
-                // ─── Bug 1 fix: dedup at import time — don't create a duplicate ──
+                // ─── Sprint 10+ / M10 Part 3: Symlink album dedup ──────────────
                 // If another Photo row with the same content_hash already exists,
-                // delete the just-imported duplicate (local file + DB row) so the
-                // gallery doesn't show two entries for the same file.
+                // convert THIS photo into a SYMLINK instead of deleting it.
+                //
+                // The symlink's `canonical_uuid` points to the existing (canonical)
+                // photo's UUID. The encrypted file + thumbnail are deleted from
+                // this photo's UUID (they were just written) — the symlink will
+                // read from the canonical's files via `internalFileName(canonicalUuid ?: uuid)`.
+                //
+                // This allows the same file to appear in multiple albums without
+                // duplicating storage. The user sees two gallery entries (one per
+                // album), but only one encrypted file exists on disk + remote.
+                //
+                // Previously (Bug 1 fix): the duplicate was deleted entirely —
+                // the photo only appeared in the first album that imported it.
                 val existing = photoDao.findByContentHash(hashHex, excludeUuid = photo.uuid, vaultId = currentVaultId())
                 if (existing != null) {
-                    Timber.i("Dedup at import: content_hash=%s already exists as uuid=%s — deleting duplicate %s",
-                        hashHex, existing.uuid, photo.uuid)
+                    Timber.i("Symlink dedup: content_hash=%s already exists as uuid=%s — creating symlink %s → %s",
+                        hashHex, existing.uuid, photo.uuid, existing.uuid)
+
+                    // Determine the canonical UUID: if `existing` is itself a
+                    // symlink, follow the chain to the real canonical. This
+                    // handles the case where the user imports the same file 3+
+                    // times — all symlinks point to the same root canonical.
+                    val canonicalUuid = existing.canonicalUuid ?: existing.uuid
+
+                    // Delete the just-written encrypted file + thumbnail for
+                    // THIS photo's UUID — the symlink will use the canonical's.
                     deleteInternalPhotoData(photo)
-                    photoDao.delete(photo)
-                    return String.empty // signal: import was a duplicate, not created
+
+                    // Update this photo to be a symlink.
+                    photoDao.updateCanonicalUuid(photo.uuid, canonicalUuid)
+
+                    // Link the symlink to its album (if albumPath is set).
+                    try {
+                        ensureAlbumForPhoto(photo)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Symlink dedup: ensureAlbumForPhoto failed (non-fatal)")
+                    }
+
+                    return photo.uuid // signal: import succeeded as a symlink
                 }
             } catch (e: Exception) {
                 Timber.w(e, "Failed to persist contentHash or dedup check for %s", photo.uuid)
@@ -600,11 +630,80 @@ class PhotoRepository @Inject constructor(
      * @since v10 recycle bin
      */
     suspend fun permanentlyDeletePhoto(photo: Photo) {
-        try {
-            deleteInternalPhotoData(photo)
-        } catch (e: Exception) {
-            Timber.w(e, "permanentlyDeletePhoto: deleteInternalPhotoData FAILED (non-fatal) for %s", photo.uuid)
+        // ─── Sprint 10+ / M10 Part 3: Per-album refcounted delete ──────────
+        // If this photo is a SYMLINK (canonical_uuid != null), just delete the
+        // DB row — the encrypted file belongs to the canonical and must not
+        // be touched.
+        //
+        // If this photo is a CANONICAL (canonical_uuid == null), check if any
+        // symlinks reference it. If yes, promote the oldest symlink to canonical
+        // (set its canonical_uuid = null + rename the encrypted file from this
+        // photo's UUID to the promoted symlink's UUID). Then delete this photo's
+        // DB row + encrypted files.
+        //
+        // If no symlinks, delete normally (DB row + encrypted files).
+        val isSymlink = photo.canonicalUuid != null
+
+        if (isSymlink) {
+            // Symlink: just delete the DB row + album links. NO file deletion.
+            Timber.i("permanentlyDeletePhoto: %s is a symlink (canonical=%s) — deleting DB row only",
+                photo.uuid, photo.canonicalUuid)
+            try {
+                photoDao.delete(photo)
+            } catch (e: Exception) {
+                Timber.w(e, "permanentlyDeletePhoto: photoDao.delete FAILED for symlink %s", photo.uuid)
+            }
+            try {
+                albumDao.unlink(photo.uuid)
+            } catch (e: Exception) {
+                Timber.w(e, "permanentlyDeletePhoto: albumDao.unlink FAILED (non-fatal) for symlink %s", photo.uuid)
+            }
+            return
         }
+
+        // Canonical: check for symlinks referencing this photo.
+        val symlinks = try {
+            photoDao.findSymlinksOf(photo.uuid)
+        } catch (e: Exception) {
+            Timber.w(e, "permanentlyDeletePhoto: findSymlinksOf failed — treating as no symlinks")
+            emptyList()
+        }
+
+        if (symlinks.isNotEmpty()) {
+            // Promote the oldest symlink to canonical.
+            val promoted = symlinks.first()
+            Timber.i("permanentlyDeletePhoto: canonical %s has %d symlink(s) — promoting %s to canonical",
+                photo.uuid, symlinks.size, promoted.uuid)
+
+            try {
+                // Rename the encrypted files from old canonical UUID to promoted UUID.
+                val oldOrig = app.getFileStreamPath(internalFileName(photo.uuid))
+                val newOrig = app.getFileStreamPath(internalFileName(promoted.uuid))
+                if (oldOrig.exists()) oldOrig.renameTo(newOrig)
+
+                val oldTn = app.getFileStreamPath(internalThumbnailFileName(photo.uuid))
+                val newTn = app.getFileStreamPath(internalThumbnailFileName(promoted.uuid))
+                if (oldTn.exists()) oldTn.renameTo(newTn)
+
+                // Update the promoted row: clear canonical_uuid (it's now the owner).
+                photoDao.updateCanonicalUuid(promoted.uuid, null)
+
+                // Update all remaining symlinks to point to the promoted UUID.
+                for (s in symlinks.drop(1)) {
+                    photoDao.updateCanonicalUuid(s.uuid, promoted.uuid)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "permanentlyDeletePhoto: symlink promotion FAILED for %s — files may be orphaned", photo.uuid)
+            }
+        } else {
+            // No symlinks — delete the encrypted files normally.
+            try {
+                deleteInternalPhotoData(photo)
+            } catch (e: Exception) {
+                Timber.w(e, "permanentlyDeletePhoto: deleteInternalPhotoData FAILED (non-fatal) for %s", photo.uuid)
+            }
+        }
+
         try {
             photoDao.delete(photo)
         } catch (e: Exception) {

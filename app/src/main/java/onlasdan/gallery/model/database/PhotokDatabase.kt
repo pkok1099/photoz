@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 14
+private const val DATABASE_VERSION = 15
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -184,6 +184,18 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 13,
             to = 14,
+        ),
+        // v14 → v15: Sprint 10+ / M10 Part 3 — Symlink album.
+        //   Add `canonical_uuid TEXT DEFAULT NULL` to `photo`.
+        //   When non-null, the Photo row is a symlink referencing the
+        //   canonical row's encrypted file. When null, the row owns its file.
+        //   Existing photos get NULL (they're all canonical — no symlinks
+        //   existed before this schema change).
+        //   Additive (new nullable column) — Room auto-generates the DDL.
+        // @since v15 — Sprint 10+ / M10 Part 3 symlink album
+        AutoMigration(
+            from = 14,
+            to = 15,
         ),
     ]
 )

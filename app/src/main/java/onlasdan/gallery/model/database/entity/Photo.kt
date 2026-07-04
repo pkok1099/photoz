@@ -234,16 +234,40 @@ data class Photo(
     @ColumnInfo(name = COL_AI_TAGS, defaultValue = "NULL")
     @Expose
     var aiTags: String? = null,
+
+    /**
+     * Sprint 10+ / M10 Part 3 — Canonical UUID for symlink album scheme.
+     *
+     * When non-null, THIS Photo row is a SYMLINK — it references the
+     * encrypted file owned by another Photo row (the canonical). The
+     * canonical's UUID is stored here.
+     *
+     * When null, THIS Photo row OWNS its encrypted file (the file's
+     * UUID matches this row's `uuid`).
+     *
+     * Use case: user imports the same file (same content_hash) into two
+     * different albums. Instead of deleting the second import (old dedup
+     * behavior), the second Photo row is created with `canonical_uuid`
+     * pointing to the first. Both rows appear in their respective albums,
+     * but only ONE encrypted file exists on disk + remote.
+     *
+     * File lookup: `internalFileName(photo.canonicalUuid ?: photo.uuid)`
+     *
+     * @since v15 — Sprint 10+ / M10 Part 3 symlink album
+     */
+    @ColumnInfo(name = COL_CANONICAL_UUID, defaultValue = "NULL")
+    @Expose
+    var canonicalUuid: String? = null,
 ) {
 
     val internalFileName: String
-        get() = internalFileName(uuid)
+        get() = internalFileName(canonicalUuid ?: uuid)
 
     val internalThumbnailFileName: String
-        get() = internalThumbnailFileName(uuid)
+        get() = internalThumbnailFileName(canonicalUuid ?: uuid)
 
     val internalVideoPreviewFileName: String
-        get() = internalVideoPreviewFileName(uuid)
+        get() = internalVideoPreviewFileName(canonicalUuid ?: uuid)
 
     companion object {
         const val COL_FILENAME = "fileName"
@@ -288,5 +312,8 @@ data class Photo(
 
         /** AI-generated semantic tags column. @since v14 Sprint 9 / L6 semantic search */
         const val COL_AI_TAGS = "ai_tags"
+
+        /** Canonical UUID for symlink album. @since v15 Sprint 10+ / M10 Part 3 */
+        const val COL_CANONICAL_UUID = "canonical_uuid"
     }
 }
