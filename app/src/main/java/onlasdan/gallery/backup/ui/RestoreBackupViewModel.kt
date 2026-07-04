@@ -59,11 +59,9 @@ class RestoreBackupViewModel @Inject constructor(
 ) : ObservableViewModel(app) {
 
     @Bindable
-    var restoreState: RestoreState = RestoreState.INITIALIZE
-        set(value) {
-            field = value
-            notifyChange(BR.restoreState, value)
-        }
+    var restoreState: kotlinx.coroutines.flow.MutableStateFlow<RestoreState> =
+        kotlinx.coroutines.flow.MutableStateFlow(RestoreState.INITIALIZE)
+        private set
 
     /**
      * [BackupMetaData] holding meta data of the loaded backup.
@@ -101,9 +99,9 @@ class RestoreBackupViewModel @Inject constructor(
         fileUri = uri
 
         validateBackup(uri)
-            .onFailure { restoreState = RestoreState.FILE_INVALID }
+            .onFailure { restoreState.value = RestoreState.FILE_INVALID }
             .onSuccess {
-                restoreState = RestoreState.FILE_VALID
+                restoreState.value = RestoreState.FILE_VALID
 
 
                 backupSize = it.fileSize
@@ -116,7 +114,7 @@ class RestoreBackupViewModel @Inject constructor(
      * Restore the validated backup with the original password.
      */
     fun restoreBackup(session: Session) = viewModelScope.launch(Dispatchers.IO) {
-        restoreState = RestoreState.RESTORING
+        restoreState.value = RestoreState.RESTORING
 
         val metaData = metaData ?: error("meta.json was loaded without success")
 
@@ -132,7 +130,7 @@ class RestoreBackupViewModel @Inject constructor(
 
         zipInputStream.close()
 
-        restoreState = if (result.errors > 0) {
+        restoreState.value = if (result.errors > 0) {
             RestoreState.FINISHED_WITH_ERRORS
         } else {
             RestoreState.FINISHED
