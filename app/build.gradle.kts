@@ -78,6 +78,9 @@ android {
 
         getByName("release") {
             isMinifyEnabled = true
+            // Sprint 8 / L7 — shrink resources in release (removes unused
+            // drawables/strings). Pairs with R8 full mode for smaller APK.
+            isShrinkResources = true
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
