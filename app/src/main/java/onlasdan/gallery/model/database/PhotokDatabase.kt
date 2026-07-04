@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 13
+private const val DATABASE_VERSION = 14
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -171,6 +171,19 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 12,
             to = 13,
+        ),
+        // v13 → v14: Sprint 9 / L6 on-device semantic search.
+        //   Add `ai_tags TEXT DEFAULT NULL` to `photo`. Stores comma-separated
+        //   AI-generated tags (e.g. "beach,sunset,ocean") from the on-device
+        //   ML model. NULL when semantic search is disabled or model hasn't
+        //   run yet. Existing photos have NULL (no backfill — the model runs
+        //   on new imports only; a "Re-tag all photos" button is a future
+        //   enhancement).
+        // Additive (new nullable column) — Room auto-generates the DDL.
+        // @since v14 — Sprint 9 / L6 semantic search
+        AutoMigration(
+            from = 13,
+            to = 14,
         ),
     ]
 )

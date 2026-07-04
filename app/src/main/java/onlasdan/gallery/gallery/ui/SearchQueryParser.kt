@@ -53,10 +53,16 @@ data class SearchQuery(
     val cameraPrefix: String = "",
     /** Location prefix as (lat, lon). Null means no location filter. */
     val location: Pair<Double, Double>? = null,
+    /**
+     * Sprint 9 / L6 — AI tag prefix (e.g. "beach").
+     * Empty string means no tag filter.
+     * @since v14 — Sprint 9 / L6 semantic search
+     */
+    val tagPrefix: String = "",
 ) {
     /** True when the query has no filters at all (empty search bar). */
     val isEmpty: Boolean get() = textTokens.isEmpty() && datePrefix.isEmpty() &&
-        cameraPrefix.isEmpty() && location == null
+        cameraPrefix.isEmpty() && location == null && tagPrefix.isEmpty()
 }
 
 /**
@@ -86,6 +92,7 @@ fun parseSearchQuery(raw: String): SearchQuery {
     var datePrefix = ""
     var cameraPrefix = ""
     var location: Pair<Double, Double>? = null
+    var tagPrefix = ""
 
     for (token in raw.trim().split(Regex("\\s+"))) {
         if (token.isEmpty()) continue
@@ -102,6 +109,7 @@ fun parseSearchQuery(raw: String): SearchQuery {
         when (prefix) {
             "date" -> datePrefix = value
             "camera" -> cameraPrefix = value
+            "tag" -> tagPrefix = value
             "location" -> {
                 val parts = value.split(",")
                 if (parts.size == 2) {
@@ -125,6 +133,7 @@ fun parseSearchQuery(raw: String): SearchQuery {
         datePrefix = datePrefix,
         cameraPrefix = cameraPrefix,
         location = location,
+        tagPrefix = tagPrefix,
     )
 }
 
@@ -180,6 +189,17 @@ fun List<Photo>.filterBySearchQuery(query: SearchQuery): List<Photo> {
             val (targetLat, targetLon) = query.location
             val distanceM = haversineDistance(lat, lon, targetLat, targetLon)
             if (distanceM > LOCATION_MATCH_RADIUS_M) return@filter false
+        }
+
+        // ─── Sprint 9 / L6 — AI tag prefix: comma-separated tags contain ──
+        // The photo's `aiTags` field is a comma-separated string like
+        // "beach,sunset,ocean". The user's `tag:beach` query matches if
+        // any tag in that list contains "beach" (case-insensitive).
+        if (query.tagPrefix.isNotEmpty()) {
+            val tags = photo.aiTags ?: return@filter false
+            val tagList = tags.split(",").map { it.trim().lowercase(Locale.US) }
+            val needle = query.tagPrefix.lowercase(Locale.US)
+            if (tagList.none { it.contains(needle) }) return@filter false
         }
 
         true

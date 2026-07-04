@@ -287,6 +287,13 @@ class Config(context: Context) {
         get() = getLong(BREAK_IN_LAST_FAILED_AT, BREAK_IN_LAST_FAILED_AT_DEFAULT)
         set(value) = putLong(BREAK_IN_LAST_FAILED_AT, value)
 
+    // ─── Sprint 9 / L6 — Semantic search toggle ───────────────────────────
+
+    /** Enable/disable on-device TFLite tag inference at import time. @since v14 L6 */
+    var semanticSearchEnabled: Boolean
+        get() = getBoolean(SEMANTIC_SEARCH_ENABLED, SEMANTIC_SEARCH_ENABLED_DEFAULT)
+        set(value) = putBoolean(SEMANTIC_SEARCH_ENABLED, value)
+
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
@@ -531,5 +538,15 @@ class Config(context: Context) {
          */
         const val BREAK_IN_LAST_FAILED_AT = "breakIn^lastFailedAt"
         const val BREAK_IN_LAST_FAILED_AT_DEFAULT = 0L
+
+        /**
+         * Sprint 9 / L6 — Enable/disable on-device semantic search.
+         * When true, new photo imports run TFLite inference to generate
+         * AI tags. When false (default), no inference runs (saves battery
+         * + storage). The `tag:` search prefix is a no-op when disabled.
+         * @since v14 — Sprint 9 / L6 semantic search
+         */
+        const val SEMANTIC_SEARCH_ENABLED = "semantic^searchEnabled"
+        const val SEMANTIC_SEARCH_ENABLED_DEFAULT = false
     }
 }
