@@ -16,6 +16,7 @@ name: Android Build CI
 #  - Path filter (skip CI for docs-only changes like README/ROADMAP edits)
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -30,6 +31,9 @@ on:
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
+
+permissions:
+  contents: read
 
 jobs:
   test:
