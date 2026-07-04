@@ -180,8 +180,12 @@ for abi in "${!ABI_TO_GOARCH[@]}"; do
         echo "DNS will be broken on Android. Aborting."
         exit 1
     fi
-    if ! file "$target_file" | grep -q "for Android"; then
-        echo "ERROR: $target_file is not built for Android."
+    # Check for Android linker — the `file` command output varies by version:
+    # - Some versions say "for Android"
+    # - Others say "interpreter /system/bin/linker64" (which IS Android)
+    # Accept either.
+    if ! file "$target_file" | grep -qE "for Android|/system/bin/linker"; then
+        echo "ERROR: $target_file is not built for Android (no Android linker found)."
         echo "File says: $(file "$target_file")"
         exit 1
     fi
