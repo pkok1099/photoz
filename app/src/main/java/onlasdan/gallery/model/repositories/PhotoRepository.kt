@@ -677,12 +677,22 @@ class PhotoRepository @Inject constructor(
 
             try {
                 // Rename the encrypted files from old canonical UUID to promoted UUID.
-                val oldOrig = app.getFileStreamPath(internalFileName(photo.uuid))
-                val newOrig = app.getFileStreamPath(internalFileName(promoted.uuid))
+                // Use the standalone function (not Photo.internalFileName) because
+                // we're working with raw UUIDs, not Photo objects.
+                val oldOrig = app.getFileStreamPath(
+                    onlasdan.gallery.model.database.entity.internalFileName(photo.uuid)
+                )
+                val newOrig = app.getFileStreamPath(
+                    onlasdan.gallery.model.database.entity.internalFileName(promoted.uuid)
+                )
                 if (oldOrig.exists()) oldOrig.renameTo(newOrig)
 
-                val oldTn = app.getFileStreamPath(internalThumbnailFileName(photo.uuid))
-                val newTn = app.getFileStreamPath(internalThumbnailFileName(promoted.uuid))
+                val oldTn = app.getFileStreamPath(
+                    onlasdan.gallery.model.database.entity.internalThumbnailFileName(photo.uuid)
+                )
+                val newTn = app.getFileStreamPath(
+                    onlasdan.gallery.model.database.entity.internalThumbnailFileName(promoted.uuid)
+                )
                 if (oldTn.exists()) oldTn.renameTo(newTn)
 
                 // Update the promoted row: clear canonical_uuid (it's now the owner).

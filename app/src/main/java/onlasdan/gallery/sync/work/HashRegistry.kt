@@ -1270,8 +1270,7 @@ class HashRegistry @Inject constructor(
             try {
                 cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
                 val compressed = cipher.doFinal(ciphertext)
-                val plaintext = gzipDecompress(compressed)
-                val json = String(plaintext, Charsets.UTF_8)
+                val json = gzipDecompressToString(compressed)
                 val parsed = parseRegistryJson(json)
                 entries.addAll(parsed)
             } catch (e: Exception) {

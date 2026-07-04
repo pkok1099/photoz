@@ -340,7 +340,7 @@ interface PhotoDao {
      * @since v15 — Sprint 10+ / M10 Part 3 symlink album
      */
     @Query("UPDATE photo SET canonical_uuid = :canonicalUuid WHERE photo_uuid = :uuid")
-    suspend fun updateCanonicalUuid(uuid: String, canonicalUuid: String)
+    suspend fun updateCanonicalUuid(uuid: String, canonicalUuid: String?)
 
     /**
      * Sprint 10+ / M10 Part 3 — Find all symlink photos referencing a canonical.
