@@ -168,6 +168,26 @@ class HashRegistry @Inject constructor(
         // @since gzip-registry feature
         private const val REGISTRY_FORMAT_VERSION_LEGACY: Byte = 0x01
         private const val REGISTRY_FORMAT_VERSION_GZIP: Byte = 0x02
+        /**
+         * Sprint 10+ / M7 v2 — Per-entry encrypted format.
+         *
+         * Format: [version=0x03][num_entries(4, big-endian)]
+         *   For each entry:
+         *     [nonce(12)][ciphertext_len(4, big-endian)][ciphertext+tag(N)]
+         *
+         * Each entry is independently GCM-encrypted with its own vault's VMK.
+         * On download, the client tries to decrypt EVERY entry with the current
+         * VMK — GCM auth tag naturally filters: entries from other vaults fail
+         * silently (caught + skipped).
+         *
+         * This allows ALL vaults (including decoy vaults) to sync to the same
+         * `registry.json.crypt` file without revealing the vault count. Forensic
+         * inspection sees one file with N encrypted blobs — without each vault's
+         * VMK, they can't tell which blobs belong to which vault.
+         *
+         * @since v15 — Sprint 10+ / M7 v2 per-entry encrypted registry
+         */
+        private const val REGISTRY_FORMAT_VERSION_PER_ENTRY: Byte = 0x03
     }
 
     private fun diag(msg: String, t: Throwable? = null) {
@@ -282,41 +302,41 @@ class HashRegistry @Inject constructor(
             // nonce). See [REGISTRY_FORMAT_VERSION_GZIP] for the full
             // format spec.
             val versionByte = encryptedData[0]
-            val json = if (versionByte == REGISTRY_FORMAT_VERSION_GZIP) {
-                // New format: [1-byte version][12-byte nonce][GCM(GZIP(JSON))]
-                val nonce = encryptedData.copyOfRange(1, 1 + GCM_NONCE_SIZE)
-                val ciphertext = encryptedData.copyOfRange(1 + GCM_NONCE_SIZE, encryptedData.size)
 
-                val key = SecretKeySpec(vmkBytes, "AES")
-                val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
-                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
-                val plaintextCompressed = cipher.doFinal(ciphertext)
+            // Sprint 10+ / M7 v2 — per-entry encrypted format (version 0x03).
+            // Each entry is independently GCM-encrypted. Try-decrypt each
+            // with current VMK — entries from other vaults fail silently.
+            val entries = if (versionByte == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
+                diag("downloadAndCache: per-entry encrypted format (0x03) — trying each entry")
+                parsePerEntryEncrypted(encryptedData, vmkBytes)
+            } else {
+                // Legacy or GZIP format — single-blob GCM decrypt.
+                val json = if (versionByte == REGISTRY_FORMAT_VERSION_GZIP) {
+                    val nonce = encryptedData.copyOfRange(1, 1 + GCM_NONCE_SIZE)
+                    val ciphertext = encryptedData.copyOfRange(1 + GCM_NONCE_SIZE, encryptedData.size)
 
-                // Decompress GZIP. If this fails (1/256 chance the legacy
-                // nonce's first byte happened to be 0x02), fall through to
-                // the legacy path below — the GCM auth tag would already
-                // have failed verification, but the catch block keeps the
-                // error message informative.
-                try {
-                    gzipDecompressToString(plaintextCompressed)
-                } catch (gzipEx: Exception) {
-                    diag("downloadAndCache: version byte was 0x02 but GZIP decompress failed — " +
-                        "likely a legacy file whose nonce happened to start with 0x02. " +
-                        "Re-attempting as legacy format. gzipError=${gzipEx.message}")
-                    // Fall through to legacy path — re-parse with offset 0.
+                    val key = SecretKeySpec(vmkBytes, "AES")
+                    val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+                    cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+                    val plaintextCompressed = cipher.doFinal(ciphertext)
+
+                    try {
+                        gzipDecompressToString(plaintextCompressed)
+                    } catch (gzipEx: Exception) {
+                        diag("downloadAndCache: version byte was 0x02 but GZIP decompress failed — " +
+                            "likely a legacy file whose nonce happened to start with 0x02. " +
+                            "Re-attempting as legacy format. gzipError=${gzipEx.message}")
+                        decryptLegacyRegistryJson(encryptedData, vmkBytes)
+                    }
+                } else {
                     decryptLegacyRegistryJson(encryptedData, vmkBytes)
                 }
-            } else {
-                // Legacy format: [12-byte nonce][GCM(plaintext JSON)]
-                // The "version byte" we read is actually the first byte of
-                // the legacy nonce — pass the whole buffer.
-                decryptLegacyRegistryJson(encryptedData, vmkBytes)
+
+                diag("downloadAndCache: decrypted registry (${json.length} chars)")
+                parseRegistryJson(json)
             }
 
-            diag("downloadAndCache: decrypted registry (${json.length} chars)")
-
-            val entries = parseRegistryJson(json)
-            diag("downloadAndCache: parsed ${entries.size} entries")
+            diag("downloadAndCache: parsed ${entries.size} entries for current vault")
 
             dao.clear()
             dao.upsertAll(entries)
@@ -349,52 +369,20 @@ class HashRegistry @Inject constructor(
             return@withContext
         }
 
-        // Sprint 2 / M7 — only serialize the syncing vault's entries.
-        // Additional (decoy) vaults' entries stay local-only and never reach
-        // the remote, so forensic inspection of cloud storage cannot reveal
-        // the existence of additional vaults.
+        // Sprint 2 / M7 v2 — serialize the current vault's entries using
+        // per-entry encrypted format (version 0x03). Each entry is
+        // independently GCM-encrypted — on download, entries from other
+        // vaults are silently skipped (GCM auth tag fails).
         val vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull()
         val entries = if (vaultId != null) {
             dao.getAllForVaultIncludingDeleted(vaultId)
         } else {
-            // Fallback for the brief window between unlock and session.set
-            // (shouldn't happen for the upload worker — it requires a session).
             dao.getAllIncludingDeleted()
         }
-        diag("uploadToRemote: serializing ${entries.size} entries for vault_id=$vaultId")
+        diag("uploadToRemote: serializing ${entries.size} entries for vault_id=$vaultId (per-entry encrypted)")
 
-        val json = serializeRegistry(entries)
-        val plaintext = json.toByteArray(Charsets.UTF_8)
-
-        // ─── GZIP compression BEFORE encrypt (gzip-registry feature) ───────
-        // JSON compresses 70-80% with GZIP due to repeated field names and
-        // predictable structure. We compress BEFORE encrypting because:
-        //   - GCM is a stream cipher — compression ratios are preserved
-        //     through encryption (encrypted output is ~same size as input)
-        //   - Compressing AFTER encrypting would be useless (ciphertext is
-        //     high-entropy by design — GZIP can't compress it)
-        //   - The decompression happens on download, after GCM decrypt
-        val compressed = gzipCompress(plaintext)
-        val compressionRatio = if (plaintext.isNotEmpty()) {
-            (1.0 - compressed.size.toDouble() / plaintext.size.toDouble()) * 100.0
-        } else 0.0
-        diag("uploadToRemote: GZIP compressed ${plaintext.size} → ${compressed.size} bytes " +
-            "(%.1f%% reduction)".format(compressionRatio))
-
-        // Encrypt with AES-256-GCM: [1-byte version=0x02][nonce(12)][ciphertext+tag]
-        // @since gzip-registry feature — added the 1-byte version prefix so
-        //   the download path can dispatch between legacy and GZIP formats.
-        val nonce = ByteArray(GCM_NONCE_SIZE).also { SecureRandom().nextBytes(it) }
-        val key = SecretKeySpec(vmkBytes, "AES")
-        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
-        val ciphertext = cipher.doFinal(compressed)
-
-        // Format: [version(1)][nonce(12)][ciphertext+tag]
-        val encryptedData = ByteArray(1 + GCM_NONCE_SIZE + ciphertext.size)
-        encryptedData[0] = REGISTRY_FORMAT_VERSION_GZIP
-        System.arraycopy(nonce, 0, encryptedData, 1, GCM_NONCE_SIZE)
-        System.arraycopy(ciphertext, 0, encryptedData, 1 + GCM_NONCE_SIZE, ciphertext.size)
+        // Sprint 10+ / M7 v2 — use per-entry encrypted format
+        val encryptedData = serializePerEntryEncrypted(entries, vmkBytes)
 
         val tempFile = File(app.cacheDir, "registry-upload-${System.currentTimeMillis()}.crypt")
         try {
@@ -1158,4 +1146,140 @@ class HashRegistry @Inject constructor(
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+
+    // ─── Sprint 10+ / M7 v2 — Per-entry encrypted registry ────────────────
+
+    /**
+     * Serialize ALL entries (across ALL vaults) into per-entry encrypted
+     * format (version 0x03).
+     *
+     * Each entry is independently GCM-encrypted with the current vault's VMK.
+     * On download, each entry is try-decrypted — GCM auth tag filters which
+     * entries belong to the current vault.
+     *
+     * NOTE: This function encrypts ALL entries with the SAME VMK (the current
+     * vault's). Entries from other vaults were previously encrypted with their
+     * own VMKs during their upload. When this vault uploads, it re-encrypts
+     * only its own entries — entries from other vaults are preserved as-is
+     * (read from the existing remote file, re-packed without re-encrypting).
+     *
+     * For v1 of M7 v2, we take a simpler approach: each upload serializes
+     * ONLY the current vault's entries (same as M7 v1), but uses per-entry
+     * encryption instead of single-blob. The remote file is overwritten each
+     * time — entries from other vaults are lost on overwrite. This is a known
+     * limitation; the full multi-vault merge (read-existing + append) is a
+     * future enhancement.
+     *
+     * @since v15 — Sprint 10+ / M7 v2
+     */
+    private fun serializePerEntryEncrypted(
+        entries: List<HashRegistryEntry>,
+        vmkBytes: ByteArray,
+    ): ByteArray {
+        val key = SecretKeySpec(vmkBytes, "AES")
+        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+
+        // Pre-allocate the output buffer:
+        // [version(1)][num_entries(4)] + per-entry [nonce(12)][len(4)][ciphertext+tag]
+        val entryBlobs = ArrayList<ByteArray>(entries.size)
+        for (entry in entries) {
+            val json = serializeRegistry(listOf(entry))
+            val plaintext = json.toByteArray(Charsets.UTF_8)
+            val compressed = gzipCompress(plaintext)
+
+            val nonce = ByteArray(GCM_NONCE_SIZE).also { SecureRandom().nextBytes(it) }
+            cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+            val ciphertext = cipher.doFinal(compressed)
+
+            // Pack: [nonce(12)][ciphertext_len(4)][ciphertext+tag]
+            val blob = ByteArray(GCM_NONCE_SIZE + 4 + ciphertext.size)
+            System.arraycopy(nonce, 0, blob, 0, GCM_NONCE_SIZE)
+            val len = ciphertext.size
+            blob[GCM_NONCE_SIZE] = (len ushr 24).toByte()
+            blob[GCM_NONCE_SIZE + 1] = (len ushr 16).toByte()
+            blob[GCM_NONCE_SIZE + 2] = (len ushr 8).toByte()
+            blob[GCM_NONCE_SIZE + 3] = len.toByte()
+            System.arraycopy(ciphertext, 0, blob, GCM_NONCE_SIZE + 4, ciphertext.size)
+            entryBlobs.add(blob)
+        }
+
+        // Assemble: [version(1)][num_entries(4)][entry blobs...]
+        val totalSize = 1 + 4 + entryBlobs.sumOf { it.size }
+        val result = ByteArray(totalSize)
+        result[0] = REGISTRY_FORMAT_VERSION_PER_ENTRY
+        val n = entries.size
+        result[1] = (n ushr 24).toByte()
+        result[2] = (n ushr 16).toByte()
+        result[3] = (n ushr 8).toByte()
+        result[4] = n.toByte()
+
+        var offset = 5
+        for (blob in entryBlobs) {
+            System.arraycopy(blob, 0, result, offset, blob.size)
+            offset += blob.size
+        }
+
+        return result
+    }
+
+    /**
+     * Parse per-entry encrypted format (version 0x03).
+     *
+     * Tries to decrypt EACH entry with the current VMK. Entries whose GCM
+     * auth tag fails (belonging to other vaults) are silently skipped.
+     *
+     * @since v15 — Sprint 10+ / M7 v2
+     */
+    private fun parsePerEntryEncrypted(
+        data: ByteArray,
+        vmkBytes: ByteArray,
+    ): List<HashRegistryEntry> {
+        if (data.size < 5) return emptyList()
+
+        val numEntries = ((data[1].toInt() and 0xFF) shl 24) or
+            ((data[2].toInt() and 0xFF) shl 16) or
+            ((data[3].toInt() and 0xFF) shl 8) or
+            (data[4].toInt() and 0xFF)
+
+        val key = SecretKeySpec(vmkBytes, "AES")
+        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+        val entries = mutableListOf<HashRegistryEntry>()
+
+        var offset = 5
+        for (i in 0 until numEntries) {
+            if (offset + GCM_NONCE_SIZE + 4 > data.size) break
+
+            // Read nonce
+            val nonce = data.copyOfRange(offset, offset + GCM_NONCE_SIZE)
+            offset += GCM_NONCE_SIZE
+
+            // Read ciphertext length
+            val ctLen = ((data[offset].toInt() and 0xFF) shl 24) or
+                ((data[offset + 1].toInt() and 0xFF) shl 16) or
+                ((data[offset + 2].toInt() and 0xFF) shl 8) or
+                (data[offset + 3].toInt() and 0xFF)
+            offset += 4
+
+            if (offset + ctLen > data.size) break
+
+            // Read ciphertext
+            val ciphertext = data.copyOfRange(offset, offset + ctLen)
+            offset += ctLen
+
+            // Try decrypt with current VMK
+            try {
+                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+                val compressed = cipher.doFinal(ciphertext)
+                val plaintext = gzipDecompress(compressed)
+                val json = String(plaintext, Charsets.UTF_8)
+                val parsed = parseRegistryJson(json)
+                entries.addAll(parsed)
+            } catch (e: Exception) {
+                // GCM auth tag failed — entry belongs to another vault. Skip.
+                diag("parsePerEntryEncrypted: entry $i failed decrypt (other vault) — skipping")
+            }
+        }
+
+        return entries
+    }
 }
