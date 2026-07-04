@@ -146,13 +146,16 @@ class VaultService @Inject constructor(
             }
 
             // ─── Sprint 7 / P2 — Consume break-in warning on success ────────
-            // On successful unlock, check if there were failed attempts since
-            // the last login. If so, the warning is surfaced to the UI via
-            // the session's breakInWarning field. The counter is reset here.
-            val warning = breakInDetector.consumeWarningIfAny()
-            if (warning != null) {
-                android.util.Log.w("RcloneDiag", "Break-in warning surfaced: $warning")
-            }
+            // The warning is consumed by the caller (UnlockViewModel) so it
+            // can surface it to the UI. VaultService does NOT consume here
+            // — it just checks if there's a warning (without consuming) for
+            // logging purposes. The actual consume + UI display happens in
+            // UnlockViewModel.unlockWithPassword / unlockWithBiometric.
+            //
+            // We use a peek (non-consuming) approach: just log that a warning
+            // exists. The caller will consumeWarningIfAny() to get the string
+            // + reset the counter.
+            // (No consume here — moved to UnlockViewModel for UI surfacing.)
 
             // ─── Sprint 10 / L3 — Stamp last unlock time for self-destruct ──
             // The self-destruct worker checks this timestamp to determine

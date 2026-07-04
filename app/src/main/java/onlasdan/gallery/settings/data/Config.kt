@@ -306,6 +306,11 @@ class Config(context: Context) {
         get() = getLong(LAST_UNLOCK_AT, LAST_UNLOCK_AT_DEFAULT)
         set(value) = putLong(LAST_UNLOCK_AT, value)
 
+    /** Panic dial code for emergency wipe. Empty = disabled. @since v14 P3 */
+    var panicDialCode: String
+        get() = getString(PANIC_DIAL_CODE, PANIC_DIAL_CODE_DEFAULT) ?: PANIC_DIAL_CODE_DEFAULT
+        set(value) = putString(PANIC_DIAL_CODE, value)
+
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
@@ -576,5 +581,15 @@ class Config(context: Context) {
          */
         const val LAST_UNLOCK_AT = "security^lastUnlockAt"
         const val LAST_UNLOCK_AT_DEFAULT = 0L
+
+        /**
+         * Sprint 7+ / P3 — Panic dial code. When the user dials this code
+         * (instead of the normal launch code), the vault is wiped.
+         * Default "9111" — distinct from the normal launch code "1337".
+         * Empty string = panic disabled.
+         * @since v14 — Sprint 7+ / P3 panic wipe
+         */
+        const val PANIC_DIAL_CODE = "security^panicDialCode"
+        const val PANIC_DIAL_CODE_DEFAULT = "9111"
     }
 }

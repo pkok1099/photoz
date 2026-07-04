@@ -60,6 +60,7 @@ class UnlockViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val legacyEncryptionMigrator: LegacyEncryptionMigrator,
     private val legacyEncryption: LegacyEncryption,
+    private val breakInDetector: onlasdan.gallery.security.BreakInDetector,
 ) : ObservableViewModel(app) {
 
     @Bindable
@@ -70,6 +71,17 @@ class UnlockViewModel @Inject constructor(
         }
 
     val unlockState: MutableStateFlow<UnlockState> = MutableStateFlow(UnlockState.Initial)
+
+    /**
+     * Sprint 7+ / P2 — Break-in warning string (null = no warning).
+     *
+     * Populated by [unlockWithPassword] / [unlockWithBiometric] on success
+     * when there were failed attempts since the last login. The UI
+     * (UnlockFragment) observes this and shows an AlertDialog.
+     *
+     * @since v14 — Sprint 7+ / P2 break-in warning UI
+     */
+    val breakInWarning: MutableStateFlow<String?> = MutableStateFlow(null)
 
     /**
      * Tries to unlock the save.
@@ -85,6 +97,11 @@ class UnlockViewModel @Inject constructor(
                 vaultService.unlock(UnlockRequest.Password(password))
                     .onSuccess { session ->
                         sessionRepository.set(session)
+
+                        // Sprint 7+ / P2 — Consume break-in warning on success.
+                        // If there were failed attempts since last login, surface
+                        // the warning to the UI. The counter is reset by consume.
+                        breakInWarning.value = breakInDetector.consumeWarningIfAny()
 
                         if (legacyEncryptionMigrator.migrationNeeded() || config.legacyCurrentlyMigrating) {
                             val legacySession = legacyEncryption.obtainSession(password)
@@ -113,6 +130,8 @@ class UnlockViewModel @Inject constructor(
             vaultService.unlock(UnlockRequest.Biometric(fragment))
                 .onSuccess { session ->
                     sessionRepository.set(session)
+                    // Sprint 7+ / P2 — consume break-in warning on biometric success.
+                    breakInWarning.value = breakInDetector.consumeWarningIfAny()
                     unlockState.update { UnlockState.Unlocked }
                 }
                 .onFailure {

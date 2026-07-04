@@ -82,8 +82,26 @@ class UnlockFragment : Fragment() {
             setContent {
                 AppTheme {
                     val unlockState by viewModel.unlockState.collectAsStateWithLifecycle()
+                    val breakInWarning by viewModel.breakInWarning.collectAsStateWithLifecycle()
                     var showBiometric by remember { mutableStateOf(false) }
                     var showForgotPassword by remember { mutableStateOf(false) }
+
+                    // Sprint 7+ / P2 — Break-in warning dialog.
+                    // Shown when there were failed unlock attempts since last login.
+                    if (breakInWarning != null) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { viewModel.breakInWarning.value = null },
+                            title = { androidx.compose.material3.Text("⚠ Break-in attempt detected") },
+                            text = { androidx.compose.material3.Text(breakInWarning!!) },
+                            confirmButton = {
+                                androidx.compose.material3.TextButton(
+                                    onClick = { viewModel.breakInWarning.value = null }
+                                ) {
+                                    androidx.compose.material3.Text("Dismiss")
+                                }
+                            },
+                        )
+                    }
 
                     // Check biometric + recovery phrase availability on first composition.
                     LaunchedEffect(Unit) {
