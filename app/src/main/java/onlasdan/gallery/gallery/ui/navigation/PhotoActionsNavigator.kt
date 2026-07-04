@@ -42,6 +42,10 @@ class PhotoActionsNavigator @Inject constructor() {
             )
 
             is PhotoAction.OpenPhoto -> navigateOpenPhoto(action.photoUUID, action.albumUUID, navController)
+            // Sprint 4 / M2 — ToggleFavorite is handled directly in the VM
+            // (which has PhotoRepository injected). It never reaches the
+            // navigator, but Kotlin requires the when to be exhaustive.
+            is PhotoAction.ToggleFavorite -> { /* no-op: handled by VM */ }
         }
     }
 
@@ -70,4 +74,16 @@ sealed interface PhotoAction {
     data class OpenPhoto(val photoUUID: String, val albumUUID: String = "") : PhotoAction
     data class DeletePhotos(val photos: List<Photo>) : PhotoAction
     data class ExportPhotos(val photos: List<Photo>, val target: Uri) : PhotoAction
+
+    /**
+     * Sprint 4 / M2 — Toggle the favorite flag on a batch of photos.
+     *
+     * Emitted by the multi-selection action bar's "Mark as favorite" /
+     * "Remove from favorites" button. The receiver calls
+     * [PhotoRepository.toggleFavorite] for each photo UUID and dismisses
+     * the multi-selection.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    data class ToggleFavorite(val photoUUIDs: List<String>, val isFavorite: Boolean) : PhotoAction
 }

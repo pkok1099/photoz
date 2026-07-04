@@ -44,7 +44,17 @@ data class Sort(
         FileName(1, Photo.COL_FILENAME, R.drawable.ic_abc, R.string.sorting_field_filename_label),
         Size(2, Photo.COL_SIZE, R.drawable.ic_photo_size, R.string.sorting_field_size_label),
         LinkedAt(3, AlbumPhotoCrossRefTable.COL_LINKED_AT, R.drawable.ic_calendar_today, R.string.sorting_field_added_to_album_label),
-        LastModified(4, Photo.COL_LAST_MODIFIED, R.drawable.ic_edit, R.string.sorting_field_last_modified);
+        LastModified(4, Photo.COL_LAST_MODIFIED, R.drawable.ic_edit, R.string.sorting_field_last_modified),
+        /**
+         * Sprint 4 / M3 — Sort by photo type (JPEG, MP4, PDF, etc.).
+         *
+         * Groups photos by type in the gallery: all JPEGs together, then all
+         * MP4s, etc. Useful when the user has a mixed vault and wants to see
+         * files of the same kind clustered.
+         *
+         * @since v12 — Sprint 4 / M3 advanced sort
+         */
+        Type(5, "type", R.drawable.ic_image, R.string.sorting_field_type_label);
 
         companion object {
             fun fromValue(value: Int) = when (value) {
@@ -53,6 +63,7 @@ data class Sort(
                 Size.value -> Size
                 LinkedAt.value -> LinkedAt
                 LastModified.value -> LastModified
+                Type.value -> Type
                 else -> error("Invalid value $value")
             }
         }

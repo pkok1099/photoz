@@ -57,6 +57,10 @@ class GalleryUiStateFactory @Inject constructor() {
                 GalleryFilter.PHOTOS -> photos.filter { !it.type.isVideo && !it.type.isFile }
                 GalleryFilter.VIDEOS -> photos.filter { it.type.isVideo }
                 GalleryFilter.FILES -> photos.filter { it.type.isFile }
+                // @since v12 Sprint 4 / M2 — Favorites filter: only photos
+                // marked as favorite in the current vault. Crosses type
+                // boundaries (a favorited video shows up here too).
+                GalleryFilter.FAVORITES -> photos.filter { it.isFavorite }
             }
 
             // @since search-filter feature — filename contains, case-insensitive.
@@ -111,6 +115,8 @@ class GalleryUiStateFactory @Inject constructor() {
                             uuid = it.uuid,
                             // @since PR2 sync — surface per-photo sync state in the gallery tile
                             syncState = it.syncState,
+                            // @since v12 Sprint 4 / M2 — surface favorite flag for heart badge
+                            isFavorite = it.isFavorite,
                         )
                     },
                     showAlbumSelectionDialog = showAlbumSelectionDialog,

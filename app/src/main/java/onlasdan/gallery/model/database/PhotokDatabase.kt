@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 11
+private const val DATABASE_VERSION = 12
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -142,6 +142,17 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 10,
             to = 11,
+        ),
+        // v11 → v12: Sprint 4 / M2 favorites.
+        //   Add `is_favorite INTEGER NOT NULL DEFAULT 0` to `photo`. 0 = regular,
+        //   1 = user-marked favorite. Existing photos get the default 0 on
+        //   migration (they were all non-favorites).
+        // Additive (new column with constant default) — Room auto-generates
+        // the ALTER TABLE ADD COLUMN statement; no AutoMigrationSpec needed.
+        // @since v12 — Sprint 4 / M2 favorites
+        AutoMigration(
+            from = 11,
+            to = 12,
         ),
     ]
 )

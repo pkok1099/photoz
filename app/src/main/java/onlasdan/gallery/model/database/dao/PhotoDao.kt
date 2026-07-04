@@ -315,4 +315,28 @@ interface PhotoDao {
      */
     @Query("SELECT COUNT(*) FROM photo WHERE vault_id = :vaultId")
     suspend fun countByVault(vaultId: String): Int
+
+    // ─── Sprint 4 / M2 — Favorites ────────────────────────────────────────
+
+    /**
+     * Toggle the `is_favorite` flag for a single photo.
+     *
+     * Called from the gallery's long-press menu "Mark as favorite" / "Remove
+     * from favorites". The toggle is fire-and-forget — the gallery's Flow
+     * observer picks up the change and re-renders the heart badge.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    @Query("UPDATE photo SET is_favorite = :isFavorite WHERE photo_uuid = :uuid")
+    suspend fun setFavorite(uuid: String, isFavorite: Boolean)
+
+    /**
+     * Count favorites in the current vault. Used by the Favorites filter chip's
+     * badge (e.g. "Favorites (12)") and to decide whether the chip should be
+     * enabled.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    @Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0 AND is_favorite = 1 AND (vault_id = :vaultId OR vault_id IS NULL)")
+    suspend fun countFavorites(vaultId: String): Int
 }

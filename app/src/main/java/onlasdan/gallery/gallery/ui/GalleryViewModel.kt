@@ -33,6 +33,9 @@ import onlasdan.gallery.model.repositories.PhotoRepository
 import onlasdan.gallery.sort.domain.SortConfig
 import onlasdan.gallery.sort.domain.SortRepository
 import onlasdan.gallery.sync.rclone.RepoManager
+import onlasdan.gallery.sync.work.SyncRestorer
+import timber.log.Timber
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -142,6 +145,33 @@ class GalleryViewModel @Inject constructor(
             //   toast; the user can retry. Idempotent: photos whose local
             //   original already exists are skipped.
             is GalleryUiEvent.OnRestoreOriginals -> onRestoreOriginals(event.uuids)
+            // Sprint 4 / M2 — toggle favorite flag on selected photos.
+            is GalleryUiEvent.OnToggleFavorite -> onToggleFavorite(event.items, event.isFavorite)
+        }
+    }
+
+    /**
+     * Sprint 4 / M2 — Toggle the `is_favorite` flag on a batch of photos.
+     *
+     * Called from the multi-selection action bar's "Mark as favorite" /
+     * "Remove from favorites" button. Iterates the selected UUIDs and calls
+     * [PhotoRepository.toggleFavorite] for each. The gallery's Flow observer
+     * picks up the DB change and re-emits with updated heart badges — no
+     * manual UI refresh needed.
+     *
+     * Non-fatal: individual failures are logged but don't abort the batch.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    private fun onToggleFavorite(items: List<String>, isFavorite: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (uuid in items) {
+                try {
+                    photoRepository.toggleFavorite(uuid, isFavorite)
+                } catch (e: Exception) {
+                    Timber.w(e, "onToggleFavorite: failed for %s (non-fatal)", uuid)
+                }
+            }
         }
     }
 

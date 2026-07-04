@@ -75,4 +75,17 @@ sealed interface GalleryUiEvent {
      * @since Bug 4 — granular per-photo restore
      */
     data class OnRestoreOriginals(val uuids: List<String>) : GalleryUiEvent
+
+    /**
+     * Sprint 4 / M2 — User picked "Mark as favorite" / "Remove from favorites"
+     * from the multi-selection dropdown.
+     *
+     * Per-photo granular toggle: for each selected UUID, calls
+     * [onlasdan.gallery.model.repositories.PhotoRepository.toggleFavorite]
+     * to flip the `is_favorite` flag. After the toggle, the gallery's Flow
+     * observer re-emits with updated heart badges.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    data class OnToggleFavorite(val items: List<String>, val isFavorite: Boolean) : GalleryUiEvent
 }

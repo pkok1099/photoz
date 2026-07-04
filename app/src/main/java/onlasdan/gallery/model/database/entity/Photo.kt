@@ -163,6 +163,24 @@ data class Photo(
     @ColumnInfo(name = COL_VAULT_ID, defaultValue = "NULL")
     @Expose
     var vaultId: String? = null,
+
+    /**
+     * Sprint 4 / M2 — Favorites flag.
+     *
+     * `false` (default) means the photo is a regular gallery item. `true`
+     * means the user has marked it as a favorite — the gallery shows a heart
+     * badge on the thumbnail and the "Favorites" filter chip selects only
+     * these photos.
+     *
+     * Vault-scoped: favorites are per-vault (a photo favorited in vault A
+     * is NOT favorited in vault B, even if the same content_hash exists in
+     * both vaults — they're distinct Photo rows with distinct vault_id).
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    @ColumnInfo(name = COL_IS_FAVORITE, defaultValue = "0")
+    @Expose
+    var isFavorite: Boolean = false,
 ) {
 
     val internalFileName: String
@@ -199,5 +217,8 @@ data class Photo(
 
         /** Vault identifier column. @since v11 Sprint 2 / M7 multi-vault */
         const val COL_VAULT_ID = "vault_id"
+
+        /** Favorite flag column. @since v12 Sprint 4 / M2 favorites */
+        const val COL_IS_FAVORITE = "is_favorite"
     }
 }

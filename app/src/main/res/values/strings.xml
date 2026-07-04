@@ -390,6 +390,8 @@
     <string name="sorting_field_size_label">File size</string>
     <string name="sorting_field_added_to_album_label">Added to album</string>
     <string name="sorting_field_last_modified">Last modified</string>
+    <!-- Sprint 4 / M3 — Sort by type -->
+    <string name="sorting_field_type_label">File type</string>
 
     <string name="sorting_restore_default">Restore Default</string>
 
@@ -528,6 +530,10 @@
     <string name="gallery_filter_photos">Photos</string>
     <string name="gallery_filter_videos">Videos</string>
     <string name="gallery_filter_files">Files</string>
+    <!-- Sprint 4 / M2 — Favorites filter chip -->
+    <string name="gallery_filter_favorites">Favorites</string>
+    <string name="gallery_action_toggle_favorite">Mark as favorite</string>
+    <string name="gallery_action_remove_favorite">Remove from favorites</string>
     <string name="gallery_open_file_not_found">File no longer exists</string>
     <string name="gallery_open_file_failed">Couldn\'t open file — no app available, or vault is locked</string>
 

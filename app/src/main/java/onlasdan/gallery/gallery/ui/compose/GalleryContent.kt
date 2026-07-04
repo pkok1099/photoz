@@ -233,6 +233,13 @@ fun GalleryFilterRow(
             label = { Text(stringResource(R.string.gallery_filter_files)) },
             colors = FilterChipDefaults.filterChipColors(),
         )
+        // Sprint 4 / M2 — Favorites filter chip
+        FilterChip(
+            selected = selected == GalleryFilter.FAVORITES,
+            onClick = { onSelect(GalleryFilter.FAVORITES) },
+            label = { Text(stringResource(R.string.gallery_filter_favorites)) },
+            colors = FilterChipDefaults.filterChipColors(),
+        )
     }
 }
 

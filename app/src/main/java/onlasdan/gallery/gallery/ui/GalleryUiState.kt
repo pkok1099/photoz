@@ -41,6 +41,14 @@ enum class GalleryFilter {
 
     /** Show file types only (DOCUMENT, ARCHIVE, AUDIO). */
     FILES,
+
+    /**
+     * Sprint 4 / M2 — Show only photos marked as favorite in the current
+     * vault. Crosses type boundaries (a favorited video shows up here too).
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    FAVORITES,
 }
 
 sealed interface GalleryUiState {

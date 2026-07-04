@@ -487,15 +487,47 @@ class PhotoRepository @Inject constructor(
      *
      * @since v10 — recycle bin / soft delete (was hard delete before v10)
      */
+    /**
+     * Sprint 4 / M2 — Toggle the `is_favorite` flag for a single photo.
+     *
+     * Fire-and-forget: the gallery's Flow observer picks up the change and
+     * re-renders the heart badge. The toggle is vault-agnostic (the photo's
+     * UUID is globally unique within the table), but the gallery only shows
+     * the photo in the current vault's view — so toggling favorite from
+     * vault A's gallery only affects vault A's view of that photo.
+     *
+     * @since v12 — Sprint 4 / M2 favorites
+     */
+    suspend fun toggleFavorite(uuid: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        try {
+            photoDao.setFavorite(uuid, isFavorite)
+        } catch (e: Exception) {
+            Timber.w(e, "toggleFavorite failed for %s (non-fatal)", uuid)
+        }
+    }
+
+    /**
+     * Sprint 4 / M2 — Count favorites in the current vault.
+     *
+     * Used by the Favorites filter chip's badge and to decide whether the
+     * chip should be enabled (chips with 0 favorites are still tappable but
+     * show an empty state when selected).
+     */
+    suspend fun countFavorites(): Int = withContext(Dispatchers.IO) {
+        try {
+            photoDao.countFavorites(currentVaultId())
+        } catch (e: Exception) {
+            Timber.w(e, "countFavorites failed (non-fatal)")
+            0
+        }
+    }
+
     suspend fun safeDeletePhoto(photo: Photo): Boolean {
         // ─── registry-gc feature — tombstone the dedup registry entry ──────
         // We still tombstone on soft-delete: the user's intent is "I don't
         // want this photo anymore" and other devices should stop
         // referencing its content_hash. If the user later restores the
-        // photo from the trash the tombstone is NOT rolled back (the
-        // remote original was already reclaimed by "Clean up backup" or
-        // will be re-uploaded by the sync worker when the user restores
-        // and the local file still exists).
+        // photo from the trash the tombstone is NOT rolled back.
         //
         // Non-fatal: if the tombstone fails (no registry entry for pre-v9
         // imports, vault locked, network blip), the local soft-delete still

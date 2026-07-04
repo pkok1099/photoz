@@ -455,6 +455,35 @@ private fun GalleryPhotoTile(
             )
         }
 
+        // ─── Sprint 4 / M2 — Favorite heart badge ───────────────────────────
+        // Small heart icon at the top-START corner (opposite of the pin badge
+        // at top-END) so they don't overlap. Only shown when the photo is
+        // marked as favorite AND multi-selection is not active (selection
+        // replaces the badges with a checkmark overlay via multiSelectionItem).
+        AnimatedVisibility(
+            visible = photoTile.isFavorite && !selected,
+            enter = scaleIn(),
+            exit = scaleOut(),
+            modifier = Modifier
+                .padding(2.dp)
+                .size(VideoIconSize)
+                .align(Alignment.TopStart)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_favorite),
+                contentDescription = null,
+                tint = Color.Red,
+                modifier = Modifier
+                    .dropShadow(
+                        shape = RoundedCornerShape(12.dp),
+                        shadow = Shadow(
+                            radius = 6.dp,
+                            alpha = 0.3f
+                        )
+                    )
+            )
+        }
+
         // ─── Sync state badge (PR2) ──────────────────────────────────────────
         // Small icon in the bottom-right corner indicating per-photo cloud sync
         // status. LOCAL_ONLY photos show no badge (keeps the gallery visually
