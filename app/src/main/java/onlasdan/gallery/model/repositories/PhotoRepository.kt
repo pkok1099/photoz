@@ -194,6 +194,16 @@ class PhotoRepository @Inject constructor(
         val sha256 = runCatching { MessageDigest.getInstance("SHA-256") }.getOrNull()
 
         val inputStream = io.openFileInput(sourceUri)
+        // Sprint 6 / M4 — extract EXIF metadata at import time.
+        // For non-image types (video, PDF, audio) EXIF will be null/empty —
+        // that's fine, the columns are nullable. The gallery search parser
+        // treats null EXIF as non-matching for `date:`/`camera:`/`location:`
+        // queries.
+        val exif = if (!type.isVideo && !type.isFile) {
+            onlasdan.gallery.model.io.extractExifMetadata(app, sourceUri)
+        } else {
+            onlasdan.gallery.model.io.ExifMetadata()
+        }
         val photo = Photo(
             fileName = metaData.fileName ?: UUID.randomUUID().toString(),
             importedAt = System.currentTimeMillis(),
@@ -232,6 +242,15 @@ class PhotoRepository @Inject constructor(
             // time (shouldn't happen — import requires unlock), the photo is
             // created with vault_id = NULL and backfilled on the next unlock.
             vaultId = runCatching { currentVaultId() }.getOrNull(),
+            // ─── Sprint 6 / M4 — EXIF metadata for search ───────────────────
+            // Populated from the source photo's EXIF (when available). NULL
+            // for screenshots/PDFs/audio or when EXIF is stripped. The gallery
+            // search parser recognizes `date:`/`camera:`/`location:` prefixes
+            // and filters against these columns.
+            exifDateTaken = exif.dateTaken,
+            exifGpsLat = exif.gpsLat,
+            exifGpsLon = exif.gpsLon,
+            exifCamera = exif.camera,
         )
 
         val created = safeCreatePhoto(photo, inputStream, sourceUri, sha256)
@@ -1055,6 +1074,14 @@ class PhotoRepository @Inject constructor(
                 val type = runCatching { PhotoType.valueOf(meta.type).takeIf { it != PhotoType.UNDEFINED } }
                     .getOrNull() ?: PhotoType.JPEG
 
+                // Sprint 6 / M4 — extract EXIF from the in-memory bytes
+                // (ZIP import doesn't have a URI to stream from).
+                val exif = if (!type.isVideo && !type.isFile) {
+                    onlasdan.gallery.model.io.extractExifMetadata(bytes)
+                } else {
+                    onlasdan.gallery.model.io.ExifMetadata()
+                }
+
                 val photo = Photo(
                     fileName = meta.fileName,
                     importedAt = System.currentTimeMillis(),
@@ -1067,6 +1094,11 @@ class PhotoRepository @Inject constructor(
                     contentHash = meta.contentHash,
                     // Sprint 2 / M7 — tag with current vault_id
                     vaultId = runCatching { currentVaultId() }.getOrNull(),
+                    // Sprint 6 / M4 — EXIF from in-memory bytes
+                    exifDateTaken = exif.dateTaken,
+                    exifGpsLat = exif.gpsLat,
+                    exifGpsLon = exif.gpsLon,
+                    exifCamera = exif.camera,
                 )
 
                 // Write the plaintext bytes through the encrypt stream.

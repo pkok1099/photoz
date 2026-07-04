@@ -253,6 +253,28 @@ class Config(context: Context) {
         get() = getBoolean(SYNC_VERIFY_HASH, SYNC_VERIFY_HASH_DEFAULT)
         set(value) = putBoolean(SYNC_VERIFY_HASH, value)
 
+    // ─── Sprint 6 / M5 — Cache rotation settings ──────────────────────────
+
+    /**
+     * Max age in days for cached thumbnails. Thumbnails for UPLOADED photos
+     * not accessed in this many days are deleted on app start. 0 disables.
+     *
+     * @since v13 — Sprint 6 / M5 cache rotation
+     */
+    var cacheMaxAgeDays: Int
+        get() = getInt(CACHE_MAX_AGE_DAYS, CACHE_MAX_AGE_DAYS_DEFAULT)
+        set(value) = putInt(CACHE_MAX_AGE_DAYS, value)
+
+    /**
+     * Max total size in MB for cached thumbnails. When exceeded, oldest-
+     * accessed thumbnails (for UPLOADED photos) are deleted. 0 disables.
+     *
+     * @since v13 — Sprint 6 / M5 cache rotation
+     */
+    var cacheMaxSizeMb: Int
+        get() = getInt(CACHE_MAX_SIZE_MB, CACHE_MAX_SIZE_MB_DEFAULT)
+        set(value) = putInt(CACHE_MAX_SIZE_MB, value)
+
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
@@ -451,5 +473,35 @@ class Config(context: Context) {
          */
         const val SYNC_VERIFY_HASH = "sync^verifyHash"
         const val SYNC_VERIFY_HASH_DEFAULT = false
+
+        /**
+         * Sprint 6 / M5 — Cache rotation: max age in days for cached thumbnails.
+         *
+         * Thumbnails for photos with syncState=UPLOADED that haven't been
+         * accessed in this many days are deleted from local storage to free
+         * up space (the encrypted original stays on the remote; the thumbnail
+         * can be re-downloaded on demand via SyncRestorer).
+         *
+         * Default 30 days. Set to 0 to disable cache rotation entirely.
+         *
+         * @since v13 — Sprint 6 / M5 cache rotation
+         */
+        const val CACHE_MAX_AGE_DAYS = "cache^maxAgeDays"
+        const val CACHE_MAX_AGE_DAYS_DEFAULT = 30
+
+        /**
+         * Sprint 6 / M5 — Cache rotation: max total size in MB for cached thumbnails.
+         *
+         * When the total size of cached thumbnails exceeds this limit, the
+         * oldest-accessed thumbnails (for UPLOADED photos only) are deleted
+         * until the cache is under the limit. Set to 0 to disable size-based
+         * rotation (only age-based rotation applies).
+         *
+         * Default 500 MB.
+         *
+         * @since v13 — Sprint 6 / M5 cache rotation
+         */
+        const val CACHE_MAX_SIZE_MB = "cache^maxSizeMb"
+        const val CACHE_MAX_SIZE_MB_DEFAULT = 500
     }
 }

@@ -64,16 +64,23 @@ class GalleryUiStateFactory @Inject constructor() {
             }
 
             // @since search-filter feature — filename contains, case-insensitive.
-            // Empty query means "no text filter" — show everything that survived
-            // the type filter.
-            val textFiltered = if (searchQuery.isBlank()) {
+            // @since v13 Sprint 6 / M4 — EXIF-prefixed queries (date:, camera:,
+            //   location:) now go through the SearchQueryParser. Plain text
+            //   without prefixes still does filename-contains (backwards compat).
+            val filteredPhotos = if (searchQuery.isBlank()) {
                 typeFiltered
             } else {
-                val needle = searchQuery.trim().lowercase()
-                typeFiltered.filter { it.fileName.lowercase().contains(needle) }
+                val parsed = parseSearchQuery(searchQuery)
+                if (parsed.isEmpty) {
+                    // Parser returned empty (e.g. all tokens were unknown prefixes
+                    // with empty values) — fall back to the old behavior of
+                    // filename-contains the whole raw query.
+                    val needle = searchQuery.trim().lowercase()
+                    typeFiltered.filter { it.fileName.lowercase().contains(needle) }
+                } else {
+                    typeFiltered.filterBySearchQuery(parsed)
+                }
             }
-
-            val filteredPhotos = textFiltered
             // ─── Item 3 fix: count LOCAL_ONLY + UPLOAD_PENDING as "pending sync" ──
             // Previously this counted only UPLOAD_PENDING. That caused the
             // indicator to flicker/stick: a freshly-imported photo sits in

@@ -70,6 +70,16 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
     lateinit var photoRepository: onlasdan.gallery.model.repositories.PhotoRepository
 
     /**
+     * Sprint 6 / M5 — injected so we can run the thumbnail cache rotation
+     * pass on app start. Deletes thumbnails for UPLOADED photos that are
+     * older than the configured max age or exceed the total size limit.
+     *
+     * @since v13 — Sprint 6 / M5 cache rotation
+     */
+    @Inject
+    lateinit var cacheRotationUseCase: onlasdan.gallery.model.io.CacheRotationUseCase
+
+    /**
      * Hilt-injected WorkManager configuration. WorkManager reads this via
      * [Configuration.Provider.getWorkManagerConfiguration] before its first initialization.
      *
@@ -133,6 +143,23 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
                 }
             } catch (e: Exception) {
                 android.util.Log.w("TrashAutoCleanup", "cleanupExpiredTrash failed: ${e.message}")
+            }
+        }
+
+        // ─── Sprint 6 / M5 — thumbnail cache rotation on app start ────────
+        // Deletes thumbnails for UPLOADED photos that are older than the
+        // configured max age (default 30 days) or exceed the total size
+        // limit (default 500 MB). LOCAL_ONLY photos are never evicted.
+        // Best-effort: failures are logged but don't crash. Skipped when
+        // both limits are 0 (user disabled cache rotation).
+        appScope.launch {
+            try {
+                val n = cacheRotationUseCase.run()
+                if (n > 0) {
+                    android.util.Log.i("CacheRotation", "evicted $n cached thumbnails")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("CacheRotation", "cache rotation failed: ${e.message}")
             }
         }
 

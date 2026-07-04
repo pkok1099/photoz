@@ -35,7 +35,7 @@ import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
 
-private const val DATABASE_VERSION = 12
+private const val DATABASE_VERSION = 13
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -153,6 +153,24 @@ const val DATABASE_NAME = "photok.db"
         AutoMigration(
             from = 11,
             to = 12,
+        ),
+        // v12 → v13: Sprint 6 / M4 EXIF search.
+        //   Add 4 nullable columns to `photo`:
+        //     - exif_date_taken (Long, epoch-ms)
+        //     - exif_gps_lat (Double, decimal degrees)
+        //     - exif_gps_lon (Double, decimal degrees)
+        //     - exif_camera (String, "Make Model" concatenated)
+        //   All nullable with default NULL — existing photos have no EXIF
+        //   (we don't backfill from already-encrypted files because that
+        //   would require decrypting every photo on migration; the user
+        //   can re-import if they want EXIF populated for old photos, or
+        //   we add a "Re-extract EXIF" button in Settings as a future
+        //   enhancement).
+        // Additive (new nullable columns) — Room auto-generates the DDL.
+        // @since v13 — Sprint 6 / M4 EXIF search
+        AutoMigration(
+            from = 12,
+            to = 13,
         ),
     ]
 )

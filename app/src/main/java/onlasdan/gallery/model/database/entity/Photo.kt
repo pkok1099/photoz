@@ -181,6 +181,37 @@ data class Photo(
     @ColumnInfo(name = COL_IS_FAVORITE, defaultValue = "0")
     @Expose
     var isFavorite: Boolean = false,
+
+    // ─── Sprint 6 / M4 — EXIF metadata for search ─────────────────────────
+    // Extracted at import time from the source photo's EXIF (when available).
+    // NULL when the source has no EXIF (e.g. screenshots, PDFs, audio) or when
+    // EXIF parsing fails. All EXIF columns are nullable for that reason.
+    //
+    // The gallery search parser recognizes prefixes like `date:2024-01`,
+    // `camera:Canon`, `location:Jakarta` and filters against these columns.
+    // Without EXIF extraction, users with 1000+ photos have no way to find
+    // photos by when/where they were taken — only by filename, which is
+    // rarely meaningful (IMG_20240115_123456.jpg etc.).
+
+    /** EXIF DateTimeOriginal as epoch-ms. NULL when no EXIF date. @since v13 M4 */
+    @ColumnInfo(name = COL_EXIF_DATE_TAKEN, defaultValue = "NULL")
+    @Expose
+    var exifDateTaken: Long? = null,
+
+    /** EXIF GPS latitude (decimal degrees). NULL when no GPS. @since v13 M4 */
+    @ColumnInfo(name = COL_EXIF_GPS_LAT, defaultValue = "NULL")
+    @Expose
+    var exifGpsLat: Double? = null,
+
+    /** EXIF GPS longitude (decimal degrees). NULL when no GPS. @since v13 M4 */
+    @ColumnInfo(name = COL_EXIF_GPS_LON, defaultValue = "NULL")
+    @Expose
+    var exifGpsLon: Double? = null,
+
+    /** EXIF Make + Model concatenated (e.g. "Canon EOS R6"). NULL when no EXIF. @since v13 M4 */
+    @ColumnInfo(name = COL_EXIF_CAMERA, defaultValue = "NULL")
+    @Expose
+    var exifCamera: String? = null,
 ) {
 
     val internalFileName: String
@@ -220,5 +251,17 @@ data class Photo(
 
         /** Favorite flag column. @since v12 Sprint 4 / M2 favorites */
         const val COL_IS_FAVORITE = "is_favorite"
+
+        /** EXIF date taken column. @since v13 Sprint 6 / M4 EXIF search */
+        const val COL_EXIF_DATE_TAKEN = "exif_date_taken"
+
+        /** EXIF GPS latitude column. @since v13 Sprint 6 / M4 EXIF search */
+        const val COL_EXIF_GPS_LAT = "exif_gps_lat"
+
+        /** EXIF GPS longitude column. @since v13 Sprint 6 / M4 EXIF search */
+        const val COL_EXIF_GPS_LON = "exif_gps_lon"
+
+        /** EXIF camera (Make+Model) column. @since v13 Sprint 6 / M4 EXIF search */
+        const val COL_EXIF_CAMERA = "exif_camera"
     }
 }
