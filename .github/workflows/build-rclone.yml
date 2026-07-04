@@ -41,6 +41,9 @@ on:
     tags:
       - 'rclone-v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-rclone:
     name: Build rclone (arm64-v8a, CGO+NDK+16KB)
@@ -107,6 +110,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git add -f app/src/main/jniLibs/arm64-v8a/librclone.so
           git commit -m "chore: update rclone binary (${{ steps.version.outputs.version }}) — CI build
 
