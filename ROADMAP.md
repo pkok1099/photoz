@@ -425,14 +425,74 @@ L4's "separate DB" approach would actually be a REGRESSION from M7's design.
 ## Recommended Sprint Order
 
 ```
-Sprint 1:  P4 (Dynamic Color) + P5 (Edge-to-Edge) + P6 (GCM upgrade) + P7 (Strong Password)
-Sprint 2:  M7 (Crypto Decoy Vault)
-Sprint 3:  M8 (BFU-Safe) + M10 (Embedded Photo Picker)
-Sprint 4:  M2 (Favorites) + M3 (Advanced Sort)
-Sprint 5:  M1 (Compose Migration) + M9 (Material 3 Expressive)
-Sprint 6:  M4 (EXIF Search) + M5 (Cache Rotation)
-Sprint 7:  L1 (Biometric) + L2 (Fake Crash) + P2 (Break-in Detection) + P3 (Panic Mode)
-Sprint 8:  M6 (Modularization) + L5 (CI/CD) + L7 (Baseline Profiles)
-Sprint 9:  L6 (On-Device Semantic Search) + L8 (AAPM)
-Sprint 10: L4 (Multi-Profile) + L3 (Self-Destruct)
+Sprint 1:  P4 (Dynamic Color) + P5 (Edge-to-Edge) + P6 (GCM upgrade) + P7 (Strong Password)     ✅
+Sprint 2:  M7 (Crypto Multi-Vault)                                                              ✅
+Sprint 3:  M8 (BFU-Safe) + M10 (Photo Picker + Path Maker v1)                                   ✅
+Sprint 4:  M2 (Favorites) + M3 (Advanced Sort)                                                  ✅
+Sprint 5:  M1 (Compose Migration partial) + M9 (Material 3 Expressive)                          ✅
+Sprint 6:  M4 (EXIF Search) + M5 (Cache Rotation)                                               ✅
+Sprint 7:  L1 (Biometric) + L2 (Fake Crash) + P2 (Break-in Detection) + P3 (Panic Mode)        ✅
+Sprint 8:  L5 (CI/CD) + L7 (R8 Full Mode + Baseline Profile scaffold) [M6 deferred]             ✅
+Sprint 9:  L6 (On-Device Semantic Search scaffold) + L8 (AAPM)                                  ✅
+Sprint 10: L3 (Self-Destruct) [L4 superseded by M7]                                             ✅
 ```
+
+---
+
+## Final Implementation Summary (all sprints complete)
+
+### Sprint 1 — Crypto & UI Hardening ✅
+- **P4 Dynamic Color**: Material3.DayNight.Bridge theme + DynamicColors API + Compose dynamicLightColorScheme/dynamicDarkColorScheme
+- **P5 Edge-to-Edge**: statusBarsPadding/navigationBarsPadding audit + fixes
+- **P6 AES-256-GCM**: version byte 0x03, hybrid CBC/GCM engine (GCM for non-video, CBC for video streaming)
+- **P7 Strong Password**: StrongPasswordPolicy (min 8, no PINs, blacklist, class diversity) + SetupFragment UI
+
+### Sprint 2 — Multi-Vault Foundation ✅
+- **M7 Multi-Vault**: unlimited vaults, HMAC-SHA256 vault_id, no real/decoy flag, first-vault-only sync, per-vault-scoped queries, VaultIdBackfillUseCase
+
+### Sprint 3 — UI + Privacy ✅
+- **M7 UI**: CreateVaultSheet + Switch Vault entry in Settings
+- **M8 BFU-Safe**: clear VMK on background (respects lock timeout setting)
+- **M10 Photo Picker**: PickMultipleVisualMedia + PathMakerDialog v1 (default "Picker" album)
+
+### Sprint 4 — Gallery Features ✅
+- **M2 Favorites**: isFavorite column, heart badge, Favorites filter chip, multi-selection toggle
+- **M3 Type Sort**: Sort.Field.Type (5, "type")
+
+### Sprint 5 — Compose + Expressive ✅
+- **M2 finish**: multi-selection bar heart button + "Remove from favorites" dropdown
+- **M9 Material 3 Expressive**: ExpressiveShapes (14/14/20/28/32dp) + Motion.kt (spring + easing constants) + predictive back gesture
+
+### Sprint 6 — Search + Cache ✅
+- **M4 EXIF Search**: exif_date_taken/gps_lat/gps_lon/camera columns, ExifExtractor, SearchQueryParser (date:/camera:/location: prefixes, haversine distance)
+- **M5 Cache Rotation**: LRU age + size eviction (LOCAL_ONLY never evicted), CacheRotationUseCase on app start
+
+### Sprint 7 — Security Hardening ✅
+- **L1 Biometric**: verified existing handler post-rebrand
+- **L2 Fake Crash**: FakeCrashActivity ("PhotoZ keeps stopping"), triggered on wrong dial code
+- **P2 Break-in Detection**: BreakInDetector (failed attempt count + timestamp), AlertDialog warning on next successful unlock
+- **P3 Panic Wipe**: PanicWipeUseCase + panic dial code (default "9111") + DialLauncher 3-way dispatch
+
+### Sprint 8 — CI/CD + Performance ✅
+- **L5 CI/CD**: GitHub Actions upgrade (JDK 21, cache, lint, APK artifact, PR trigger, path filter)
+- **L7 R8 Full Mode**: android.enableR8.fullMode=true + isShrinkResources + :baselineprofile module scaffold
+- **M6 Modularization**: DEFERRED (too large without IDE refactor tooling)
+
+### Sprint 9 — AI + Protection ✅
+- **L6 Semantic Search**: ai_tags column, TagExtractor interface + StubTagExtractor, tag: prefix in search, Config toggle (scaffold — TFLite model file needed for activation)
+- **L8 AAPM**: AdvancedProtectionModeAwareness (detect, shouldDisableExport, shouldForceFlagSecure, shouldForceGcmOnly)
+
+### Sprint 10 — Self-Destruct ✅
+- **L3 Self-Destruct**: SelfDestructWorker (periodic 24h, PanicWipeUseCase on inactivity threshold), Config.selfDestructDays
+- **L4 Multi-Profile**: SUPERSEDED by M7 (M7's vault_id scheme is strictly better than L4's separate-DB approach)
+
+### Post-Sprint Completions ✅
+- **M1 Compose Migration**: 7 screens migrated (Unlock, Setup, Credits, UnlockBackup, RestoreBackup, OnBoarding, Settings already Compose) + 10 XML layouts deleted
+- **M10 Part 3 Symlink Album**: canonical_uuid scheme, dedup creates symlink instead of deleting, per-album refcounted delete with canonical promotion
+- **M7 v2 Per-Entry Encrypted Registry**: format version 0x03, each entry independently GCM-encrypted, try-decrypt on download (GCM auth tag filters other vaults)
+- **P2/P3/L2 Triggers**: Break-in warning UI (AlertDialog), panic dial code interception, fake crash on wrong dial code
+
+### Still Deferred (require external resources)
+- **M6 Modularization**: needs IDE refactor tooling (300+ files, circular dep resolution)
+- **L6 TFLite activation**: needs mobilenet_v2.tflite model file in assets/ (scaffold ready, just add file + implement TfliteTagExtractor)
+- **M7 v2 full multi-vault merge**: current implementation overwrites remote with current vault's entries; full read-existing+append merge is future enhancement
