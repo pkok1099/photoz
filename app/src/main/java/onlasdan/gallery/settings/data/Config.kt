@@ -294,6 +294,18 @@ class Config(context: Context) {
         get() = getBoolean(SEMANTIC_SEARCH_ENABLED, SEMANTIC_SEARCH_ENABLED_DEFAULT)
         set(value) = putBoolean(SEMANTIC_SEARCH_ENABLED, value)
 
+    // ─── Sprint 10 / L3 — Self-destruct timer ─────────────────────────────
+
+    /** Self-destruct timer in days (0 = disabled). @since v14 L3 */
+    var selfDestructDays: Int
+        get() = getInt(SELF_DESTRUCT_DAYS, SELF_DESTRUCT_DAYS_DEFAULT)
+        set(value) = putInt(SELF_DESTRUCT_DAYS, value)
+
+    /** Epoch-ms of last successful unlock. @since v14 L3 */
+    var lastUnlockAt: Long
+        get() = getLong(LAST_UNLOCK_AT, LAST_UNLOCK_AT_DEFAULT)
+        set(value) = putLong(LAST_UNLOCK_AT, value)
+
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
@@ -548,5 +560,21 @@ class Config(context: Context) {
          */
         const val SEMANTIC_SEARCH_ENABLED = "semantic^searchEnabled"
         const val SEMANTIC_SEARCH_ENABLED_DEFAULT = false
+
+        /**
+         * Sprint 10 / L3 — Self-destruct timer (days inactive).
+         * 0 = disabled (default). 7/14/30/60 = wipe after N days of no unlock.
+         * @since v14 — Sprint 10 / L3 self-destruct
+         */
+        const val SELF_DESTRUCT_DAYS = "security^selfDestructDays"
+        const val SELF_DESTRUCT_DAYS_DEFAULT = 0
+
+        /**
+         * Sprint 10 / L3 — Epoch-ms of last successful unlock.
+         * Used by the self-destruct worker to compute inactivity.
+         * @since v14 — Sprint 10 / L3 self-destruct
+         */
+        const val LAST_UNLOCK_AT = "security^lastUnlockAt"
+        const val LAST_UNLOCK_AT_DEFAULT = 0L
     }
 }

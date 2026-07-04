@@ -154,6 +154,11 @@ class VaultService @Inject constructor(
                 android.util.Log.w("RcloneDiag", "Break-in warning surfaced: $warning")
             }
 
+            // ─── Sprint 10 / L3 — Stamp last unlock time for self-destruct ──
+            // The self-destruct worker checks this timestamp to determine
+            // inactivity. Updated on every successful unlock.
+            config.lastUnlockAt = System.currentTimeMillis()
+
             session
         }
 

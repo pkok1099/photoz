@@ -313,7 +313,7 @@ vault_id = HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()
 - Dialog mimics Android system crash dialog ("Open app again" / "Send feedback" — both close app)
 - Est: ~200 lines
 
-### L3. Self-Destruct Timer
+### L3. Self-Destruct Timer — DONE (Sprint 10)
 **Reason**: User sets timer → if vault not opened within X days → auto-wipe local data.
 
 **Implementation**:
@@ -321,13 +321,20 @@ vault_id = HMAC-SHA256(VMK, "photoz-vault-id-v1").take(16 bytes).toHex()
 - WorkManager periodic check: if last unlock > X days → panic wipe (reuse P3 logic)
 - Est: ~150 lines
 
-### L4. Multi-Profile Support
+### L4. Multi-Profile Support — SUPERSEDED by M7 (Sprint 2)
 **Reason**: Multiple vaults in 1 app. e.g. "Personal" + "Work" with different passwords.
 
-**Implementation**:
-- App startup: select profile (or auto-detect from password)
-- Each profile: VMK + VaultProtection + separate DB
-- Est: ~800 lines (complex — DB isolation, UI switcher, sync per profile)
+**Status**: **Superseded by M7 (Multi-Vault)** implemented in Sprint 2. M7 provides
+unlimited vaults via HMAC-derived `vault_id` — every password derives a distinct
+vault, all sharing the same DB with `WHERE vault_id = ?` filtering. This is strictly
+better than L4's "separate DB per profile" design:
+  - No DB isolation complexity (M7 uses one DB, filtered queries)
+  - No UI profile switcher needed (M7's password IS the vault selector)
+  - No sync-per-profile (M7 syncs the first vault; additional vaults are local-only)
+  - Forensic-resistance: M7 has no `is_real`/`is_decoy` flag, no profile count metadata
+
+L4's "separate DB" approach would actually be a REGRESSION from M7's design.
+**Not implementing L4 — M7 covers this use case completely.**
 
 ### L5. CI/CD Pipeline (GitHub Actions)
 **Reason**: Automated build + test + lint on every PR.

@@ -163,6 +163,17 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
             }
         }
 
+        // ─── Sprint 10 / L3 — Schedule self-destruct check ────────────────
+        // Periodic WorkManager job (every 24h) that wipes the vault if the
+        // user hasn't unlocked in the configured number of days. No-op when
+        // selfDestructDays = 0 (disabled, the default). KEEP policy means
+        // calling schedule() repeatedly is safe — WorkManager deduplicates.
+        try {
+            onlasdan.gallery.security.SelfDestructWorker.schedule(this)
+        } catch (e: Exception) {
+            android.util.Log.w("RcloneDiag", "SelfDestructWorker.schedule failed (non-fatal): ${e.message}")
+        }
+
         // ─── Item 1: restore persisted background timestamp ───────────────
         // `wentToBackgroundAt` was previously an in-memory `Long` that reset to `0L`
         // on process death, defeating the auto-lock check in [onStart] after a
