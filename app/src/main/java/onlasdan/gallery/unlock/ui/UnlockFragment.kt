@@ -17,42 +17,50 @@
 package onlasdan.gallery.unlock.ui
 
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import dagger.hilt.android.AndroidEntryPoint
-import onlasdan.gallery.BR
 import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.R
-import onlasdan.gallery.databinding.FragmentUnlockBinding
 import onlasdan.gallery.encryption.domain.VaultService
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.gallery.ui.navigation.NavigateToGallery
 import onlasdan.gallery.other.extensions.finishOnBackWhileStarted
-import onlasdan.gallery.other.extensions.hide
-import onlasdan.gallery.other.extensions.launchLifecycleAwareJob
-import onlasdan.gallery.other.extensions.show
-import onlasdan.gallery.other.extensions.vanish
-import onlasdan.gallery.other.systemBarsPadding
 import onlasdan.gallery.settings.data.Config
+import onlasdan.gallery.ui.theme.AppTheme
 import onlasdan.gallery.uicomponnets.Dialogs
-import onlasdan.gallery.uicomponnets.base.hideKeyboard
-import onlasdan.gallery.uicomponnets.bindings.BindableFragment
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Unlock fragment.
- * Handles state and login.
+ * Sprint 10+ / M1 — UnlockFragment migrated to Compose.
  *
- * @since 1.0.0
- * @author PhotoZ
+ * Previously extended [BindableFragment] with XML layout (fragment_unlock.xml)
+ * + ViewBinding. Now extends plain [Fragment] and hosts a [ComposeView] that
+ * renders [UnlockScreen].
+ *
+ * The ViewModel (UnlockViewModel) is unchanged — it still uses ObservableViewModel
+ * for backwards compat with the legacy migration path. The Compose screen
+ * manages password as local state and passes it to the ViewModel via
+ * `viewModel.password = ...` before calling `unlockWithPassword()`.
+ *
+ * @since v14 — Sprint 10+ / M1 Compose migration
  */
 @AndroidEntryPoint
-class UnlockFragment : BindableFragment<FragmentUnlockBinding>(R.layout.fragment_unlock) {
+class UnlockFragment : Fragment() {
 
     private val viewModel: UnlockViewModel by viewModels()
 
@@ -65,79 +73,88 @@ class UnlockFragment : BindableFragment<FragmentUnlockBinding>(R.layout.fragment
     @Inject
     lateinit var navigateToGallery: NavigateToGallery
 
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        return ComposeView(requireContext()).apply {
+            setContent {
+                AppTheme {
+                    val unlockState by viewModel.unlockState.collectAsStateWithLifecycle()
+                    var showBiometric by remember { mutableStateOf(false) }
+                    var showForgotPassword by remember { mutableStateOf(false) }
+
+                    // Check biometric + recovery phrase availability on first composition.
+                    LaunchedEffect(Unit) {
+                        // Biometric check
+                        val hasBiometric = vaultService.isSetup(VaultProtectionType.Biometric) ||
+                            vaultService.canMigrate(VaultProtectionType.Biometric)
+                        showBiometric = hasBiometric
+
+                        // Auto-trigger biometric if available (same as old XML fragment).
+                        if (hasBiometric) {
+                            kotlinx.coroutines.delay(500L)
+                            viewModel.unlockWithBiometric(this@UnlockFragment)
+                        }
+
+                        // Recovery phrase check
+                        showForgotPassword = vaultService.isSetup(VaultProtectionType.RecoveryPhrase)
+                    }
+
+                    UnlockScreen(
+                        unlockState = unlockState,
+                        showBiometricButton = showBiometric,
+                        showForgotPassword = showForgotPassword,
+                        onUnlock = { password ->
+                            // Sprint 7 / P2 note: the debug auto-fill password
+                            // is handled below in onViewCreated (same as before).
+                            viewModel.password = password
+                            viewModel.unlockWithPassword()
+                        },
+                        onBiometricClick = {
+                            viewModel.unlockWithBiometric(this@UnlockFragment)
+                        },
+                        onForgotPassword = {
+                            forgotPassword()
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        view.systemBarsPadding()
+        super.onViewCreated(view, savedInstanceState)
         finishOnBackWhileStarted()
 
+        // Debug auto-fill (same as old XML fragment).
         if (BuildConfig.DEBUG) {
-            viewModel.password = "abc123"
+            viewModel.password = "Debug123!pass"
         }
 
-        launchLifecycleAwareJob {
-            viewModel.unlockState.collect {
-                when (it) {
+        // Collect unlock state for navigation.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.unlockState.collect { state ->
+                when (state) {
                     UnlockState.Initial -> Unit
-                    UnlockState.PasswordError -> {
-                        binding.loadingOverlay.hide()
-                        binding.unlockWrongPasswordWarningTextView.show()
-                    }
-
-                    UnlockState.Loading -> binding.loadingOverlay.show()
+                    UnlockState.PasswordError -> Unit // Compose screen shows the error
+                    UnlockState.Loading -> Unit // Compose screen shows the overlay
                     UnlockState.Unlocked -> {
-                        binding.loadingOverlay.hide()
-                        activity?.hideKeyboard()
                         navigateToGallery(findNavController())
                     }
-
                     UnlockState.StartLegacyMigration -> {
-                        binding.loadingOverlay.hide()
-                        activity?.hideKeyboard()
-
                         findNavController().navigate(R.id.action_unlockFragment_to_encryptionMigrationFragment)
                     }
-
-                    UnlockState.Error -> showErrorToast()
-
+                    UnlockState.Error -> {
+                        Dialogs.showLongToast(requireContext(), getString(R.string.common_error))
+                    }
                     UnlockState.ShowRecoveryPhrase -> {
-                        binding.loadingOverlay.hide()
-                        activity?.hideKeyboard()
                         findNavController().navigate(R.id.action_global_recoveryPhraseSetupFragment)
                     }
                 }
             }
         }
-
-        viewModel.addOnPropertyChange<String>(BR.password) {
-            if (binding.unlockWrongPasswordWarningTextView.visibility != View.INVISIBLE) {
-                binding.unlockWrongPasswordWarningTextView.vanish()
-            }
-        }
-
-        super.onViewCreated(view, savedInstanceState)
-
-        lifecycleScope.launch {
-            if (vaultService.isSetup(VaultProtectionType.Biometric) || vaultService.canMigrate(VaultProtectionType.Biometric)) {
-                binding.unlockUseBiometricUnlockButton.show()
-
-                delay(500L)
-                viewModel.unlockWithBiometric(fragment = this@UnlockFragment)
-            } else {
-                binding.unlockUseBiometricUnlockButton.hide()
-            }
-        }
-
-        lifecycleScope.launch {
-            if (vaultService.isSetup(VaultProtectionType.RecoveryPhrase)) {
-                binding.unlockForgotPassword.show()
-            } else {
-                binding.unlockForgotPassword.hide()
-            }
-        }
-    }
-
-    private fun showErrorToast() {
-        binding.loadingOverlay.hide()
-        Dialogs.showLongToast(requireContext(), getString(R.string.common_error))
     }
 
     fun forgotPassword() {
@@ -145,13 +162,7 @@ class UnlockFragment : BindableFragment<FragmentUnlockBinding>(R.layout.fragment
             findNavController().navigate(R.id.action_unlockFragment_to_recoveryPhraseRestoreFragment)
         } catch (e: Exception) {
             Timber.e(e)
-            showErrorToast()
+            Dialogs.showLongToast(requireContext(), getString(R.string.common_error))
         }
-    }
-
-    override fun bind(binding: FragmentUnlockBinding) {
-        super.bind(binding)
-        binding.context = this
-        binding.viewModel = viewModel
     }
 }
