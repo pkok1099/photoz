@@ -25,6 +25,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
 
 private val LightColors = lightColorScheme(
@@ -107,6 +108,17 @@ private val DarkColors = darkColorScheme(
  * [com.google.android.material.color.DynamicColors.applyToActivityIfAvailable]
  * from MainActivity.onCreate — both sides stay in sync because both pull from
  * the same wallpaper-derived system palette.
+ *
+ * ## Sprint 5 / M9 — Material 3 Expressive
+ *
+ * Adds the [Shapes] override with bolder corner radii (Material 3 Expressive
+ * 2025 design language uses larger, more pronounced shapes — 28dp for large
+ * surfaces, 20dp for medium, 14dp for small). The default Material 3 shapes
+ * (16/12/8) feel dated next to apps that have moved to Expressive.
+ *
+ * The motion layer (spring-based animations) is centralized in
+ * [Motion.kt] — callers reference `Motion.Spring.Default` etc. instead of
+ * hardcoding `spring()` calls.
  */
 @Composable
 fun AppTheme(
@@ -126,6 +138,30 @@ fun AppTheme(
 
   MaterialTheme(
     colorScheme = colors,
+    // Sprint 5 / M9 — Material 3 Expressive shapes (bolder corner radii).
+    shapes = ExpressiveShapes,
     content = content
   )
 }
+
+/**
+ * Sprint 5 / M9 — Material 3 Expressive shape scheme.
+ *
+ * Bolder corner radii than the default Material 3 (16/12/8dp). The Expressive
+ * 2025 design language favors larger, more confident curves — 28dp for large
+ * surfaces (sheets, dialogs), 20dp for medium (cards, list items), 14dp for
+ * small (chips, text fields).
+ *
+ * Used as the `shapes` arg of [MaterialTheme] so every component that reads
+ * `MaterialTheme.shapes.*` (Cards, Buttons, Dialogs, BottomSheets, etc.)
+ * picks up the new radii automatically without per-call overrides.
+ *
+ * @since v12 — Sprint 5 / M9 Material 3 Expressive
+ */
+private val ExpressiveShapes = androidx.compose.material3.Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(32.dp),
+)

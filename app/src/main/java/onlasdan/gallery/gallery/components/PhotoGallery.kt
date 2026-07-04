@@ -109,6 +109,18 @@ fun PhotoGallery(
      *   icon on the selection bar (was previously only in the More dropdown).
      */
     onAddToAlbum: () -> Unit = {},
+    /**
+     * Sprint 5 / M2 finish — Called when the user taps the heart icon on the
+     * multi-selection bar to mark all selected photos as favorite.
+     *
+     * The caller (GalleryContent → GalleryViewModel.onToggleFavorite) iterates
+     * the selected UUIDs and calls PhotoRepository.toggleFavorite for each.
+     * After the toggle, the gallery's Flow observer re-emits with updated
+     * heart badges.
+     *
+     * @since v12 — Sprint 5 / M2 favorites finish
+     */
+    onMarkFavorite: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val activity = LocalActivity.current
@@ -236,6 +248,21 @@ fun PhotoGallery(
                     Icon(
                         painter = painterResource(R.drawable.ic_folder),
                         contentDescription = stringResource(R.string.menu_ms_add_to_album),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                // Sprint 5 / M2 finish — one-tap "Mark as favorite" icon on
+                // the multi-selection bar. Toggles is_favorite=true for every
+                // selected photo. (Removing favorite is via the More dropdown
+                // below — keeping the bar uncluttered with just the most common
+                // "add to favorites" action.)
+                IconButton(onClick = {
+                    onMarkFavorite()
+                    multiSelectionState.cancelSelection()
+                }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_favorite),
+                        contentDescription = stringResource(R.string.gallery_action_toggle_favorite),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }

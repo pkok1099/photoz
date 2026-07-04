@@ -102,6 +102,18 @@ fun GalleryContent(
             onAddToAlbum = {
                 handleUiEvent(GalleryUiEvent.OnAddToAlbum)
             },
+            // Sprint 5 / M2 finish — one-tap "Mark as favorite" icon on the
+            // multi-selection bar. Toggles is_favorite=true for every selected
+            // photo (the inverse "Remove from favorites" lives in the More
+            // dropdown above).
+            onMarkFavorite = {
+                handleUiEvent(
+                    GalleryUiEvent.OnToggleFavorite(
+                        items = multiSelectionState.selectedItems.value.toList(),
+                        isFavorite = true,
+                    )
+                )
+            },
             additionalMultiSelectionActions = {
                 HorizontalDivider()
                 DropdownMenuItem(
@@ -134,6 +146,30 @@ fun GalleryContent(
                             )
                         )
                         multiSelectionState.dismissMore()
+                    },
+                )
+                // Sprint 5 / M2 finish — "Remove from favorites" in the More
+                // dropdown. The "Mark as favorite" one-tap icon is on the bar
+                // itself (see PhotoGallery.barActions); this is the inverse
+                // action for users who selected already-favorited photos.
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_favorite),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    text = { Text(stringResource(R.string.gallery_action_remove_favorite)) },
+                    onClick = {
+                        handleUiEvent(
+                            GalleryUiEvent.OnToggleFavorite(
+                                items = multiSelectionState.selectedItems.value.toList(),
+                                isFavorite = false,
+                            )
+                        )
+                        multiSelectionState.dismissMore()
+                        multiSelectionState.cancelSelection()
                     },
                 )
             }
