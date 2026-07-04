@@ -19,59 +19,60 @@ package onlasdan.gallery.settings.ui.credits
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import androidx.compose.ui.platform.ComposeView
+import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
-import androidx.recyclerview.widget.DividerItemDecoration
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.AndroidEntryPoint
-import onlasdan.gallery.R
-import onlasdan.gallery.databinding.FragmentCreditsBinding
-import onlasdan.gallery.other.systemBarsPadding
-import onlasdan.gallery.uicomponnets.bindings.BindableFragment
+import onlasdan.gallery.ui.theme.AppTheme
 
 /**
- * Fragment for displaying credits for icons and contributors.
+ * Sprint 10+ / M1 — CreditsFragment migrated to Compose.
  *
- * @since 1.2.0
- * @author PhotoZ
+ * Previously extended [BindableFragment] with XML layout (fragment_credits.xml)
+ * + RecyclerView + CreditsAdapter. Now extends plain [Fragment] and hosts a
+ * [ComposeView] that renders [CreditsScreen].
+ *
+ * The contributors.json asset is still parsed via Gson (unchanged) — only
+ * the rendering layer switched from RecyclerView to Compose LazyColumn.
+ *
+ * @since v14 — Sprint 10+ / M1 Compose migration
  */
 @AndroidEntryPoint
-class CreditsFragment : BindableFragment<FragmentCreditsBinding>(R.layout.fragment_credits) {
+class CreditsFragment : Fragment() {
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        view.systemBarsPadding()
-        super.onViewCreated(view, savedInstanceState)
-
-        binding.creditsToolbar.setNavigationOnClickListener {
-            findNavController().navigateUp()
-        }
-
-        requireActivity().assets.open(CONTRIBUTORS_FILE).let {
-            val json = String(it.readBytes())
-            val listType = object : TypeToken<ArrayList<CreditEntry?>?>() {}.type
-            val entries: ArrayList<CreditEntry> = Gson().fromJson(json, listType)
-            entries.add(0, CreditEntry.createHeader())
-            entries.add(CreditEntry.createFooter())
-
-            val layoutManager = LinearLayoutManager(requireContext())
-            binding.creditsRecycler.layoutManager = layoutManager
-            binding.creditsRecycler.addItemDecoration(
-                DividerItemDecoration(
-                    requireContext(),
-                    layoutManager.orientation
-                )
-            )
-            binding.creditsRecycler.adapter = CreditsAdapter(entries, openWebsite)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        return ComposeView(requireContext()).apply {
+            setContent {
+                AppTheme {
+                    val entries = loadContributors()
+                    CreditsScreen(
+                        entries = entries,
+                        onBack = { findNavController().navigateUp() },
+                    )
+                }
+            }
         }
     }
 
-    private val openWebsite: (url: String?) -> Unit = {
-        if (it != null) {
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = Uri.parse(it)
-            startActivity(intent)
+    private fun loadContributors(): ArrayList<CreditEntry> {
+        return try {
+            val json = String(requireActivity().assets.open(CONTRIBUTORS_FILE).readBytes())
+            val listType = object : TypeToken<ArrayList<CreditEntry??>?>() {}.type
+            val entries: ArrayList<CreditEntry> = Gson().fromJson(json, listType)
+            entries.add(0, CreditEntry.createHeader())
+            entries.add(CreditEntry.createFooter())
+            entries
+        } catch (e: Exception) {
+            ArrayList()
         }
     }
 

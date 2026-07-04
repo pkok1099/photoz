@@ -33,6 +33,7 @@ import onlasdan.gallery.sync.rclone.RepoManager
 import onlasdan.gallery.telemetry.domain.Signal
 import onlasdan.gallery.telemetry.domain.TelemetryService
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -76,18 +77,15 @@ class SetupViewModel @Inject constructor(
         }
 
     @get:Bindable
-    var setupState: SetupState = SetupState.SETUP
-        set(value) {
-            field = value
-            notifyChange(BR.setupState, value)
-        }
+    var setupState: MutableStateFlow<SetupState> = MutableStateFlow(SetupState.SETUP)
+        private set
 
     // endregion
 
     fun onSetupClicked() = viewModelScope.launch {
 
         if (validateBothPasswords()) {
-            setupState = SetupState.LOADING
+            setupState.value = SetupState.LOADING
 
             vaultService.create(CreateRequest.Password(password))
             vaultService.unlock(UnlockRequest.Password(password))
@@ -124,10 +122,10 @@ class SetupViewModel @Inject constructor(
 
                     config.justFinishedSetup = true
                     telemetryService.signal(Signal.SetupCompleted)
-                    setupState = SetupState.SHOW_RECOVERY_PHRASE
+                    setupState.value = SetupState.SHOW_RECOVERY_PHRASE
                 }
                 .onFailure {
-                    setupState = SetupState.SETUP
+                    setupState.value = SetupState.SETUP
                 }
 
         }
