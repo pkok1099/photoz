@@ -48,6 +48,11 @@ class VaultService @Inject constructor(
     private val keyGen: KeyGen,
     private val config: Config,
     /**
+     * Sprint 7 / P2 — Break-in detector. Records failed unlock attempts
+     * and surfaces a warning on the next successful unlock.
+     */
+    private val breakInDetector: onlasdan.gallery.security.BreakInDetector,
+    /**
      * Sprint 2 / M7 — vault_id backfill hook.
      *
      * When non-null, [unlock] calls it after a successful unlock so the
@@ -63,7 +68,7 @@ class VaultService @Inject constructor(
     suspend fun unlock(request: UnlockRequest): Result<VaultSession> {
         val type = request.protectionType
 
-        return runCatching {
+        val result = runCatching {
             val vmk: javax.crypto.SecretKey = when (request) {
                 is UnlockRequest.Password -> {
                     // ─── Sprint 2 / M7: Multi-vault unlock ───────────────────────
@@ -140,8 +145,30 @@ class VaultService @Inject constructor(
                 Timber.w(e, "vault_id backfill failed (non-fatal) — will retry next unlock")
             }
 
+            // ─── Sprint 7 / P2 — Consume break-in warning on success ────────
+            // On successful unlock, check if there were failed attempts since
+            // the last login. If so, the warning is surfaced to the UI via
+            // the session's breakInWarning field. The counter is reset here.
+            val warning = breakInDetector.consumeWarningIfAny()
+            if (warning != null) {
+                android.util.Log.w("RcloneDiag", "Break-in warning surfaced: $warning")
+            }
+
             session
         }
+
+        // Sprint 7 / P2 — Record failed attempt on unlock failure.
+        // The break-in detector increments its counter + timestamps the
+        // attempt. On the next successful unlock, the warning is surfaced.
+        if (result.isFailure) {
+            try {
+                breakInDetector.recordFailedAttempt()
+            } catch (e: Exception) {
+                Timber.w(e, "BreakInDetector.recordFailedAttempt failed (non-fatal)")
+            }
+        }
+
+        return result
     }
 
     /**

@@ -128,6 +128,13 @@
             android:name=".main.ui.MainActivity"
             android:configChanges="orientation|screenSize" />
 
+        <!-- Sprint 7 / L2 — Fake crash activity (stealth mode decoy) -->
+        <activity
+            android:name=".security.FakeCrashActivity"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme" />
+
         <activity
             android:name=".forwarddialer.ForwardDialerActivity"
             android:theme="@style/AppTheme" />

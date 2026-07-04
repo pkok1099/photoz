@@ -275,6 +275,18 @@ class Config(context: Context) {
         get() = getInt(CACHE_MAX_SIZE_MB, CACHE_MAX_SIZE_MB_DEFAULT)
         set(value) = putInt(CACHE_MAX_SIZE_MB, value)
 
+    // ─── Sprint 7 / P2 — Break-in detection ───────────────────────────────
+
+    /** Failed unlock attempt count since last successful unlock. @since v13 P2 */
+    var breakInFailedAttemptCount: Int
+        get() = getInt(BREAK_IN_FAILED_COUNT, BREAK_IN_FAILED_COUNT_DEFAULT)
+        set(value) = putInt(BREAK_IN_FAILED_COUNT, value)
+
+    /** Epoch-ms of the last failed unlock attempt. 0 = none. @since v13 P2 */
+    var breakInLastFailedAttemptAt: Long
+        get() = getLong(BREAK_IN_LAST_FAILED_AT, BREAK_IN_LAST_FAILED_AT_DEFAULT)
+        set(value) = putLong(BREAK_IN_LAST_FAILED_AT, value)
+
     /**
      * The repo ID this device is bound to. Set by [onlasdan.gallery.sync.rclone.RepoManager]
      * after a successful register or login. `null` means no repo has been set up yet.
@@ -503,5 +515,21 @@ class Config(context: Context) {
          */
         const val CACHE_MAX_SIZE_MB = "cache^maxSizeMb"
         const val CACHE_MAX_SIZE_MB_DEFAULT = 500
+
+        /**
+         * Sprint 7 / P2 — Break-in detection: failed unlock attempt count.
+         * Reset to 0 on successful unlock. Persisted so it survives app restart.
+         * @since v13 — Sprint 7 / P2 break-in detection
+         */
+        const val BREAK_IN_FAILED_COUNT = "breakIn^failedCount"
+        const val BREAK_IN_FAILED_COUNT_DEFAULT = 0
+
+        /**
+         * Sprint 7 / P2 — Break-in detection: epoch-ms of last failed attempt.
+         * 0 means no failed attempts recorded.
+         * @since v13 — Sprint 7 / P2 break-in detection
+         */
+        const val BREAK_IN_LAST_FAILED_AT = "breakIn^lastFailedAt"
+        const val BREAK_IN_LAST_FAILED_AT_DEFAULT = 0L
     }
 }
