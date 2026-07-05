@@ -156,7 +156,7 @@ interface PhotoDao {
      *
      * @since Bug 1 fix — dedup at import time
      */
-    @Query("SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1")
+    @Query("SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid AND deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1")
     suspend fun findByContentHash(hash: String, excludeUuid: String, vaultId: String): Photo?
 
     /**

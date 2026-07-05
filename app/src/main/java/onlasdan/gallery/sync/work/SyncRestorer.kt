@@ -46,15 +46,20 @@ class SyncRestorer @Inject constructor(
 
     suspend fun ensureLocalOriginal(uuid: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val localFile = File(app.filesDir, internalFileName(uuid))
-            if (localFile.exists() && localFile.length() > 0) {
-                return@runCatching
-            }
-
             val photo = try {
                 photoDao.get(uuid)
             } catch (e: Exception) {
                 Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+                return@runCatching
+            }
+
+            // Sprint 10+ / M10 Part 3 fix: use photo.internalFileName which
+            // resolves canonicalUuid (symlink). If this photo is a symlink,
+            // the file lives under the canonical's UUID on the remote — not
+            // under this photo's UUID. Using raw internalFileName(uuid) would
+            // try to download from the wrong remote path → 404.
+            val localFile = File(app.filesDir, photo.internalFileName)
+            if (localFile.exists() && localFile.length() > 0) {
                 return@runCatching
             }
 
@@ -116,16 +121,17 @@ class SyncRestorer @Inject constructor(
         onProgress: (Float) -> Unit,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val localFile = File(app.filesDir, internalFileName(uuid))
-            if (localFile.exists() && localFile.length() > 0) {
-                onProgress(100f)
-                return@runCatching
-            }
-
             val photo = try {
                 photoDao.get(uuid)
             } catch (e: Exception) {
                 Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+                return@runCatching
+            }
+
+            // Sprint 10+ / M10 Part 3 fix: resolve symlink via photo.internalFileName
+            val localFile = File(app.filesDir, photo.internalFileName)
+            if (localFile.exists() && localFile.length() > 0) {
+                onProgress(100f)
                 return@runCatching
             }
 
@@ -188,7 +194,7 @@ class SyncRestorer @Inject constructor(
         for (photo in photos) {
             if (photo.syncState != SyncState.UPLOADED) continue
 
-            val localFile = File(app.filesDir, internalFileName(photo.uuid))
+            val localFile = File(app.filesDir, photo.internalFileName)
             if (localFile.exists() && localFile.length() > 0) continue // already local
 
             val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
