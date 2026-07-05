@@ -106,9 +106,13 @@
 ## Low Priority
 
 ### 13. Rclone binary optimization
-- Current: 84MB (stripped)
-- Possible: LDFLAGS `-s -w` already applied, but could try UPX compression or rclone build tags to exclude unused backends
-- Status: TODO
+- **Current**: 84MB (arm64-v8a, CGO+NDK+16KB aligned, all backends + all commands)
+- **Phase 1 (NOW)**: Accept 84MB. Beta user terbatas, size bukan blocker.
+- **Phase 2 (short term)**: Command stripping only — strip `mount`, `serve`, `bisync`, `ncdu`, `dedupe`, `cryptcheck`, `cryptdecode`, `tree`, dll. PhotoZ pakai RC API (rcd mode), bukan CLI commands. Estimasi savings 5-10MB. Zero risk, no backend breakage. Update `build-rclone.sh` + CI workflow.
+- **Phase 3 (long term, post-beta)**: Evaluate gomobile JNI migration — bukan untuk size, tapi untuk eliminasi subprocess complexity (W^X, 16KB alignment, exec from nativeLibraryDir). Size tetap ~45MB tapi bisa di-download on-demand via `dlopen()` dari `filesDir` (W^X blocks `exec()` tapi tidak `dlopen()`). APK base jadi ~60MB, rclone di-download saat user setup cloud sync.
+- **NOT doing**: Backend stripping (breaks user rclone.conf), UPX (W^X violation + 16KB alignment break + AV false positive), Play Feature Delivery (not viable for FOSS flavor), Optional download via subprocess (W^X blocks exec from writable dirs)
+- **Key insight**: W^X policy blocks `exec()` di `filesDir`/`codeCacheDir` — hanya `nativeLibraryDir` (APK-installed) yang executable. Tapi `dlopen()`/`System.load()` TIDAK di-block di writable dirs. Gomobile JNI pakai `dlopen()`, subprocess pakai `exec()`. Itulah kenapa gomobile JNI enable optional download tapi subprocess tidak.
+- Status: Phase 1 (accept), Phase 2 (TODO), Phase 3 (evaluate post-beta)
 
 ### 14. M6 Modularization
 - Split 300+ files into :core/:sync/:data/:app modules
