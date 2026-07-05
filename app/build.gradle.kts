@@ -3,6 +3,7 @@ import com.android.sdklib.AndroidVersion.VersionCodes
 plugins {
     id("com.android.application")
     id("com.jaredsburrows.license")
+    kotlin("android")
     kotlin("kapt")
     kotlin("plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
