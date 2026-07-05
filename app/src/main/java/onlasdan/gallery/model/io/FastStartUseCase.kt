@@ -21,7 +21,6 @@ import android.net.Uri
 import net.ypresto.qtfaststart.QtFastStart
 import timber.log.Timber
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,11 +39,10 @@ import javax.inject.Singleton
  * the rest of the file downloads.
  *
  * Only applies to MP4/MOV (QuickTime container). WEBM/MKV are already
- * streaming-friendly by design (no MOOV atom) — skipped.
+ * streaming-friendly by design — skipped.
  *
- * Non-fatal: if faststart fails (corrupt MP4, unsupported variant, I/O
- * error), the original file is used as-is. The video will still play —
- * just not progressively (ExoPlayer downloads full file first).
+ * Non-fatal: if faststart fails (corrupt MP4, MOOV already at front,
+ * unsupported variant, I/O error), the original file is used as-is.
  *
  * @since TODO #1 — progressive video streaming
  */
@@ -70,6 +68,10 @@ class FastStartUseCase @Inject constructor(
      * returns the temp file. If faststart is not needed (MOOV already
      * at front) or fails, returns null — caller should use original input.
      *
+     * The QtFastStart library does NOT have an isFaststartNeeded() check —
+     * it tries to faststart and throws if the file doesn't need it or
+     * is malformed. We catch those exceptions and return null.
+     *
      * @return temp File with faststarted content, or null if not needed/failed.
      */
     fun fastStart(inputUri: Uri): File? {
@@ -84,26 +86,22 @@ class FastStartUseCase @Inject constructor(
                 }
             } ?: return null
 
-            // Check if faststart is needed
-            if (!QtFastStart.isFaststartNeeded(tempInput)) {
-                Timber.d("FastStart: MOOV already at front — no faststart needed")
-                return null
-            }
+            Timber.i("FastStart: attempting MOOV relocation for ${tempInput.length()} bytes")
 
-            Timber.i("FastStart: MOOV at end — relocating to front for progressive streaming")
-
-            // Run faststart
-            QtFastStart.faststart(tempInput, tempOutput)
+            // Run faststart — throws if not needed or malformed
+            QtFastStart.fastStart(tempInput, tempOutput)
 
             if (tempOutput.exists() && tempOutput.length() > 0) {
-                Timber.i("FastStart: success — output ${tempOutput.length()} bytes (input was ${tempInput.length()} bytes)")
+                Timber.i("FastStart: success — output ${tempOutput.length()} bytes")
                 tempOutput
             } else {
-                Timber.w("FastStart: output file empty or missing — falling back to original")
+                Timber.w("FastStart: output file empty — using original")
                 null
             }
-        } catch (e: QtFastStart.FastStartException) {
-            Timber.w(e, "FastStart: not a valid MP4 or faststart not possible — using original")
+        } catch (e: QtFastStart.QtFastStartException) {
+            // MalformedFileException or UnsupportedFileException — not a valid
+            // MP4 or MOOV already at front. Non-fatal.
+            Timber.d("FastStart: not needed or unsupported (%s) — using original", e.message)
             null
         } catch (e: Exception) {
             Timber.w(e, "FastStart: failed — using original (non-fatal)")
