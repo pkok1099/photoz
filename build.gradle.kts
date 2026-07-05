@@ -14,6 +14,11 @@ buildscript {
         // Sprint 4 — code quality tooling
         classpath("io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.23.8")
         classpath("org.jlleitschuh.gradle:ktlint-gradle:14.2.0")
+        // Sprint 4 — KSP (Kotlin Symbol Processing) for Hilt + Room.
+        // Version 2.2.21-2.0.5 matches Kotlin 2.2.21 exactly (KSP1 line).
+        // KSP is 2x faster than kapt. We still keep kapt for DataBinding
+        // (KSP doesn't support DataBinding yet — mixed mode).
+        classpath("com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:2.2.21-2.0.5")
     }
 }
 

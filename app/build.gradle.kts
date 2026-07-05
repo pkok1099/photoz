@@ -4,9 +4,17 @@ plugins {
         id("com.android.application")
         id("com.jaredsburrows.license")
         kotlin("android")
+        // kapt kept for DataBinding (KSP doesn't support DataBinding yet).
+        // Hilt + Room migrated to KSP (2x faster) — see ksp() dependencies below.
         kotlin("kapt")
         kotlin("plugin.serialization")
         id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
+
+        // ─── KSP — Kotlin Symbol Processing (Sprint 4) ────────────────────────
+        // 2x faster than kapt. Used for Hilt + Room annotation processing.
+        // kapt kept for DataBinding only (mixed mode).
+        // @since Sprint 4 — KSP migration
+        id("com.google.devtools.ksp")
 
         // ─── Code quality gates (Sprint 4) ────────────────────────────────────
         // detekt: static analysis for Kotlin — catches code smells, complexity,
@@ -209,7 +217,7 @@ dependencies {
         // Room
         implementation("androidx.room:room-runtime:2.8.4")
         implementation("androidx.room:room-paging:2.8.4")
-        kapt("androidx.room:room-compiler:2.8.4")
+        ksp("androidx.room:room-compiler:2.8.4")
 
         // Kotlin Extensions and Coroutines support for Room
         implementation("androidx.room:room-ktx:2.8.4")
@@ -268,14 +276,14 @@ dependencies {
         // with Room 2.8.4 — reverted to 2.57.2 (Batch 3 dep bump reverted due to build failure).
         val daggerVersion = "2.57.2"
         implementation("com.google.dagger:dagger:$daggerVersion")
-        kapt("com.google.dagger:dagger-compiler:$daggerVersion")
+        ksp("com.google.dagger:dagger-compiler:$daggerVersion")
 
         // Dagger - Hilt
         implementation("com.google.dagger:hilt-android:$daggerVersion")
-        kapt("com.google.dagger:hilt-android-compiler:$daggerVersion")
+        ksp("com.google.dagger:hilt-android-compiler:$daggerVersion")
         implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
 
-        kapt("androidx.hilt:hilt-compiler:1.3.0")
+        ksp("androidx.hilt:hilt-compiler:1.3.0")
 
         // Hilt-Work — allows @HiltWorker injection into WorkManager Workers.
         // Required by onlasdan.gallery.sync.work.PhotoSyncWorker.
@@ -386,7 +394,7 @@ dependencies {
         testImplementation("io.mockk:mockk:1.14.2")
         testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         testImplementation("com.google.dagger:hilt-android-testing:$daggerVersion")
-        kaptTest("com.google.dagger:hilt-android-compiler:$daggerVersion")
+        kspTest("com.google.dagger:hilt-android-compiler:$daggerVersion")
         androidTestImplementation("androidx.test.ext:junit:1.3.0")
         androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 
@@ -408,6 +416,16 @@ dependencies {
         // Release builds are unaffected — LeakCanary is debugImplementation only.
         // @since Sprint 4 — code quality tooling
         debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+}
+
+// ─── KSP arguments (Sprint 4 — KSP migration) ───────────────────────────
+// KSP uses a different args mechanism than kapt. Room needs schemaLocation
+// to generate auto-migrations. The kapt-style annotationProcessorOptions
+// in android.defaultConfig.javaCompileOptions is ignored by KSP.
+// @since Sprint 4 — KSP migration
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
 }
 
 // ─── detekt configuration ────────────────────────────────────────────────
