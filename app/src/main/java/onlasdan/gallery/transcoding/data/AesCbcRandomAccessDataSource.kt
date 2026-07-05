@@ -281,16 +281,22 @@ class AesCbcRandomAccessDataSource(
     private fun waitForBytesAvailable(minBytes: Long) {
         if (availableBytesProvider(uri) < 0) return // no limit — fully available
 
+        android.util.Log.i("RcloneDiag",
+            "[VideoStream] waitForBytesAvailable: need=$minBytes available=${availableBytesProvider(uri)}")
+
         val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
+        var lastLog = 0L
         while (true) {
             val avail = availableBytesProvider(uri)
-            if (avail < 0) return // file became fully available (e.g. entry removed)
-            if (avail >= minBytes) return // enough data
+            if (avail < 0) return // file became fully available
+            if (avail >= minBytes) {
+                android.util.Log.i("RcloneDiag",
+                    "[VideoStream] waitForBytesAvailable: OK (need=$minBytes available=$avail)")
+                return
+            }
             if (downloadCompleteProvider(uri)) {
-                // Download finished with fewer than minBytes — bail out and let
-                // the channel read fail naturally (FileChannel.read returns -1
-                // → ByteBuffer.get throws BufferUnderflowException → ExoPlayer
-                // surfaces a playback error).
+                android.util.Log.w("RcloneDiag",
+                    "[VideoStream] waitForBytesAvailable: download complete but only $avail < $minBytes bytes")
                 return
             }
             if (System.currentTimeMillis() > deadline) {
@@ -341,6 +347,7 @@ class AesCbcRandomAccessDataSource(
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (len == 0) return 0
             val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
+            var lastLog = 0L
             while (true) {
                 val avail = availableBytes()
                 // No limit — fully-available file, just delegate.
@@ -381,6 +388,13 @@ class AesCbcRandomAccessDataSource(
                             "available $avail, after ${WAIT_TIMEOUT_MS}ms",
                     )
                 }
+                // Log every 2 seconds so the user can see progress via logcat
+                val now = System.currentTimeMillis()
+                if (now - lastLog > 2000L) {
+                    lastLog = now
+                    android.util.Log.i("RcloneDiag",
+                        "[VideoStream] BlockingInputStream: waiting at pos=$pos available=$avail (download in progress)")
+                }
                 try {
                     Thread.sleep(WAIT_POLL_INTERVAL_MS)
                 } catch (e: InterruptedException) {
@@ -393,12 +407,12 @@ class AesCbcRandomAccessDataSource(
 
     companion object {
         /**
-         * How long to block waiting for more download data before giving up
-         * and surfacing an IOException to ExoPlayer. 30s is generous enough
-         * for a network hiccup but short enough that a genuinely-stalled
-         * download doesn't hang playback forever.
+         * How long to block waiting for more download data before giving up.
+         * 10 minutes — generous enough for slow connections (500kbps downloading
+         * 30MB takes ~500s). Old value (30s) was too short — ExoPlayer timed
+         * out seeking to MOOV atom at end of MP4 and gave up entirely.
          */
-        private const val WAIT_TIMEOUT_MS = 30_000L
+        private const val WAIT_TIMEOUT_MS = 600_000L
 
         /**
          * Poll interval for the wait loops. 50ms is responsive enough that
