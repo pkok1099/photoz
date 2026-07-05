@@ -37,7 +37,6 @@ import onlasdan.gallery.encryption.domain.handlers.RecoveryPhraseVaultProtection
 import onlasdan.gallery.encryption.domain.handlers.VaultProtectionHandler
 import onlasdan.gallery.encryption.domain.models.CreateRequest
 import onlasdan.gallery.encryption.domain.models.UnlockRequest
-import onlasdan.gallery.model.database.PhotoZDatabase
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -81,6 +80,9 @@ interface EncryptionBindingModule {
 @InstallIn(SingletonComponent::class)
 class EncryptionModule {
 
-    @Provides
-    fun provideVaultProtectionDao(database: PhotoZDatabase) = database.getVaultProtectionDao()
+    // VaultProtectionDao is now provided by
+    // onlasdan.gallery.di.AppModule.provideVaultProtectionDao, which
+    // sources it from the plaintext BootstrapDatabase (not PhotoZDatabase).
+    //
+    // @since v16 — Sprint 3 / TODO #6 SQLCipher
 }

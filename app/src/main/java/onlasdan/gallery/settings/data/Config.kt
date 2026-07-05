@@ -129,6 +129,20 @@ class Config(context: Context) {
         set(value) = putLong(TIMESTAMP_LAST_RECOVERY_START, value)
 
     /**
+     * Sprint 3 / TODO #6 — SQLCipher migration completed flag.
+     *
+     * `true` once the one-time plaintext → SQLCipher-encrypted migration
+     * has finished successfully (or fresh install where no migration was
+     * needed). Used by [SqlCipherMigrationHelper] to skip the migration
+     * check on subsequent app starts.
+     *
+     * @since v16 — Sprint 3 / TODO #6 SQLCipher
+     */
+    var sqlCipherMigrationDone: Boolean
+        get() = getBoolean(SQLCIPHER_MIGRATION_DONE, SQLCIPHER_MIGRATION_DONE_DEFAULT)
+        set(value) = putBoolean(SQLCIPHER_MIGRATION_DONE, value)
+
+    /**
      * Timestamp (epoch ms) the app last went to background. Persisted across process death
      * so that the auto-lock timer in [onlasdan.gallery.BaseApplication.onStart] still fires
      * after a force-close + reopen. Reset to `0L` once the app has been locked, so the
@@ -591,5 +605,13 @@ class Config(context: Context) {
          */
         const val PANIC_DIAL_CODE = "security^panicDialCode"
         const val PANIC_DIAL_CODE_DEFAULT = "9111"
+
+        /**
+         * Sprint 3 / TODO #6 — SQLCipher migration completed flag.
+         *
+         * @since v16 — Sprint 3 / TODO #6 SQLCipher
+         */
+        const val SQLCIPHER_MIGRATION_DONE = "sqlcipher^migrationDone"
+        const val SQLCIPHER_MIGRATION_DONE_DEFAULT = false
     }
 }

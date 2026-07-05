@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 PhotoZ
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -46,7 +46,24 @@ import onlasdan.gallery.encryption.domain.models.VaultProtectionType
  * uniformity — the DAO-level queries enforce single-row semantics where
  * needed.
  *
+ * ## Sprint 3 / TODO #6 — SQLCipher DB encryption
+ *
+ * This table now lives in the plaintext [BootstrapDatabase] (separate
+ * file `photok_meta.db`). It must be readable BEFORE the encrypted
+ * [onlasdan.gallery.model.database.PhotoZDatabase] can be opened —
+ * VaultService reads these rows to find the matching VMK, then unlocks
+ * the encrypted DB. See the design notes in `ROADMAP2.md` for the
+ * chicken-and-egg explanation.
+ *
+ * The SQLCipher DB key itself is stored in the Android Keystore (not
+ * wrapped per-vault with VMK) — this avoids breaking app-start DB
+ * queries that run before vault unlock (e.g. `CleanupDeadFilesUseCase`).
+ * A future enhancement may re-key the DB with VMK-derived keys per
+ * vault for stronger "vault lock = DB lock" semantics; the schema is
+ * forward-compatible for that.
+ *
  * @since v11 — Sprint 2 / M7 multi-vault
+ * @since v16 — Sprint 3 / TODO #6 SQLCipher (table moved to BootstrapDatabase)
  */
 @Entity(tableName = "vault_protection")
 data class VaultProtectionTable(

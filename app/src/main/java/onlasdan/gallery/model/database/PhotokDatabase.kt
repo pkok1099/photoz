@@ -23,8 +23,8 @@ import androidx.room.RenameColumn
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
-import onlasdan.gallery.encryption.data.VaultProtectionDao
-import onlasdan.gallery.encryption.data.VaultProtectionTable
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import onlasdan.gallery.model.database.dao.AlbumDao
 import onlasdan.gallery.model.database.dao.PhotoDao
 import onlasdan.gallery.model.database.entity.AlbumTable
@@ -34,8 +34,9 @@ import onlasdan.gallery.sort.data.db.SortDao
 import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sync.work.HashRegistryDao
 import onlasdan.gallery.sync.work.HashRegistryEntry
+import timber.log.Timber
 
-private const val DATABASE_VERSION = 15
+private const val DATABASE_VERSION = 16
 const val DATABASE_NAME = "photok.db"
 
 /**
@@ -50,7 +51,19 @@ const val DATABASE_NAME = "photok.db"
         AlbumTable::class,
         AlbumPhotoCrossRefTable::class,
         SortTable::class,
-        VaultProtectionTable::class,
+        // @since v16 — Sprint 3 / TODO #6 SQLCipher
+        // VaultProtectionTable moved to the plaintext BootstrapDatabase
+        // (onlasdan.gallery.encryption.data.BootstrapDatabase). The
+        // bootstrap DB must be readable BEFORE the encrypted DB can be
+        // opened (chicken-and-egg: SQLCipher key is wrapped per-vault
+        // with the VMK; to find the right VMK we must read vault_protection
+        // rows; to read those rows we need a DB open…). The bootstrap DB
+        // is the always-readable escape hatch.
+        //
+        // The vault_protection table still EXISTS in the photok.db file
+        // (left as an orphan by the manual v15→v16 Migration — see
+        // [MIGRATION_15_16]). It's just no longer managed by Room. The
+        // orphan table is harmless; a future cleanup task can DROP it.
         // @since v9 dedup + encrypted GCM registry — local cache of the remote
         // registry.json.crypt (one row per content-hash). Fully rebuilt from
         // the remote on every successful login by HashRegistry.downloadAndCache.
@@ -197,6 +210,39 @@ const val DATABASE_NAME = "photok.db"
             from = 14,
             to = 15,
         ),
+        // v15 → v16: Sprint 3 / TODO #6 — SQLCipher at-rest encryption.
+        //   No schema change to the entities remaining in [PhotoZDatabase]
+        //   (Photo / AlbumTable / AlbumPhotoCrossRefTable / SortTable /
+        //   HashRegistryEntry). The ONLY change is that VaultProtectionTable
+        //   is REMOVED from this database's entity list — it now lives in
+        //   the plaintext BootstrapDatabase (see onlasdan.gallery.encryption.data.BootstrapDatabase).
+        //
+        //   AutoMigration CANNOT handle entity removal (it requires a
+        //   @DeleteTable spec, but we don't actually want to DROP the
+        //   table — the migration flow reads from it to copy rows into
+        //   the new bootstrap DB). Instead, a manual Migration
+        //   [MIGRATION_15_16] is registered alongside the AutoMigrations.
+        //   Room executes manual migrations BEFORE AutoMigrations for the
+        //   same version range, so MIGRATION_15_16 runs first as a no-op
+        //   (the orphan vault_protection table is left in place; the
+        //   SchemaMigration flow copies rows out separately at first
+        //   unlock — see SqlCipherMigrationUseCase).
+        //
+        //   The encrypted DB is opened via SupportOpenHelperFactory with
+        //   the SQLCipher passphrase sourced from Android Keystore (see
+        //   onlasdan.gallery.encryption.data.SqlCipherKeyProvider). The
+        //   v15→v16 migration runs the FIRST time the user opens the app
+        //   after upgrading; the migration helper (SqlCipherMigrationHelper)
+        //   uses sqlcipher_export() to copy the plaintext DB into a new
+        //   encrypted file BEFORE Room tries to open it with the key.
+        //
+        //   IMPORTANT: This migration is registered manually in
+        //   [onlasdan.gallery.di.AppModule.providePhotoZDatabase] via
+        //   `.addMigrations(MIGRATION_15_16)` — NOT via the autoMigrations
+        //   array (because Room's AutoMigration code generator can't
+        //   produce a migration for an entity removal without a
+        //   @DeleteTable spec, which we explicitly don't want).
+        // @since v16 — Sprint 3 / TODO #6 SQLCipher
     ]
 )
 @TypeConverters(Converters::class)
@@ -209,7 +255,13 @@ abstract class PhotoZDatabase : RoomDatabase() {
 
     abstract fun getAlbumDao(): AlbumDao
     abstract fun getSortDao(): SortDao
-    abstract fun getVaultProtectionDao(): VaultProtectionDao
+
+    /**
+     * @since v16 — Sprint 3 / TODO #6 SQLCipher
+     * VaultProtectionDao moved to [onlasdan.gallery.encryption.data.BootstrapDatabase].
+     * Get it via Hilt injection (`@Inject vaultProtectionDao: VaultProtectionDao`)
+     * — see [onlasdan.gallery.di.AppModule.provideVaultProtectionDao].
+     */
 
     /**
      * DAO for the local cache of the dedup registry ([HashRegistryEntry]).
@@ -233,3 +285,40 @@ abstract class PhotoZDatabase : RoomDatabase() {
     )
 )
 class MigrationSpec1To2 : AutoMigrationSpec
+
+/**
+ * Manual migration v15 → v16: SQLCipher activation.
+ *
+ * This migration is a NO-OP at the SQL level — the actual data copy
+ * from plaintext to encrypted is handled by
+ * [onlasdan.gallery.encryption.data.SqlCipherMigrationHelper] using
+ * `sqlcipher_export()` BEFORE Room opens the DB.
+ *
+ * By the time this migration callback runs, the DB is already
+ * SQLCipher-encrypted AND contains all the user's data (copied from
+ * the v15 plaintext file). The only remaining task is to advance the
+ * `user_version` pragma from 15 to 16 — Room does this automatically
+ * after `migrate()` returns.
+ *
+ * ## Why this exists
+ *
+ * Room's AutoMigration CANNOT handle entity removal (we removed
+ * `VaultProtectionTable` from this database's entity list because it
+ * moved to [onlasdan.gallery.encryption.data.BootstrapDatabase]). A
+ * manual Migration stub is the only way to advance the version without
+ * Room's auto-generator trying to DROP the table (which would lose the
+ * orphan data we want to copy to the bootstrap DB separately).
+ *
+ * The orphan `vault_protection` table is harmless — Room ignores tables
+ * that aren't in its entity list. A future v17 cleanup task can DROP it.
+ *
+ * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // No-op. Data copy was handled by SqlCipherMigrationHelper before
+        // Room opened the DB. We just let Room advance the user_version
+        // to 16 by returning successfully.
+        Timber.d("MIGRATION_15_16: no-op migration (data already copied by helper)")
+    }
+}

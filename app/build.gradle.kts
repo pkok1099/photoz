@@ -202,6 +202,24 @@ dependencies {
     // Kotlin Extensions and Coroutines support for Room
     implementation("androidx.room:room-ktx:2.8.4")
 
+    // ─── TODO #6: SQLCipher for Room DB encryption ───────────────────────────
+    // Sprint 3 / TODO #6 — at-rest encryption for the main vault DB (photok.db).
+    //
+    // The bootstrap metadata DB (photok_meta.db) stays plaintext — it must be
+    // readable before unlock so VaultService can iterate vault_protection rows.
+    // The main DB (photok.db) is encrypted with a 32-byte key backed by the
+    // Android Keystore; the key is supplied to SQLCipher via SupportOpenHelperFactory.
+    //
+    // Pairing: `androidx.sqlite:sqlite` MUST match the version Room expects
+    // (Room 2.8.4 uses androidx.sqlite 2.5.0+). The SupportFactory API lives
+    // in androidx.sqlite.db — the SQLCipher library provides its own factory
+    // implementation that we plug into Room via `openHelperFactory(...)`.
+    //
+    // Trade-off: ~5-15% slower DB queries, +3-5MB APK (native lib).
+    // @since v16 — Sprint 3 / TODO #6 SQLCipher
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("androidx.sqlite:sqlite:2.5.0")
+
     // ─── TODO #3: Bouncy Castle for Argon2id KDF ─────────────────────────────
     // Sprint 2 / TODO #3 — Argon2id memory-hard KDF for new vaults.
     // KeyGen.derivePasswordKeyEncryptionKey() uses Argon2BytesGenerator from

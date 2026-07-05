@@ -24,10 +24,91 @@ Dari 16 item di TODO1.md, status:
 ### 1. SQLCipher untuk Room DB encryption (TODO #6) — HIGH PRIORITY
 - **Why**: Room DB plaintext → investigator bisa mapping vault tanpa decrypt
 - **Library**: `net.zetetic:android-database-sqlcipher` + Room `SupportFactory`
-- **Key**: Derive dari VMK — vault lock = DB lock
-- **Migration**: open plaintext → copy to encrypted → replace
 - **Trade-off**: ~5-15% slower queries, +3-5MB APK
 - **Est**: 1 session
+
+#### Design (revised for M7 multi-vault)
+
+**Original plan**: "Derive DB key dari VMK — vault lock = DB lock"
+**Problem**: M7 multi-vault allows multiple `vault_protection(Password)` rows
+with distinct VMKs. A single DB file cannot be encrypted with multiple VMKs.
+Chicken-and-egg: to read `vault_protection` table (which tells us which VMK
+to use), we'd need the DB already open.
+
+**Revised plan**: Split-room + shared DB key wrapped per-vault.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  BootstrapDatabase (plaintext, Singleton)                       │
+│  File: photok_meta.db                                           │
+│  Tables: vault_protection (incl. wrapped_db_key column)         │
+│  Open: always (no key required)                                 │
+│  Reads: VaultService.unlock iterates rows to find matching VMK  │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ unwrap wrapped_db_key with VMK
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  PhotoZDatabase (encrypted with SQLCipher)                      │
+│  File: photok.db                                                │
+│  Tables: photo, album, album_photo_cross_ref, sort,             │
+│          hash_registry                                          │
+│  Open: only when vault unlocked (EncryptedDatabaseHolder)       │
+│  Close: on session.reset() (vault lock)                         │
+│  Key: random 32 bytes, generated on first vault creation.       │
+│       Stored as wrapped_db_key in EACH vault_protection row     │
+│       (same DB key, wrapped with each vault's VMK). This means  │
+│       unlocking ANY vault opens the SAME encrypted DB; multi-   │
+│       vault separation is enforced by the vault_id column on    │
+│       every photo/album/hash_registry row (Sprint 2 / M7).      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key flow**:
+1. First-time setup: `KeyGen.generateDbKey()` → 32 random bytes.
+   Wrapped via AES-GCM with VMK → `wrapped_db_key` (12B IV + 32B ct + 16B tag = 60B).
+   Stored in new `wrapped_db_key` column on `vault_protection` row.
+2. Unlock: read `vault_protection` row that unwraps successfully → unwrap
+   `wrapped_db_key` with VMK → open SQLCipher DB with that key.
+3. New vault creation: unwrap existing `wrapped_db_key` from active
+   session's row, re-wrap with new vault's VMK, store in new row.
+4. Lock: close SQLCipher DB, zero DB key bytes.
+
+**Why this is secure**:
+- Disk forensic without vault password: cannot read `vault_protection`'s
+  `wrapped_db_key` (encrypted with VMK-derived KEK), so cannot open
+  `photok.db`. Cannot read photo metadata. ✓
+- Disk forensic with vault password (one vault unlocked): can read that
+  vault's photos, but other vaults' rows are still filtered out by
+  `vault_id` column queries. (Decrypted DB contains all vaults' rows,
+  but the app never shows cross-vault data.) ✓
+- Runtime forensic (memory dump while unlocked): DB key + VMK both in
+  memory. Same threat model as today (without SQLCipher). SQLCipher
+  doesn't help here; it's purely at-rest protection. ✓
+
+**Migration** (one-time, on first unlock after v15 → v16 upgrade):
+1. Open old plaintext `photok.db` (still has `vault_protection` table).
+2. Read each row, copy to `photok_meta.db` (new bootstrap DB).
+3. Generate DB key, wrap with active session's VMK, store in
+   `vault_protection` row (extended with `wrapped_db_key` column).
+4. Open new SQLCipher `photok.db` (initially empty).
+5. Use SQLCipher `ATTACH DATABASE 'old.db' AS old` + `INSERT INTO new
+   SELECT * FROM old.<table>` for each non-vault_protection table.
+6. Delete old plaintext `photok.db`.
+7. Mark migration complete via Config flag.
+
+**Schema changes** (DB v15 → v16):
+- `vault_protection` table: add `wrapped_db_key BLOB NOT NULL` column.
+  (Stored OUTSIDE the encrypted DB, in the new bootstrap plaintext DB.)
+- All other tables: no schema change (they live in encrypted DB now,
+  but Room doesn't care — same DAOs, same queries).
+- New database file: `photok_meta.db` (plaintext bootstrap).
+- Existing `photok.db` becomes SQLCipher-encrypted.
+
+**Why a separate plaintext bootstrap DB instead of a JSON file**:
+- Room gives us type-safe CRUD on `vault_protection` rows.
+- Future migrations (adding fields to VaultProtectionParams) are
+  handled by Room's AutoMigration, not ad-hoc JSON parsing.
+- DAO-based queries stay consistent with the rest of the codebase.
 
 ### 2. Argon2id KDF upgrade (TODO #3) — HIGH PRIORITY
 - **Why**: PBKDF2 rentan GPU/ASIC. Argon2id = memory-hard (2025 standard)
