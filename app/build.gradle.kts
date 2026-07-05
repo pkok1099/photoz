@@ -110,13 +110,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    // Migrated from deprecated kotlinOptions { jvmTarget } to compilerOptions DSL.
-    // Required for AGP 9.0+ (built-in Kotlin). The old kotlinOptions block
-    // is deprecated and causes ScriptCompilationError on CI with newer AGP.
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
-    }
-
     lint {
         lintConfig = file("$rootDir/gradle/lint.xml")
         baseline = file("$rootDir/gradle/lint-baseline.xml")
@@ -155,6 +148,14 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+    }
+}
+
+// Migrated from deprecated kotlinOptions { jvmTarget } to kotlin { compilerOptions }
+// Required for AGP 9.0+ (built-in Kotlin).
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
 }
 
