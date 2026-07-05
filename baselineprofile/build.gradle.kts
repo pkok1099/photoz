@@ -47,11 +47,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-}
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    // NOTE: Reverted to deprecated kotlinOptions from compilerOptions.
+    // The kotlin { compilerOptions {} } block was causing CI failures.
+    // See app/build.gradle.kts for details.
+    kotlinOptions {
+        jvmTarget = "17"
     }
 }
 
