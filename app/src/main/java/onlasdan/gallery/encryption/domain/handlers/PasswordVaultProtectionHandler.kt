@@ -58,17 +58,38 @@ class PasswordVaultProtectionHandler @Inject constructor(
         requireNotNull(params.keySize)
         requireNotNull(params.algorithm)
 
+        // TODO #3 — For Argon2id, the `iv` field contains a 4-byte memory cost
+        // prefix followed by the 16-byte AES wrapping IV. For PBKDF2, the `iv`
+        // field is just the 16-byte IV (no prefix).
+        val ivBytes = Base64.decode(params.iv)
+        val (aesIv, argon2MemoryKB) = when (params.kdf) {
+            Kdf.Argon2id -> {
+                require(ivBytes.size >= 4 + IV_SIZE) {
+                    "Argon2id iv field too short: ${ivBytes.size} bytes (need ${4 + IV_SIZE})"
+                }
+                val memory = ((ivBytes[0].toInt() and 0xFF) shl 24) or
+                    ((ivBytes[1].toInt() and 0xFF) shl 16) or
+                    ((ivBytes[2].toInt() and 0xFF) shl 8) or
+                    (ivBytes[3].toInt() and 0xFF)
+                val iv = ivBytes.copyOfRange(4, 4 + IV_SIZE)
+                iv to memory
+            }
+            Kdf.PBKDF2WithHmacSHA256 -> {
+                ivBytes to onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+            }
+        }
+
         val kek = keyGen.derivePasswordKeyEncryptionKey(
             password = request.password,
             salt = Base64.decode(params.salt),
             kdf = params.kdf,
             kdfIterations = params.kdfIterations,
             keySize = params.keySize,
+            argon2MemoryKB = argon2MemoryKB,
         )
 
         val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            val iv = Base64.decode(params.iv)
-            init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(iv))
+            init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(aesIv))
         }
 
         val vmkBytes = cipher.doFinal(protection.wrappedVMK)
@@ -80,13 +101,28 @@ class PasswordVaultProtectionHandler @Inject constructor(
         val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
         val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-        val kdf = Kdf.PBKDF2WithHmacSHA256
+        // TODO #3 — New vaults use Argon2id (memory-hard KDF, 2025 standard).
+        // Old vaults stay PBKDF2 (backwards compatible — unlock dispatches by kdf type).
+        val kdf = Kdf.Argon2id
+        val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
+        val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+
+        // For Argon2id, the `iv` field stores the AES wrapping IV (still needed).
+        // The memory cost is encoded in the `iv` field as well — we prepend
+        // a 4-byte big-endian int before the IV bytes, Base64-encoded together.
+        // This reuses the existing column without schema changes.
+        val ivWithMemory = ByteArray(4 + IV_SIZE)
+        ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
+        ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
+        ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
+        ivWithMemory[3] = argon2MemoryKB.toByte()
+        System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
 
         val params = VaultProtectionParams(
             salt = Base64.encode(salt),
-            iv = Base64.encode(iv),
+            iv = Base64.encode(ivWithMemory),
             kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
+            kdfIterations = kdfIterations,
             algorithm = Algorithm.AesCbcPkcs7Padding,
             keySize = KEK_SIZE,
         )
@@ -97,8 +133,9 @@ class PasswordVaultProtectionHandler @Inject constructor(
             password = request.password,
             salt = salt,
             kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
+            kdfIterations = kdfIterations,
             keySize = params.keySize,
+            argon2MemoryKB = argon2MemoryKB,
         )
 
         val cipher = Cipher.getInstance(params.algorithm.value).apply {
@@ -127,13 +164,23 @@ class PasswordVaultProtectionHandler @Inject constructor(
     fun wrapExistingVmk(password: String, vmk: javax.crypto.SecretKey): VaultProtection {
         val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
         val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-        val kdf = Kdf.PBKDF2WithHmacSHA256
+        // TODO #3 — use Argon2id for new wrappings
+        val kdf = Kdf.Argon2id
+        val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
+        val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+
+        val ivWithMemory = ByteArray(4 + IV_SIZE)
+        ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
+        ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
+        ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
+        ivWithMemory[3] = argon2MemoryKB.toByte()
+        System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
 
         val params = VaultProtectionParams(
             salt = Base64.encode(salt),
-            iv = Base64.encode(iv),
+            iv = Base64.encode(ivWithMemory),
             kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
+            kdfIterations = kdfIterations,
             algorithm = Algorithm.AesCbcPkcs7Padding,
             keySize = KEK_SIZE,
         )
@@ -142,8 +189,9 @@ class PasswordVaultProtectionHandler @Inject constructor(
             password = password,
             salt = salt,
             kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
+            kdfIterations = kdfIterations,
             keySize = params.keySize,
+            argon2MemoryKB = argon2MemoryKB,
         )
 
         val cipher = Cipher.getInstance(params.algorithm.value).apply {
