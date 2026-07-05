@@ -615,9 +615,6 @@ class RepoManager @Inject constructor(
                 "restoreThumbnailsAfterLogin: listRemote FAILED: $err — treating as 0 thumbnails",
                 listResult.exceptionOrNull(),
             )
-            // A missing thumbnails directory on a fresh remote is not an error —
-            // there's just nothing to restore. Listing failure MUST NOT block login;
-            // the user can still get into the gallery and re-import.
             return@withContext 0
         }
 
@@ -625,17 +622,38 @@ class RepoManager @Inject constructor(
             .filter { it.name.endsWith(THUMBNAIL_SUFFIX) }
         diag("restoreThumbnailsAfterLogin: listRemote OK, ${remoteThumbs.size} thumbnail candidates")
 
+        // Bug fix: check the registry for packed thumbnails. If an entry has
+        // thumbnailPack != null, its thumbnail lives inside a pack file — don't
+        // download the individual .crypt.tn (it's a stale leftover from before
+        // packing). restoreThumbnailsFromPacks will handle it.
+        val packedUuids: Set<String> = try {
+            hashRegistry.allEntries()
+                .filter { !it.thumbnailPack.isNullOrBlank() }
+                .map { it.uuid }
+                .toSet()
+        } catch (e: Exception) {
+            diag("restoreThumbnailsAfterLogin: failed to query packed entries — downloading all individual thumbnails")
+            emptySet()
+        }
+        if (packedUuids.isNotEmpty()) {
+            diag("restoreThumbnailsAfterLogin: ${packedUuids.size} entries are packed — skipping their individual thumbnails (will be restored via packs)")
+        }
+
         var restored = 0
         for (thumb in remoteThumbs) {
             val name = thumb.name
-            // Filename pattern: <uuid>.crypt.tn — strip the .crypt.tn suffix to recover the uuid.
             val uuid = name.removeSuffix(THUMBNAIL_SUFFIX)
             if (uuid.isBlank()) {
                 diag("restoreThumbnailsAfterLogin: skipping malformed thumbnail name: $name")
                 continue
             }
 
-            // Idempotent: skip if a Photo row already exists for this uuid.
+            // Bug fix: skip packed entries — their thumbnails are in packs.
+            if (uuid in packedUuids) {
+                diag("restoreThumbnailsAfterLogin: $uuid is packed — skipping individual download")
+                continue
+            }
+
             val existing = runCatching { photoDao.get(uuid) }.getOrNull()
             if (existing != null) {
                 diag("restoreThumbnailsAfterLogin: $uuid already in DB — skipping")
@@ -827,20 +845,31 @@ class RepoManager @Inject constructor(
             }
 
             try {
+                // Bug fix: if albumPath == filename, it's the SAF fallback —
+                // the original import had no RELATIVE_PATH. Set albumPath to
+                // null so ensureAlbumForRestoredPhoto doesn't skip (it would
+                // skip because albumPath == fileName). With null, the photo
+                // just lives in "All Photos" without an album — same as the
+                // original import's behavior.
+                val effectiveAlbumPath = entry.albumPath?.let { ap ->
+                    val fname = entry.filename.ifBlank { photo.fileName }
+                    if (ap.trim() == fname.trim()) null else ap
+                }
+
                 val affected = photoDao.backfillMetadataFromRegistry(
                     uuid = photo.uuid,
                     filename = entry.filename.ifBlank { photo.fileName },
                     size = entry.size,
                     type = type.value,
-                    relativePath = entry.albumPath ?: photo.relativePath,
-                    albumPath = entry.albumPath,
+                    relativePath = effectiveAlbumPath ?: photo.relativePath,
+                    albumPath = effectiveAlbumPath,
                     contentHash = entry.contentHash,
                 )
                 if (affected > 0) {
                     backfilled++
                     diag("applyRegistryMetadataToPhotos: backfilled ${photo.uuid} " +
                         "(filename=${entry.filename}, size=${entry.size}, type=${type}, " +
-                        "albumPath=${entry.albumPath}, contentHash=${entry.contentHash})")
+                        "albumPath=${effectiveAlbumPath}, contentHash=${entry.contentHash})")
                 }
             } catch (e: Exception) {
                 diag("applyRegistryMetadataToPhotos: backfill FAILED for ${photo.uuid}: ${e.message}", e)
