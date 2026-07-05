@@ -21,10 +21,16 @@ const val SALT_SIZE = 16
 const val BLOCK_SIZE = 16
 
 // ─── Sprint 1 / P6: AES-256-GCM for new files ──────────────────────────────
-// GCM uses a 12-byte IV (96-bit) — the NIST-recommended size for best performance.
-// The authentication tag is 16 bytes (128-bit) — the maximum strength.
-// GCM's tag is appended automatically by the JCE provider when the Cipher is
-// finalized (close on CipherOutputStream). On decrypt, the JCE provider reads
-// the trailing 16 bytes as the tag and verifies it on doFinal().
 const val GCM_IV_SIZE = 12
 const val GCM_TAG_SIZE = 16
+
+// ─── TODO #2: Chunked streaming encryption ─────────────────────────────────
+// Chunk size for version 0x04 (chunked GCM). 1MB is a good balance:
+// - Per-chunk overhead: 12 (nonce) + 16 (tag) = 28 bytes
+// - For 100MB video: ~100 chunks, ~2.8KB overhead (0.003%)
+// - For 5MB photo: ~5 chunks, ~140 bytes overhead
+// - Random access granularity: 1MB (seek to any 1MB boundary)
+const val CHUNK_SIZE = 1_048_576 // 1MB
+
+// Per-chunk overhead: nonce(12) + auth_tag(16) = 28 bytes
+const val CHUNK_OVERHEAD = GCM_IV_SIZE + GCM_TAG_SIZE

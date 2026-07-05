@@ -1,5 +1,5 @@
 /*
- *   Copyright 2020-2026 PhotoZ
+ *   Copyright 2020–2026 PhotoZ
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ class LegacyGcmCryptoEngine @Inject constructor(): CryptoEngine {
         output: OutputStream,
         session: Session,
         useGcm: Boolean,
-    ): CipherOutputStream? {
+    ): OutputStream? {
         require(session is LegacySession)
 
         return try {
@@ -51,7 +51,7 @@ class LegacyGcmCryptoEngine @Inject constructor(): CryptoEngine {
     override fun createDecryptStream(
         input: InputStream,
         session: Session,
-    ): CipherInputStream? {
+    ): InputStream? {
         require(session is LegacySession)
 
         return try {

@@ -54,7 +54,30 @@ enum class Algorithm(val value: String, val padding: String, val blockMode: Stri
 enum class EncryptionVersionByte(val value: Byte) {
     One(0x01),
     Two(0x02),
-    Three(0x03);
+    Three(0x03),
+    /**
+     * TODO #2 — Chunked GCM encryption.
+     *
+     * Format:
+     * ```
+     * [version=0x04][chunk_size(4, BE)][total_plaintext_size(8, BE)]
+     * [chunk_0: nonce(12) + ciphertext(chunk_size) + tag(16)]
+     * [chunk_1: nonce(12) + ciphertext(chunk_size) + tag(16)]
+     * ...
+     * [chunk_last: nonce(12) + ciphertext(remaining) + tag(16)]
+     * ```
+     *
+     * Header: 1 + 4 + 8 = 13 bytes
+     * Per-chunk overhead: 12 (nonce) + 16 (tag) = 28 bytes
+     *
+     * Benefits over version 0x03 (single-stream GCM):
+     * - **Per-chunk integrity**: tampering of any chunk is detected independently
+     * - **Random access**: seek to chunk N, decrypt only that chunk (no block-chain IV)
+     * - **Streaming**: ExoPlayer can start playback after first chunk decrypts
+     *
+     * @since v15 — TODO #2 chunked streaming encryption
+     */
+    Four(0x04);
 
     val headerSize: Int
         get() = when (this) {
@@ -62,6 +85,8 @@ enum class EncryptionVersionByte(val value: Byte) {
             EncryptionVersionByte.Two -> 1 + IV_SIZE
             // GCM IV is 12 bytes (GCM_IV_SIZE), no salt.
             EncryptionVersionByte.Three -> 1 + GCM_IV_SIZE
+            // Chunked GCM: version(1) + chunk_size(4) + total_size(8) = 13
+            EncryptionVersionByte.Four -> 1 + 4 + 8
         }
 
     companion object {

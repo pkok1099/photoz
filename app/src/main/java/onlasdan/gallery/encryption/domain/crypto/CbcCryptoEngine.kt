@@ -58,26 +58,22 @@ class CbcCryptoEngine @Inject constructor(): CryptoEngine {
         output: OutputStream,
         session: Session,
         useGcm: Boolean,
-    ): CipherOutputStream? {
+    ): OutputStream? {
         require(session is VaultSession)
 
         try {
             if (useGcm) {
-                // ─── Sprint 1 / P6: AES-256-GCM for new files ───────────────
-                // Format: [0x03][IV(12)][GCM ciphertext + 16-byte auth tag]
-                // The 12-byte IV is the NIST-recommended size for GCM — the JCE
-                // provider appends the 16-byte tag automatically when the
-                // CipherOutputStream is closed.
-                val iv = ByteArray(GCM_IV_SIZE).also { SecureRandom().nextBytes(it) }
-
-                val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-                    init(Cipher.ENCRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
-                }
-
-                output.write(byteArrayOf(EncryptionVersionByte.Three.value))
-                output.write(iv)
-
-                return CipherOutputStream(output, cipher)
+                // ─── TODO #2: Chunked GCM (version 0x04) for ALL new files ──
+                // Replaces single-stream GCM (0x03) with per-chunk encryption:
+                // - Per-chunk auth tag (tamper detection per 1MB)
+                // - Random access decryption (seek to chunk N)
+                // - Progressive streaming (ExoPlayer starts after first chunk)
+                //
+                // The returned OutputStream is NOT a CipherOutputStream (chunked
+                // encryption doesn't work with a single Cipher instance). Callers
+                // that type-check for CipherOutputStream will get null — but
+                // VaultFileStorage.openEncryptedOutput just needs OutputStream.
+                return ChunkedGcmOutputStream(output, session.vmk)
             } else {
                 // ─── Legacy CBC path (videos, backwards compat) ──────────────
                 // Format: [0x02][IV(16)][CBC ciphertext]
@@ -98,7 +94,7 @@ class CbcCryptoEngine @Inject constructor(): CryptoEngine {
         }
     }
 
-    override fun createDecryptStream(input: InputStream, session: Session): CipherInputStream? {
+    override fun createDecryptStream(input: InputStream, session: Session): InputStream? {
         require(session is VaultSession)
 
         try {
@@ -142,6 +138,13 @@ class CbcCryptoEngine @Inject constructor(): CryptoEngine {
                         init(Cipher.DECRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
                     }
                     CipherInputStream(input, cipher)
+                }
+                EncryptionVersionByte.Four -> {
+                    // v4 (TODO #2): [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
+                    // Each chunk: [nonce(12)][ciphertext][tag(16)] — independently decryptable.
+                    // The version byte has already been read; ChunkedGcmInputStream
+                    // reads the rest of the header + chunks.
+                    ChunkedGcmInputStream(input, session.vmk)
                 }
             }
         } catch (e: Exception) {

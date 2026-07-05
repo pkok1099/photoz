@@ -19,8 +19,6 @@ package onlasdan.gallery.encryption.domain.crypto
 import onlasdan.gallery.encryption.domain.models.Session
 import java.io.InputStream
 import java.io.OutputStream
-import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
 
 /**
  * PhotoZ's pluggable encryption engine.
@@ -32,24 +30,27 @@ import javax.crypto.CipherOutputStream
  * video previews, PDF/ZIP/audio) default to GCM for the authentication tag
  * protection (Sprint 1 / P6).
  *
- * The decrypt path is fully automatic — it reads the version byte from the
- * stream header and dispatches to CBC (versions 1, 2) or GCM (version 3).
- * Callers don't need to know which algorithm was used at encrypt time.
+ * TODO #2 — The encrypt path now returns [OutputStream] (not [CipherOutputStream])
+ * because chunked GCM (version 0x04) uses a custom [ChunkedGcmOutputStream] that
+ * doesn't extend CipherOutputStream. The decrypt path returns [InputStream] for
+ * the same reason ([ChunkedGcmInputStream] doesn't extend CipherInputStream).
+ *
+ * @since v15 — TODO #2 chunked streaming encryption
  */
 interface CryptoEngine {
     fun createEncryptStream(
         output: OutputStream,
         session: Session,
         /**
-         * When `true` (default), the engine writes a version-3 GCM header.
-         * When `false`, it writes a version-2 CBC header — required for files
-         * that will be streamed via [AesCbcRandomAccessDataSource] (video originals).
+         * When `true` (default), the engine writes chunked GCM (version 0x04).
+         * When `false`, it writes version-2 CBC — required for files that will
+         * be streamed via [AesCbcRandomAccessDataSource] (video originals).
          */
         useGcm: Boolean = true,
-    ): CipherOutputStream?
+    ): OutputStream?
 
     fun createDecryptStream(
         input: InputStream,
         session: Session,
-    ): CipherInputStream?
+    ): InputStream?
 }
