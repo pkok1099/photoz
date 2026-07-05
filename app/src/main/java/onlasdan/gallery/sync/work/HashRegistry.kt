@@ -1069,10 +1069,10 @@ class HashRegistry @Inject constructor(
                     .find(entryJson)?.groupValues?.get(1) ?: continue
                 val uuid = Regex("\"uuid\"\\s*:\\s*\"([^\"]+)\"")
                     .find(entryJson)?.groupValues?.get(1) ?: continue
-                val filename = Regex("\"filename\"\\s*:\\s*\"([^\"]*)\"")
-                    .find(entryJson)?.groupValues?.get(1) ?: ""
-                val albumPath = Regex("\"album_path\"\\s*:\\s*\"([^\"]+)\"")
-                    .find(entryJson)?.groupValues?.get(1)
+                val filename = Regex("\"filename\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                    .find(entryJson)?.groupValues?.get(1)?.let { unescapeJson(it) } ?: ""
+                val albumPath = Regex("\"album_path\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                    .find(entryJson)?.groupValues?.get(1)?.let { unescapeJson(it) }
                 val size = Regex("\"size\"\\s*:\\s*(\\d+)")
                     .find(entryJson)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
                 val type = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"")
@@ -1146,6 +1146,29 @@ class HashRegistry @Inject constructor(
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+
+    /**
+     * Inverse of [escapeJson] — unescapes JSON string escapes (`\\`, `\"`,
+     * `\n`, `\r`, `\t`) back to their literal characters. Used by
+     * [parseRegistryJson] to restore filenames/album paths that contain
+     * special characters.
+     *
+     * The order matters: `\\` must be processed FIRST so that sequences
+     * like `\\n` (literal backslash + n) don't get misinterpreted as `\n`
+     * (newline). We use a regex-based approach to handle this correctly —
+     * a naive string replace would double-process escapes.
+     */
+    private fun unescapeJson(s: String): String =
+        Regex("\\\\(.)").replace(s) { match ->
+            when (match.groupValues[1]) {
+                "\\" -> "\\"
+                "\"" -> "\""
+                "n" -> "\n"
+                "r" -> "\r"
+                "t" -> "\t"
+                else -> match.groupValues[1] // unknown escape — keep char as-is
+            }
+        }
 
     // ─── Sprint 10+ / M7 v2 — Per-entry encrypted registry ────────────────
 

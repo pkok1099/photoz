@@ -238,6 +238,11 @@ class HashRegistryTest {
         )
 
         coEvery { dao.getAll() } returns entries
+        // Sprint 2 / M7 — uploadToRemote now filters by vault_id.
+        // The test uses a relaxed mock for sessionRepository, so vaultId
+        // will be null → uploadToRemote calls dao.getAllIncludingDeleted().
+        coEvery { dao.getAllIncludingDeleted() } returns entries
+        coEvery { dao.getAllForVaultIncludingDeleted(any()) } returns entries
 
         // ─── Capture uploaded bytes from uploadToRemote ────────────────────
         // uploadToRemote writes the encrypted blob to a temp file in cacheDir,
@@ -255,13 +260,19 @@ class HashRegistryTest {
 
         assertTrue("Upload must capture the encrypted bytes", capturedBytesSlot.isCaptured)
         val onWireBytes = capturedBytesSlot.captured
-        assertTrue("On-wire bytes must include the 1-byte version prefix + 12-byte nonce + ciphertext",
-            onWireBytes.size > 1 + 12 + 16)
+        // Sprint 10+ / M7 v2 — per-entry encrypted format (version 0x03):
+        //   [version=0x03][num_entries(4, BE)]
+        //   [entry_0: nonce(12) + GCM(blob_len(4) + blob) + tag(16)]
+        //   ...
+        // Minimum size: 1 (version) + 4 (count) = 5 bytes header, plus at
+        // least one entry (12 + 4 + 16 = 32 bytes minimum). Total > 36 bytes.
+        assertTrue("On-wire bytes must include version prefix + entry count + at least one entry",
+            onWireBytes.size > 1 + 4 + 12 + 16)
 
-        // The first byte must be the GZIP-format version tag (0x02).
+        // The first byte must be the per-entry encrypted format version (0x03).
         assertEquals(
-            "On-wire format must start with version byte 0x02 (GZIP format)",
-            0x02.toByte(),
+            "On-wire format must start with version byte 0x03 (per-entry encrypted)",
+            0x03.toByte(),
             onWireBytes[0],
         )
 
