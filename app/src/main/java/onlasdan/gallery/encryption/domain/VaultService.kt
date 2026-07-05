@@ -53,6 +53,10 @@ class VaultService @Inject constructor(
      */
     private val breakInDetector: onlasdan.gallery.security.BreakInDetector,
     /**
+     * TODO #9 — Root/debugger detection. Checked on unlock to warn the user.
+     */
+    private val securityChecker: onlasdan.gallery.security.SecurityChecker,
+    /**
      * Sprint 2 / M7 — vault_id backfill hook.
      *
      * When non-null, [unlock] calls it after a successful unlock so the
@@ -161,6 +165,18 @@ class VaultService @Inject constructor(
             // The self-destruct worker checks this timestamp to determine
             // inactivity. Updated on every successful unlock.
             config.lastUnlockAt = System.currentTimeMillis()
+
+            // ─── TODO #9 — Security warning on unlock ──────────────────────
+            // Check for root/debugger and log a warning. The UI can poll
+            // SecurityChecker.getSecurityWarning() to display a dialog.
+            try {
+                val secWarning = securityChecker.getSecurityWarning()
+                if (secWarning != null) {
+                    android.util.Log.w("RcloneDiag", "[SecurityWarning] $secWarning")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Security check failed (non-fatal)")
+            }
 
             session
         }

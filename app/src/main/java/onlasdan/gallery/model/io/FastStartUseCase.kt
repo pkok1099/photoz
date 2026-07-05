@@ -85,6 +85,7 @@ class FastStartUseCase @Inject constructor(
         val tempInput = File(app.cacheDir, "faststart-input-${System.currentTimeMillis()}.mp4")
         val tempOutput = File(app.cacheDir, "faststart-output-${System.currentTimeMillis()}.mp4")
 
+        val name = displayName ?: "video"
         return try {
             // Copy URI content to temp file (QtFastStart needs a File, not a stream)
             app.contentResolver.openInputStream(inputUri)?.use { input ->
@@ -93,7 +94,6 @@ class FastStartUseCase @Inject constructor(
                 }
             } ?: return null
 
-            val name = displayName ?: "video"
             Timber.i("FastStart: attempting MOOV relocation for '$name' (${tempInput.length()} bytes)")
 
             // Run faststart — throws if not needed or malformed
