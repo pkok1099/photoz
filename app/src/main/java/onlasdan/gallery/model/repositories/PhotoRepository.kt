@@ -213,7 +213,7 @@ class PhotoRepository @Inject constructor(
 
         if (type.isVideo && fastStartUseCase.isFastStartCandidate(metaData.mimeType)) {
             try {
-                val fastStartedFile = fastStartUseCase.fastStart(sourceUri)
+                val fastStartedFile = fastStartUseCase.fastStart(sourceUri, metaData.fileName)
                 if (fastStartedFile != null) {
                     fastStartTempFile = fastStartedFile
                     effectiveInputStream = java.io.FileInputStream(fastStartedFile)

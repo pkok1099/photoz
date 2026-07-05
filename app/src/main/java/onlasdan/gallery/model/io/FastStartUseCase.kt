@@ -18,6 +18,7 @@ package onlasdan.gallery.model.io
 
 import android.app.Application
 import android.net.Uri
+import android.widget.Toast
 import net.ypresto.qtfaststart.QtFastStart
 import timber.log.Timber
 import java.io.File
@@ -43,6 +44,8 @@ import javax.inject.Singleton
  *
  * Non-fatal: if faststart fails (corrupt MP4, MOOV already at front,
  * unsupported variant, I/O error), the original file is used as-is.
+ * A warning toast is shown to the user so they know progressive
+ * streaming may not work for this video.
  *
  * @since TODO #1 — progressive video streaming
  */
@@ -72,9 +75,13 @@ class FastStartUseCase @Inject constructor(
      * it tries to faststart and throws if the file doesn't need it or
      * is malformed. We catch those exceptions and return null.
      *
+     * A warning toast is shown on failure so the user knows progressive
+     * streaming may not work for this video.
+     *
+     * @param displayName the video filename for the toast message
      * @return temp File with faststarted content, or null if not needed/failed.
      */
-    fun fastStart(inputUri: Uri): File? {
+    fun fastStart(inputUri: Uri, displayName: String? = null): File? {
         val tempInput = File(app.cacheDir, "faststart-input-${System.currentTimeMillis()}.mp4")
         val tempOutput = File(app.cacheDir, "faststart-output-${System.currentTimeMillis()}.mp4")
 
@@ -86,7 +93,8 @@ class FastStartUseCase @Inject constructor(
                 }
             } ?: return null
 
-            Timber.i("FastStart: attempting MOOV relocation for ${tempInput.length()} bytes")
+            val name = displayName ?: "video"
+            Timber.i("FastStart: attempting MOOV relocation for '$name' (${tempInput.length()} bytes)")
 
             // Run faststart — throws if not needed or malformed
             QtFastStart.fastStart(tempInput, tempOutput)
@@ -96,19 +104,50 @@ class FastStartUseCase @Inject constructor(
                 tempOutput
             } else {
                 Timber.w("FastStart: output file empty — using original")
+                showWarning("⚠ '$name': FastStart failed — video will need full download before playback")
                 null
             }
+        } catch (e: QtFastStart.MalformedFileException) {
+            Timber.d("FastStart: malformed MP4 for '$name' — using original")
+            showWarning("⚠ '$name': Not a valid MP4 — video may need full download before playback")
+            null
+        } catch (e: QtFastStart.UnsupportedFileException) {
+            // This is thrown when MOOV is already at front OR format is unsupported.
+            // Both are non-critical — check the message to differentiate.
+            val msg = e.message ?: ""
+            if (msg.contains("already", ignoreCase = true) || msg.contains("front", ignoreCase = true)) {
+                Timber.d("FastStart: MOOV already at front for '$name' — no faststart needed")
+                // No warning — video is already optimized
+            } else {
+                Timber.d("FastStart: unsupported format for '$name' — using original")
+                showWarning("⚠ '$name': Unsupported video format — progressive streaming may not work")
+            }
+            null
         } catch (e: QtFastStart.QtFastStartException) {
-            // MalformedFileException or UnsupportedFileException — not a valid
-            // MP4 or MOOV already at front. Non-fatal.
-            Timber.d("FastStart: not needed or unsupported (%s) — using original", e.message)
+            Timber.d(e, "FastStart: exception for '$name' — using original")
+            showWarning("⚠ '$name': FastStart failed — video may need full download before playback")
             null
         } catch (e: Exception) {
-            Timber.w(e, "FastStart: failed — using original (non-fatal)")
+            Timber.w(e, "FastStart: failed for '$name' — using original (non-fatal)")
+            showWarning("⚠ '$name': FastStart failed — video may need full download before playback")
             null
         } finally {
             // Clean up temp input (output is returned to caller)
             tempInput.delete()
+        }
+    }
+
+    /**
+     * Show a toast warning on the main thread. Non-blocking — if toast
+     * fails, the warning is only in logcat.
+     */
+    private fun showWarning(message: String) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Toast.makeText(app, message, Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "FastStart: failed to show warning toast (non-fatal)")
         }
     }
 
