@@ -2,6 +2,7 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        gradlePluginPortal()
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.13.1")
@@ -10,6 +11,9 @@ buildscript {
         classpath("androidx.navigation:navigation-safe-args-gradle-plugin:2.9.6")
         classpath("com.google.dagger:hilt-android-gradle-plugin:2.57.2")
         classpath("com.jaredsburrows:gradle-license-plugin:0.9.8")
+        // Sprint 4 — code quality tooling
+        classpath("io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.23.8")
+        classpath("org.jlleitschuh.gradle:ktlint-gradle:14.2.0")
     }
 }
 

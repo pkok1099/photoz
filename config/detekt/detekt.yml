@@ -1,0 +1,90 @@
+# detekt configuration — Sprint 4 code quality tooling
+#
+# This file overrides detekt's default rules. We use buildUponDefaultConfig=true
+# so only the rules listed here are overridden — everything else stays at detekt
+# defaults.
+#
+# Philosophy: start permissive, tighten over time. We don't want detekt to
+# block CI on day 1 for 500+ existing violations. The baseline file
+# (detekt-baseline.xml) handles existing violations; this config adjusts
+# thresholds for rules that are too strict for this codebase's current state.
+
+style:
+  # Wildcard imports are used extensively in existing code (especially Compose).
+  # We'll tighten this after a cleanup pass.
+  WildcardImport:
+    active: false
+  # Max line length — existing code has many long lines (KDoc comments, etc.)
+  # 120 is the Kotlin default but we allow 140 for practical reasons.
+  MaxLineLength:
+    maxLineLength: 140
+    excludePackageStatements: true
+    excludeImportStatements: true
+  # Return count — existing code has functions with multiple returns.
+  # Default is 2, we allow 3 for now.
+  ReturnCount:
+    max: 4
+  # Magic numbers — too noisy for existing code (constants like 16, 32, 256
+  # are used legitimately in crypto code).
+  MagicNumber:
+    active: false
+complexity:
+  # Long methods — existing code has some long setup/init methods.
+  # Default 60, we allow 80 for now.
+  LongMethod:
+    threshold: 80
+  # Long parameter list — existing code has some DI constructors with many params.
+  # Default 6, we allow 8.
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 10
+  # Cyclomatic complexity — default 15, we allow 20.
+  CyclomaticComplexMethod:
+    threshold: 20
+  # Nested block depth — default 4, existing code has some deep nesting.
+  # (This rule is under complexity, not style.)
+  NestedBlockDepth:
+    threshold: 5
+
+exceptions:
+  # Swallowing exceptions — we have some catch blocks that log + continue
+  # (intentional for non-fatal errors). Don't block on these.
+  SwallowedException:
+    active: false
+  # Too generic exception caught — existing code catches Exception broadly
+  # in several places (migration, sync, etc.).
+  TooGenericExceptionCaught:
+    active: false
+
+empty-blocks:
+  # Empty function blocks — some interface stubs are intentionally empty.
+  EmptyFunctionBlock:
+    active: false
+
+naming:
+  # Function naming — existing code uses both camelCase and PascalCase
+  # (Composable functions use PascalCase by convention).
+  FunctionNaming:
+    functionPattern: '([a-z][a-zA-Z0-9]*)|([A-Z][a-zA-Z0-9]*)'
+  # Variable naming — allow single-letter variables (loop indices, etc.)
+  VariableNaming:
+    variablePattern: '(_)?[a-zA-Z][a-zA-Z0-9]*|_'
+
+potential-bugs:
+  # UnsafeCallOnNullableType — existing code has some !! that are safe by
+  # contract but detekt can't prove. We'll catch real ones in code review.
+  UnsafeCallOnNullableType:
+    active: false
+  # Cast to nullable type — common in Kotlin/Java interop.
+  CastToNullableType:
+    active: false
+
+performance:
+  # ForEach on range — using `for (i in 0..n)` is fine, but `forEach` on
+  # a range creates an iterator. Existing code uses both; don't block.
+  ForEachOnRange:
+    active: false
+  # Spread operator — creates array copy. Existing code uses it in a few
+  # places (varargs). Not worth blocking.
+  SpreadOperator:
+    active: false

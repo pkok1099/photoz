@@ -7,6 +7,17 @@ plugins {
     kotlin("kapt")
     kotlin("plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
+
+    // ─── Code quality gates (Sprint 4) ────────────────────────────────────
+    // detekt: static analysis for Kotlin — catches code smells, complexity,
+    // potential bugs that lint misses. Version declared in root buildscript.
+    // @since Sprint 4 — code quality tooling
+    id("io.gitlab.arturbosch.detekt")
+
+    // ktlint: enforces Kotlin official code style. Version 14.2.0 required
+    // for AGP 9 + built-in Kotlin compatibility (bug #1008 fixed in v14.1.0).
+    // @since Sprint 4 — code quality tooling
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
@@ -382,4 +393,32 @@ dependencies {
     // Play Review
     playImplementation("com.google.android.play:review:2.0.2")
     playImplementation("com.google.android.play:review-ktx:2.0.2")
+}
+
+// ─── detekt configuration ────────────────────────────────────────────────
+// Static analysis for Kotlin. Catches code smells, complexity, potential bugs.
+// Config file: config/detekt/detekt.yml (project-level rules).
+// Baseline: config/detekt/detekt-baseline.xml (existing violations — prevents
+// detekt from blocking CI on day 1; new violations will fail the build).
+//
+// Run: ./gradlew detekt (check) or ./gradlew detektBaseline (generate baseline)
+// @since Sprint 4 — code quality tooling
+detekt {
+    config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+    baseline = rootProject.file("config/detekt/detekt-baseline.xml")
+    buildUponDefaultConfig = true
+    parallel = true
+    ignoreFailures = false
+}
+
+// ─── ktlint configuration ────────────────────────────────────────────────
+// Enforces Kotlin official code style. Auto-fix via `./gradlew ktlintFormat`.
+// @since Sprint 4 — code quality tooling
+ktlint {
+    // ktlint 14.x doesn't need much config — defaults are good.
+    version.set("1.5.0") // ktlint engine version (separate from plugin version)
+    // Don't fail build on ktlint violations for now — too many existing ones.
+    // We'll tighten this after a ktlintFormat cleanup pass.
+    // TODO: set to false after cleanup (Sprint 4 follow-up)
+    ignoreFailures.set(true)
 }
