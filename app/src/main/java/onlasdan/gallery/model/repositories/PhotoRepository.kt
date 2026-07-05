@@ -158,21 +158,19 @@ class PhotoRepository
 		 *   the tap-to-open flow branch on `photo.type.isFile`.
 		 */
 
-		/**
-		 * Sprint 3 / M10 — Import a photo from [sourceUri].
-		 *
-		 * @param sourceUri the source URI (MediaStore, SAF, or Photo Picker).
-		 * @param importSource provenance marker for analytics + delete-after-import.
-		 * @param overrideAlbumPath OPTIONAL — when non-null, sets the photo's
-		 *   `albumPath` to this value instead of the auto-detected folder path.
-		 *   Used by the Photo Picker flow (M10): the picker URI doesn't expose
-		 *   `RELATIVE_PATH`, so the auto-album-from-folder logic would skip;
-		 *   the Path Maker dialog lets the user pick an album, and that choice
-		 *   is passed here to override.
-		 *
-		 *   When non-null, `ensureAlbumForPhoto` will find-or-create the named
-		 *   album and link the photo to it (same as the MediaStore auto path).
-		 */
+		// Sprint 3 / M10 — Import a photo from sourceUri.
+		//
+		// @param sourceUri the source URI (MediaStore, SAF, or Photo Picker).
+		// @param importSource provenance marker for analytics + delete-after-import.
+		// @param overrideAlbumPath OPTIONAL — when non-null, sets the photo's
+		//   albumPath to this value instead of the auto-detected folder path.
+		//   Used by the Photo Picker flow (M10): the picker URI doesn't expose
+		//   RELATIVE_PATH, so the auto-album-from-folder logic would skip;
+		//   the Path Maker dialog lets the user pick an album, and that choice
+		//   is passed here to override.
+		//
+		//   When non-null, ensureAlbumForPhoto will find-or-create the named
+		//   album and link the photo to it (same as the MediaStore auto path).
 		suspend fun safeImportPhoto(
 			sourceUri: Uri,
 			importSource: ImportSource,
@@ -321,7 +319,12 @@ class PhotoRepository
 					//
 					// Previously (Bug 1 fix): the duplicate was deleted entirely —
 					// the photo only appeared in the first album that imported it.
-					val existing = photoDao.findByContentHash(hashHex, excludeUuid = photo.uuid, vaultId = currentVaultId())
+					val existing =
+						photoDao.findByContentHash(
+							hashHex,
+							excludeUuid = photo.uuid,
+							vaultId = currentVaultId(),
+						)
 					if (existing != null) {
 						Timber.i(
 							"Symlink dedup: content_hash=%s already exists as uuid=%s — creating symlink %s → %s",
@@ -588,17 +591,15 @@ class PhotoRepository
 		 * @since v10 — recycle bin / soft delete (was hard delete before v10)
 		 */
 
-		/**
-		 * Sprint 4 / M2 — Toggle the `is_favorite` flag for a single photo.
-		 *
-		 * Fire-and-forget: the gallery's Flow observer picks up the change and
-		 * re-renders the heart badge. The toggle is vault-agnostic (the photo's
-		 * UUID is globally unique within the table), but the gallery only shows
-		 * the photo in the current vault's view — so toggling favorite from
-		 * vault A's gallery only affects vault A's view of that photo.
-		 *
-		 * @since v12 — Sprint 4 / M2 favorites
-		 */
+		// Sprint 4 / M2 — Toggle the is_favorite flag for a single photo.
+		//
+		// Fire-and-forget: the gallery's Flow observer picks up the change and
+		// re-renders the heart badge. The toggle is vault-agnostic (the photo's
+		// UUID is globally unique within the table), but the gallery only shows
+		// the photo in the current vault's view — so toggling favorite from
+		// vault A's gallery only affects vault A's view of that photo.
+		//
+		// @since v12 — Sprint 4 / M2 favorites
 		suspend fun toggleFavorite(
 			uuid: String,
 			isFavorite: Boolean,
@@ -779,7 +780,11 @@ class PhotoRepository
 						photoDao.updateCanonicalUuid(s.uuid, promoted.uuid)
 					}
 				} catch (e: Exception) {
-					Timber.e(e, "permanentlyDeletePhoto: symlink promotion FAILED for %s — files may be orphaned", photo.uuid)
+					Timber.e(
+						e,
+						"permanentlyDeletePhoto: symlink promotion FAILED for %s — files may be orphaned",
+						photo.uuid,
+					)
 				}
 			} else {
 				// No symlinks — delete the encrypted files normally.
@@ -1008,7 +1013,10 @@ class PhotoRepository
 					val cipherInput =
 						vaultFileStorage.openEncryptedInput(photo.internalFileName)
 							?: run {
-								Timber.e("openFileExternally: failed to open encrypted input for %s", photo.uuid)
+								Timber.e(
+									"openFileExternally: failed to open encrypted input for %s",
+									photo.uuid,
+								)
 								return@withContext false
 							}
 
@@ -1171,7 +1179,11 @@ class PhotoRepository
 							try {
 								vaultFileStorage.openEncryptedInput(photo.internalFileName)
 							} catch (e: Exception) {
-								Timber.w(e, "exportToZip: skip %s (cannot open encrypted input)", photo.uuid)
+								Timber.w(
+									e,
+									"exportToZip: skip %s (cannot open encrypted input)",
+									photo.uuid,
+								)
 								null
 							}
 						if (cipherIn == null) continue
@@ -1243,7 +1255,10 @@ class PhotoRepository
 							val bytes = zipIn.readBytes()
 							manifest =
 								try {
-									gson.fromJson(String(bytes, Charsets.UTF_8), ZipManifest::class.java)
+									gson.fromJson(
+										String(bytes, Charsets.UTF_8),
+										ZipManifest::class.java,
+									)
 								} catch (e: Exception) {
 									Timber.w(e, "importFromZip: manifest.json parse FAILED")
 									null
@@ -1276,12 +1291,20 @@ class PhotoRepository
 						if (!meta.contentHash.isNullOrBlank()) {
 							val existing =
 								try {
-									photoDao.findByContentHash(meta.contentHash, excludeUuid = meta.uuid, vaultId = currentVaultId())
+									photoDao.findByContentHash(
+										meta.contentHash,
+										excludeUuid = meta.uuid,
+										vaultId = currentVaultId(),
+									)
 								} catch (e: Exception) {
 									null
 								}
 							if (existing != null) {
-								Timber.i("importFromZip: skip duplicate %s (hash=%s)", meta.fileName, meta.contentHash)
+								Timber.i(
+									"importFromZip: skip duplicate %s (hash=%s)",
+									meta.fileName,
+									meta.contentHash,
+								)
 								continue
 							}
 						}
@@ -1327,7 +1350,10 @@ class PhotoRepository
 							try {
 								val encOut = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
 								if (encOut == null) {
-									Timber.w("importFromZip: openEncryptedOutput FAILED for %s", newUuid)
+									Timber.w(
+										"importFromZip: openEncryptedOutput FAILED for %s",
+										newUuid,
+									)
 									false
 								} else {
 									encOut.use { it.write(bytes) }

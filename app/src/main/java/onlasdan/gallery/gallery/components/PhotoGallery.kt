@@ -561,7 +561,7 @@ private fun GalleryPhotoTile(
 				when (photoTile.syncState) {
 					SyncState.UPLOADED -> painterResource(R.drawable.ic_cloud_done)
 					SyncState.UPLOAD_PENDING -> painterResource(R.drawable.ic_cloud_upload)
-					SyncState.UPLOAD_FAILED -> painterResource(R.drawable.ic_warning) // Warning is in material-icons-core, but use our own drawable for consistency
+					SyncState.UPLOAD_FAILED -> painterResource(R.drawable.ic_warning) // use our drawable
 					SyncState.LOCAL_ONLY -> painterResource(R.drawable.ic_cloud) // unreachable — kept for exhaustiveness
 				}
 			Box(

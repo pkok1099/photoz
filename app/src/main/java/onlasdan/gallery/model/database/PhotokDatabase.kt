@@ -263,11 +263,8 @@ abstract class PhotoZDatabase : RoomDatabase() {
 	 * — see [onlasdan.gallery.di.AppModule.provideVaultProtectionDao].
 	 */
 
-	/**
-	 * DAO for the local cache of the dedup registry ([HashRegistryEntry]).
-	 *
-	 * @since v9 dedup + encrypted GCM registry
-	 */
+	// DAO for the local cache of the dedup registry (HashRegistryEntry).
+	// @since v9 dedup + encrypted GCM registry
 	abstract fun getHashRegistryDao(): HashRegistryDao
 }
 

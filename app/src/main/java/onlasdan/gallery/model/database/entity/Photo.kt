@@ -29,6 +29,7 @@ import java.util.UUID
  * @since 1.0.0
  * @author PhotoZ
  */
+
 // TODO: Add a domain model for photos
 @Entity(tableName = Photo.TABLE_NAME)
 data class Photo(

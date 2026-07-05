@@ -227,13 +227,24 @@ class RcloneController
 										put("srcFs", localFile.parentFile?.absolutePath ?: "")
 										put("srcRemote", localFile.name)
 										val idx = remotePath.indexOf(':')
-										put("dstFs", if (idx < 0) "" else remotePath.substring(0, idx + 1))
+										put(
+											"dstFs",
+											if (idx <
+												0
+											) {
+												""
+											} else {
+												remotePath.substring(0, idx + 1)
+											},
+										)
 										put("dstRemote", remotePath.substringAfter(':'))
 									},
 							).getOrThrow()
 						}
 						onProgress(100f)
-						diag("uploadFileWithProgress: EXIT OK (zero-byte) — totalDuration=${System.currentTimeMillis() - uploadStartMs}ms")
+						diag(
+							"uploadFileWithProgress: EXIT OK (zero-byte) — totalDuration=${System.currentTimeMillis() - uploadStartMs}ms",
+						)
 						return@runCatching Unit
 					}
 
@@ -248,11 +259,26 @@ class RcloneController
 										op = "operations/copyfile",
 										params =
 											buildJsonObject {
-												put("srcFs", localFile.parentFile?.absolutePath ?: "")
+												put(
+													"srcFs",
+													localFile.parentFile?.absolutePath ?: "",
+												)
 												put("srcRemote", localFile.name)
 												val idx = remotePath.indexOf(':')
-												put("dstFs", if (idx < 0) "" else remotePath.substring(0, idx + 1))
-												put("dstRemote", remotePath.substringAfter(':'))
+												put(
+													"dstFs",
+													if (idx <
+														0
+													) {
+														""
+													} else {
+														remotePath.substring(0, idx + 1)
+													},
+												)
+												put(
+													"dstRemote",
+													remotePath.substringAfter(':'),
+												)
 											},
 									).getOrThrow()
 								}
@@ -397,7 +423,9 @@ class RcloneController
 
 					val downloadStartMs = System.currentTimeMillis()
 					val fileSize = expectedSize ?: 0L
-					diag("downloadFileWithProgress: ENTRY remotePath=$remotePath localPath=$localPath expectedSize=$fileSize")
+					diag(
+						"downloadFileWithProgress: ENTRY remotePath=$remotePath localPath=$localPath expectedSize=$fileSize",
+					)
 
 					// Build the rc params once — same as downloadFile.
 					val params =
@@ -458,12 +486,10 @@ class RcloneController
 		 * expected [expectedSize] in bytes.
 		 */
 
-		/**
-		 * List files in a directory on the remote. Returns a list of [RemoteFileInfo] (name + size).
-		 * Used by [RepoManager.detectRepo] to check for the repo marker file.
-		 *
-		 * @since PR1 sync — mandatory repo setup
-		 */
+		// List files in a directory on the remote. Returns a list of RemoteFileInfo (name + size).
+		// Used by RepoManager.detectRepo to check for the repo marker file.
+		//
+		// @since PR1 sync — mandatory repo setup
 		suspend fun listRemote(
 			remoteFs: String,
 			remoteDir: String,
@@ -568,8 +594,13 @@ class RcloneController
 						val found =
 							list.any { entry ->
 								val obj = entry as? JsonObject ?: return@any false
-								val name = (obj["Name"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-								val size = (obj["Size"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+								val name =
+									(obj["Name"] as? kotlinx.serialization.json.JsonPrimitive)
+										?.content
+								val size =
+									(obj["Size"] as? kotlinx.serialization.json.JsonPrimitive)
+										?.content
+										?.toLongOrNull()
 								name == fileName && size == expectedSize
 							}
 
@@ -618,7 +649,9 @@ class RcloneController
 						// natively — the hash comes back blank.
 						val arr =
 							resp["hashsum"] as? JsonArray
-								?: throw IOException("Malformed hashsum response (no 'hashsum' array): $resp")
+								?: throw IOException(
+									"Malformed hashsum response (no 'hashsum' array): $resp",
+								)
 
 						if (arr.isEmpty()) {
 							throw IOException("Empty hashsum response (file may not exist): $resp")
@@ -638,11 +671,15 @@ class RcloneController
 										// Alternate format: {"<hash>": "<path>"} or {"hash":"...","hash_value":"..."}
 										val keys = entry.keys
 										keys.any { it.contains(targetFileName) } ||
-											(entry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content != null
+											(entry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content !=
+											null
 									}
 									else -> false
 								}
-							} ?: throw IOException("File not found in hashsum response: $targetFileName (full: $resp)")
+							}
+								?: throw IOException(
+									"File not found in hashsum response: $targetFileName (full: $resp)",
+								)
 
 						val actualHash: String =
 							when (matchingEntry) {
@@ -657,14 +694,17 @@ class RcloneController
 									// Try hash-is-key format
 									val hexKey =
 										matchingEntry.keys.firstOrNull {
-											it.length == 64 && it.all { c -> c in "0123456789abcdefABCDEF" }
+											it.length == 64 &&
+												it.all { c -> c in "0123456789abcdefABCDEF" }
 										}
 									if (hexKey != null) {
 										hexKey
 									} else {
 										// Try hash_value field
 										(matchingEntry["hash_value"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-											?: throw IOException("Could not extract hash from hashsum entry: $matchingEntry")
+											?: throw IOException(
+												"Could not extract hash from hashsum entry: $matchingEntry",
+											)
 									}
 								}
 								else -> throw IOException("Unexpected hashsum entry type: $matchingEntry")
@@ -836,7 +876,9 @@ class RcloneController
 							var cause: Throwable? = e.cause
 							var depth = 0
 							while (cause != null && depth < 10) {
-								diag("startRcdProcess:   caused by [depth=$depth] ${cause.javaClass.name}: ${cause.message}")
+								diag(
+									"startRcdProcess:   caused by [depth=$depth] ${cause.javaClass.name}: ${cause.message}",
+								)
 								cause = cause.cause
 								depth++
 							}
@@ -974,14 +1016,18 @@ class RcloneController
 			)
 
 			val devPath = java.io.File(configManager.binDir, BINARY_NAME)
-			diag("devPath(${devPath.absolutePath}) exists=${devPath.exists()} size=${devPath.length()} canRead=${devPath.canRead()}")
+			diag(
+				"devPath(${devPath.absolutePath}) exists=${devPath.exists()} size=${devPath.length()} canRead=${devPath.canRead()}",
+			)
 
 			// Detect symlinks on each candidate source file too.
 			for (cand in listOf(nativeSrcLib, nativeSrcPlain, devPath)) {
 				if (cand == null) continue
 				try {
 					val isSymlink = cand.absolutePath != cand.canonicalPath
-					diag("cand ${cand.absolutePath} canonical=${cand.canonicalPath} isFile=${cand.isFile} isSymlink=$isSymlink")
+					diag(
+						"cand ${cand.absolutePath} canonical=${cand.canonicalPath} isFile=${cand.isFile} isSymlink=$isSymlink",
+					)
 				} catch (e: Exception) {
 					diag("cand ${cand.absolutePath} canonicalPath FAILED: ${e.message}", e)
 				}
@@ -1008,7 +1054,9 @@ class RcloneController
 			// compatibility — but note that on Android 10+ this path is also W^X-blocked
 			// (it's app-writable). It will only work on older Android versions.
 			if (onDiskSource != null) {
-				diag("locateRcloneBinary: Layer 1 — returning ${onDiskSource.absolutePath} directly (no copy, no codeCacheDir)")
+				diag(
+					"locateRcloneBinary: Layer 1 — returning ${onDiskSource.absolutePath} directly (no copy, no codeCacheDir)",
+				)
 				diag(
 					"locateRcloneBinary: WARNING — if this path is NOT under nativeLibraryDir (e.g. it's under files/), expect EACCES on Android 10+",
 				)
@@ -1122,14 +1170,18 @@ class RcloneController
 				java.util.zip.ZipFile(apkFile).use { zf ->
 					val entry = zf.getEntry(entryName)
 					if (entry == null) {
-						diag("extractBinaryFromApkZip: entry '$entryName' NOT FOUND in APK. Listing all lib/* entries:")
+						diag(
+							"extractBinaryFromApkZip: entry '$entryName' NOT FOUND in APK. Listing all lib/* entries:",
+						)
 						// List available lib entries to aid debugging (e.g. wrong ABI name,
 						// binary not packaged at all, etc.).
 						val entries = zf.entries()
 						while (entries.hasMoreElements()) {
 							val e = entries.nextElement()
 							if (e.name.startsWith("lib/")) {
-								diag("extractBinaryFromApkZip:   apk contains: ${e.name} size=${e.size} method=${e.method}")
+								diag(
+									"extractBinaryFromApkZip:   apk contains: ${e.name} size=${e.size} method=${e.method}",
+								)
 							}
 						}
 						return null
@@ -1161,7 +1213,10 @@ class RcloneController
 							tmpFile.copyTo(execFile, overwrite = true)
 							tmpFile.delete()
 						} catch (e: Exception) {
-							diag("extractBinaryFromApkZip: fallback copy FAILED: ${e.javaClass.name}: ${e.message}", e)
+							diag(
+								"extractBinaryFromApkZip: fallback copy FAILED: ${e.javaClass.name}: ${e.message}",
+								e,
+							)
 							tmpFile.delete()
 							return null
 						}
@@ -1171,9 +1226,13 @@ class RcloneController
 					// Set executable bit.
 					if (!execFile.canExecute()) {
 						val ok = execFile.setExecutable(true, true)
-						diag("extractBinaryFromApkZip: setExecutable result=$ok canExecute=${execFile.canExecute()}")
+						diag(
+							"extractBinaryFromApkZip: setExecutable result=$ok canExecute=${execFile.canExecute()}",
+						)
 						if (!ok) {
-							diag("extractBinaryFromApkZip: WARNING — setExecutable returned false; exec may fail with EACCES")
+							diag(
+								"extractBinaryFromApkZip: WARNING — setExecutable returned false; exec may fail with EACCES",
+							)
 						}
 					}
 

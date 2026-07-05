@@ -42,6 +42,12 @@ ktlint_standard_property-naming = disabled
 # cosmetic and fixing them risks losing documentation context.
 ktlint_standard_kdoc = disabled
 
+# NoConsecutiveComments: KDoc + EOL comment adjacency is flagged by this rule.
+# Many existing code blocks have `/** KDoc */` followed by `// comment` or
+# vice versa — fixing all would require manual review of each case to avoid
+# losing documentation. Disable for now; can re-enable after gradual cleanup.
+ktlint_standard_no-consecutive-comments = disabled
+
 # Standard ktlint rules (kept at defaults — these are auto-fixable via
 # `./gradlew ktlintFormat`):
 #  - import-ordering

@@ -60,6 +60,10 @@
     <ID>LongMethod:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun performUpload( photo: Photo, batchState: SyncBatchTracker.BatchState, )</ID>
     <ID>LongMethod:PhotoSyncWorker.kt$PhotoSyncWorker.Companion$fun enqueue( context: Context, photo: Photo, )</ID>
     <ID>LongMethod:RcloneController.kt$RcloneController$private fun extractBinaryFromApkZip(): java.io.File?</ID>
+    <ID>LongMethod:RcloneController.kt$RcloneController$private fun locateRcloneBinary(): File</ID>
+    <ID>LongMethod:RcloneController.kt$RcloneController$private suspend fun startRcdProcess(): Result&lt;Unit&gt;</ID>
+    <ID>LongMethod:RcloneController.kt$RcloneController$suspend fun uploadFileWithProgress( localPath: String, remotePath: String, onProgress: (Float) -&gt; Unit, ): Result&lt;Unit&gt;</ID>
+    <ID>LongMethod:RcloneController.kt$RcloneController$suspend fun verifyRemote( remotePath: String, expectedSha256: String, ): Result&lt;Boolean&gt;</ID>
     <ID>LongMethod:RecoveryPhraseRestoreScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RecoveryPhraseRestoreContent( uiState: RecoveryPhraseRestoreUiState, handleUiEvent: (RecoveryPhraseRestoreUiEvent) -&gt; Unit, onBack: () -&gt; Unit, )</ID>
     <ID>LongMethod:RecoveryPhraseRestoreViewModel.kt$RecoveryPhraseRestoreViewModel$fun handleUiEvent(event: RecoveryPhraseRestoreUiEvent)</ID>
     <ID>LongMethod:RecoveryPhraseSetupScreen.kt$@Composable private fun Content( uiState: RecoveryPhraseUiState, handleUiEvent: (RecoveryPhraseUiEvent) -&gt; Unit, onContinue: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
@@ -97,7 +101,6 @@
     <ID>MatchingDeclarationName:ExifExtractor.kt$ExifMetadata</ID>
     <ID>MatchingDeclarationName:ImportMenuBottomSheet.kt$ImportChoice</ID>
     <ID>MatchingDeclarationName:NewFeaturesSheet.kt$NewFeature</ID>
-    <ID>MatchingDeclarationName:OpenGalleryUseCase.kt$NavigateToGallery</ID>
     <ID>MatchingDeclarationName:SearchQueryParser.kt$SearchQuery</ID>
     <ID>MatchingDeclarationName:Utils.kt$FileMetaData</ID>
     <ID>MaxLineLength:EncryptionMigrationScreenError.kt$"Causing exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj "</ID>
@@ -107,7 +110,6 @@
     <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"gcOriginals: delete legacy thumbnail for ${entry.uuid} FAILED (non-fatal — may have been packed already, or may not exist on this backend): ${e.message}"</ID>
     <ID>MaxLineLength:PasswordEditText.kt$PasswordEditText.BindingAdapters$*</ID>
     <ID>MaxLineLength:PhotoDao.kt$PhotoDao$"SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid AND deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1"</ID>
-    <ID>MaxLineLength:PhotoGallery.kt$SyncState.UPLOAD_FAILED -&gt; painterResource(R.drawable.ic_warning)</ID>
     <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$"flushRegistryToRemote: no vault session (vault locked) — skipping registry flush; local cache stays correct, will flush on next batch"</ID>
     <ID>MaxLineLength:RcloneController.kt$RcloneController$"extractBinaryFromApkZip: ABORT — apk file not readable: ${apkFile.absolutePath} exists=${apkFile.exists()} canRead=${apkFile.canRead()}"</ID>
     <ID>MaxLineLength:RcloneController.kt$RcloneController$"extractBinaryFromApkZip: entry found, compressedSize=${entry.compressedSize} size=${entry.size} method=${entry.method} (0=STORED, 8=DEFLATED)"</ID>

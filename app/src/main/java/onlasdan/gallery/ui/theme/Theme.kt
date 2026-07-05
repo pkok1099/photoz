@@ -124,9 +124,7 @@ private val DarkColors =
 fun AppTheme(
 	useDarkTheme: Boolean = isSystemInDarkTheme(),
 	dynamicColor: Boolean = true,
-	content:
-		@Composable()
-		() -> Unit,
+	content: @Composable () -> Unit,
 ) {
 	val colors =
 		when {
