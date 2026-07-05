@@ -59,9 +59,13 @@ class SecurityChecker @Inject constructor(
     /**
      * Check if a debugger is currently attached to the process.
      * Used at critical paths (unlock, encrypt) to prevent memory inspection.
+     *
+     * Note: We do NOT call Debug.waitForDebugger() here — that would block
+     * the calling thread until a debugger attaches, which is the opposite
+     * of what we want. We only check the connection state.
      */
     fun isDebuggerAttached(): Boolean {
-        return Debug.isDebuggerConnected() || Debug.waitForDebugger() == false.run { false }
+        return Debug.isDebuggerConnected()
     }
 
     /**
