@@ -393,6 +393,18 @@ dependencies {
     // Play Review
     playImplementation("com.google.android.play:review:2.0.2")
     playImplementation("com.google.android.play:review-ktx:2.0.2")
+
+    // ─── LeakCanary — memory leak detection (Sprint 4) ────────────────────
+    // Zero-config: auto-installs in debug builds, shows a notification when
+    // a leak is detected. No code changes needed — just add the dependency.
+    //
+    // Why: PhotoZ loads many images (Coil) + videos (ExoPlayer) + has many
+    // Compose screens — prime candidates for memory leaks. LeakCanary catches
+    // them silently in debug builds before they reach production.
+    //
+    // Release builds are unaffected — LeakCanary is debugImplementation only.
+    // @since Sprint 4 — code quality tooling
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
 }
 
 // ─── detekt configuration ────────────────────────────────────────────────
