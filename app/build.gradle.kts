@@ -74,6 +74,17 @@ android {
     buildTypes {
         getByName("debug") {
             isDebuggable = true
+            // Sprint 10+ — consistent debug signing key for CI builds.
+            // Without this, each CI runner generates its own ephemeral debug
+            // key, and the user can't install updates without uninstalling.
+            // The debug.keystore is committed to the repo (debug keys are not
+            // sensitive — they're for debug builds only).
+            signingConfig = signingConfigs.create("debugCi") {
+                storeFile = rootProject.file("debug.keystore")
+                storePassword = "android"
+                keyAlias = "debug"
+                keyPassword = "android"
+            }
         }
 
         getByName("release") {

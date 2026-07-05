@@ -315,8 +315,15 @@ class ImageViewerViewModel @AssistedInject constructor(
     fun maybeStartVideoDownload(photo: Photo) {
         if (!photo.type.isVideo) return
         val uuid = photo.uuid
+        android.util.Log.i("RcloneDiag",
+            "[VideoStream] maybeStartVideoDownload: uuid=$uuid syncState=${photo.syncState} " +
+                "internalFileName=${photo.internalFileName} canonicalUuid=${photo.canonicalUuid}")
+
         synchronized(inflightDownloads) {
-            if (uuid in inflightDownloads) return
+            if (uuid in inflightDownloads) {
+                android.util.Log.d("RcloneDiag", "[VideoStream] $uuid already in flight — skipping")
+                return
+            }
             inflightDownloads.add(uuid)
         }
         // If the local file already exists, mark Done immediately — no
@@ -324,17 +331,14 @@ class ImageViewerViewModel @AssistedInject constructor(
         // DataSource uses its default "fully available" path.
         val localFile = app.getFileStreamPath(photo.internalFileName)
         if (localFile.exists() && localFile.length() > 0) {
+            android.util.Log.i("RcloneDiag",
+                "[VideoStream] $uuid local file exists (${localFile.length()} bytes) — no streaming needed")
             videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
-            // QC fix: the inflightDownloads set used to be append-only — the
-            // UUID was added when a download started but NEVER removed, not
-            // even on these fast-path early returns. That meant a user who
-            // later cleared the local file (or whose syncState changed) could
-            // never retry the download without leaving and re-entering the
-            // viewer. Remove the UUID on every exit path so the set only
-            // blocks genuinely concurrent duplicate launches, not retries.
             synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
             return
         }
+        android.util.Log.i("RcloneDiag",
+            "[VideoStream] $uuid local file MISSING — starting progressive download from cloud")
         if (photo.syncState != onlasdan.gallery.sync.domain.SyncState.UPLOADED) {
             // Not uploaded — can't restore from remote. Mark Failed so the
             // UI shows an error instead of an infinite spinner.

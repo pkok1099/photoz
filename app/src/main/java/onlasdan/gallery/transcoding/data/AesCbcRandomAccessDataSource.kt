@@ -196,7 +196,11 @@ class AesCbcRandomAccessDataSource(
         }
 
         // --- Resolve key  ---
-        val key = sessionRepository.require().vmk
+        // Sprint 10+ fix: use get() instead of require() to avoid crash if
+        // the session was cleared (e.g. by BFU-Safe or lock timeout during
+        // video playback). If null, throw a clear error instead of crashing.
+        val key = sessionRepository.get()?.vmk
+            ?: throw java.io.IOException("Vault is locked — cannot decrypt video stream")
 
         // --- Compute target block ---
         val plainOffset = dataSpec.position
