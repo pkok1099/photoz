@@ -19,7 +19,6 @@ package onlasdan.gallery.encryption.domain.crypto
 import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.encryption.domain.models.EncryptionVersionByte
 import timber.log.Timber
-import java.io.IOException
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.security.SecureRandom
@@ -45,10 +44,10 @@ import javax.crypto.spec.GCMParameterSpec
  * [chunk_last: nonce(12) + ciphertext(remaining) + tag(16)]
  * ```
  *
- * The total_plaintext_size is written as 0 during streaming (unknown
- * until close()). On close(), we seek back and patch it. If the output
- * stream doesn't support seek (e.g. network), the size stays 0 and the
- * decryptor handles it (reads chunks until EOF).
+ * The total_plaintext_size is written as 0 (unknown) — we don't know the
+ * total until close(), and OutputStream doesn't support seeking back.
+ * The decryptor ([ChunkedGcmInputStream]) handles totalPlaintextSize=0
+ * by reading chunks until EOF.
  *
  * @since v15 — TODO #2 chunked streaming encryption
  */
@@ -72,7 +71,8 @@ class ChunkedGcmOutputStream(
         // Chunk size (4 bytes, big-endian)
         val csBytes = ByteBuffer.allocate(4).putInt(chunkSize).array()
         output.write(csBytes)
-        // Total plaintext size (8 bytes, big-endian) — placeholder 0, patched on close
+        // Total plaintext size (8 bytes, big-endian) — 0 = unknown.
+        // The decryptor reads chunks until EOF when totalPlaintextSize=0.
         output.write(ByteArray(8))
         headerWritten = true
     }

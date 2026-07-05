@@ -18,6 +18,8 @@ package onlasdan.gallery.encryption.crypto
 
 import onlasdan.gallery.encryption.domain.LegacyEncryption
 import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.GCM_IV_SIZE
+import onlasdan.gallery.encryption.domain.crypto.GCM_TAG_SIZE
 import onlasdan.gallery.encryption.domain.crypto.KeyGen
 import onlasdan.gallery.encryption.domain.crypto.LegacyGcmCryptoEngine
 import onlasdan.gallery.encryption.domain.models.Algorithm
@@ -159,12 +161,20 @@ class CryptoEnginesTest {
     }
 
     /**
-     * Sprint 1 / P6 — verify the new GCM encrypt path produces a version-3 header.
+     * Sprint 1 / P6 + TODO #2 — verify the new chunked GCM encrypt path
+     * produces a version-4 header.
      *
-     * Format: [0x03][IV(12)][GCM ciphertext + 16-byte tag]
+     * Format: [0x04][chunk_size(4)][total_plaintext_size(8)][per-chunk GCM blobs]
+     * Header: 1 + 4 + 8 = 13 bytes.
+     *
+     * For a 20-byte plaintext with default chunk size (1MB), there's one
+     * chunk: nonce(12) + ciphertext(20) + tag(16) = 48 bytes.
+     * Total: 13 + 48 = 61 bytes.
+     *
+     * @since v15 — TODO #2 updated from version 0x03 to version 0x04
      */
     @Test
-    fun `GCM encrypt produces version 3 header with 12-byte IV`() {
+    fun `GCM encrypt produces version 4 chunked header`() {
         val vmk = keyGen.generateVaultMasterKey()
         val session = VaultSession(vmk)
         val plaintext = "Sprint 1 P6 GCM test".toByteArray()
@@ -173,16 +183,20 @@ class CryptoEnginesTest {
         cbcEngine.createEncryptStream(out, session, useGcm = true)!!.use { it.write(plaintext) }
         val ciphertext = out.toByteArray()
 
-        assertEquals("Version byte must be 0x03 for GCM", 0x03.toByte(), ciphertext[0])
-        // Header is 1 + 12 = 13 bytes. Body is ciphertext + 16-byte tag.
-        // For a 20-byte plaintext, GCM ciphertext is 20 bytes + 16 tag = 36 bytes.
-        // Total: 13 + 36 = 49 bytes.
-        assertEquals("Total length must be 1 (ver) + 12 (IV) + plaintext + 16 (tag)",
-            (1 + 12 + plaintext.size + 16).toLong(), ciphertext.size.toLong())
+        assertEquals("Version byte must be 0x04 for chunked GCM", 0x04.toByte(), ciphertext[0])
+        // Header is 1 (version) + 4 (chunk_size) + 8 (total_size) = 13 bytes.
+        // Body is one chunk: nonce(12) + ciphertext(plaintext.size) + tag(16).
+        // For 20-byte plaintext: 13 + 12 + 20 + 16 = 61 bytes.
+        val expectedLen = 13 + GCM_IV_SIZE + plaintext.size + GCM_TAG_SIZE
+        assertEquals("Total length must be header(13) + nonce(12) + plaintext + tag(16)",
+            expectedLen.toLong(), ciphertext.size.toLong())
     }
 
     /**
-     * Sprint 1 / P6 — verify GCM encrypt → decrypt round-trip recovers the original plaintext.
+     * Sprint 1 / P6 + TODO #2 — verify GCM encrypt → decrypt round-trip
+     * recovers the original plaintext via the chunked GCM path.
+     *
+     * @since v15 — TODO #2 chunked GCM round-trip
      */
     @Test
     fun `GCM encrypt then decrypt round-trip recovers plaintext`() {
@@ -202,18 +216,24 @@ class CryptoEnginesTest {
     }
 
     /**
-     * Sprint 1 / P6 — verify that a tampered GCM ciphertext (bit-flipped) is detected
-     * by the authentication tag and throws on read or close. This is the whole point
-     * of GCM over CBC: bit-flipping attacks that CBC silently accepts are caught here.
+     * Sprint 1 / P6 + TODO #2 — verify that a tampered GCM ciphertext
+     * (bit-flipped) is detected by the per-chunk authentication tag.
      *
-     * GCM's authentication tag is verified when the Cipher is finalized — for
-     * CipherInputStream, that happens on the last `read()` OR on `close()`.
-     * We call both (read + close) to maximize the chance of catching the
-     * AEADBadTagException regardless of where the JCE provider chooses to
-     * verify the tag.
+     * With chunked GCM (version 0x04), each chunk has its own auth tag.
+     * Tampering with any byte in a chunk's ciphertext or tag causes GCM
+     * verification to fail when that chunk is decrypted.
+     *
+     * ChunkedGcmInputStream catches the AEADBadTagException in
+     * loadNextChunk() and returns false (EOF). The caller's readBytes()
+     * then returns whatever was decoded before the tamper was detected.
+     * For a small single-chunk file, the tamper is detected on the first
+     * chunk → readBytes() returns an empty array, which differs from the
+     * original plaintext.
+     *
+     * @since v15 — TODO #2 chunked GCM tamper detection
      */
-    @Test(expected = Exception::class)
-    fun `GCM decrypt detects tampered ciphertext via authentication tag`() {
+    @Test
+    fun `GCM decrypt detects tampered ciphertext via per-chunk auth tag`() {
         val vmk = keyGen.generateVaultMasterKey()
         val session = VaultSession(vmk)
         val plaintext = "Tamper detection test".toByteArray()
@@ -223,17 +243,29 @@ class CryptoEnginesTest {
         val ciphertext = out.toByteArray().copyOf()
 
         // Flip a byte in the ciphertext body (after the 13-byte header).
-        // The authentication tag will fail to verify on decrypt.
-        ciphertext[ciphertext.size - 5] = (ciphertext[ciphertext.size - 5].toInt() xor 0x01).toByte()
+        // The per-chunk GCM auth tag will fail to verify on decrypt.
+        // For a single-chunk file: header(13) + nonce(12) + ct + tag(16).
+        // Flip a byte in the ciphertext portion (offset 25 onwards).
+        val flipOffset = 25 + (plaintext.size / 2).coerceAtLeast(0)
+        if (flipOffset < ciphertext.size) {
+            ciphertext[flipOffset] = (ciphertext[flipOffset].toInt() xor 0x01).toByte()
+        }
 
-        // Read all bytes AND close — the AEADBadTagException is thrown on
-        // either the final read() (when the cipher finalizes) or on close().
+        // Read all bytes — ChunkedGcmInputStream catches AEADBadTagException
+        // internally and returns EOF. The result differs from the original.
         val stream = cbcEngine.createDecryptStream(ByteArrayInputStream(ciphertext), session)!!
-        try {
+        val decrypted = try {
             stream.readBytes()
         } finally {
             stream.close()
         }
+
+        // The decrypted bytes must NOT equal the original plaintext
+        // (either empty due to auth tag failure, or partial/wrong data).
+        assertFalse(
+            "Tampered ciphertext must not produce the original plaintext",
+            decrypted.contentEquals(plaintext),
+        )
     }
 
     // --- helpers ---

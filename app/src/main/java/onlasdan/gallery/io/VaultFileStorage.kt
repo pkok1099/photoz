@@ -21,8 +21,6 @@ import android.content.Context
 import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.encryption.domain.crypto.CryptoEngine
 import timber.log.Timber
-import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
 import javax.inject.Inject
 
 class VaultFileStorage @Inject constructor(

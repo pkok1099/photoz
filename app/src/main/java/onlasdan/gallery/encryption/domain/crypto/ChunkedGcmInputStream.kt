@@ -54,11 +54,11 @@ class ChunkedGcmInputStream(
     }
 
     private fun readHeader() {
-        // Version byte (already consumed by caller, but we read it for validation)
-        val versionByte = input.read()
-        if (versionByte.toByte() != 0x04.toByte()) {
-            throw IOException("ChunkedGcmInputStream: expected version 0x04, got 0x${versionByte.toString(16)}")
-        }
+        // NOTE: The version byte (0x04) has ALREADY been consumed by
+        // CbcCryptoEngine.createDecryptStream() before constructing this
+        // stream. We must NOT read it again — the input stream is now
+        // positioned at the chunk_size field.
+        //
         // Chunk size (4 bytes, big-endian)
         val csBytes = ByteArray(4)
         if (input.read(csBytes) != 4) throw IOException("ChunkedGcmInputStream: truncated header (chunk_size)")
