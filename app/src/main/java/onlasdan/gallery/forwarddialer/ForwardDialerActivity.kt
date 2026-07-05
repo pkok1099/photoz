@@ -30,19 +30,18 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ForwardDialerActivity : AppCompatActivity() {
+	private val viewModel: ForwardDialerViewModel by viewModels()
 
-    private val viewModel: ForwardDialerViewModel by viewModels()
+	@Inject
+	lateinit var navigator: ForwardDialerNavigator
 
-    @Inject
-    lateinit var navigator: ForwardDialerNavigator
+	override fun onCreate(savedInstanceState: Bundle?) {
+		super.onCreate(savedInstanceState)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+		viewModel.navigationEvent.observe(this) {
+			navigator.navigate(it, this)
+		}
 
-        viewModel.navigationEvent.observe(this) {
-            navigator.navigate(it, this)
-        }
-
-        viewModel.evaluateNavigation()
-    }
+		viewModel.evaluateNavigation()
+	}
 }

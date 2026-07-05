@@ -17,6 +17,10 @@
 package onlasdan.gallery.encryption.migration
 
 import android.app.Application
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import onlasdan.gallery.databinding.BindingConverters
 import onlasdan.gallery.encryption.domain.crypto.LegacyGcmCryptoEngine
 import onlasdan.gallery.encryption.domain.models.LegacySession
@@ -26,10 +30,6 @@ import onlasdan.gallery.model.database.entity.LEGACY_PHOTOK_FILE_EXTENSION
 import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import onlasdan.gallery.model.repositories.PhotoRepository
 import onlasdan.gallery.settings.data.Config
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,191 +37,203 @@ import javax.inject.Singleton
 private const val MIGRATIED_FILE_PREFIX = ".migrated~"
 
 sealed interface LegacyEncryptionState {
-    data object Initial : LegacyEncryptionState
-    data class Running(
-        val processedFiles: Int = 0,
-        val totalFiles: Int = 0,
-    ) : LegacyEncryptionState
+	data object Initial : LegacyEncryptionState
 
-    data class Error(val error: Throwable) : LegacyEncryptionState
-    data object Success : LegacyEncryptionState
+	data class Running(
+		val processedFiles: Int = 0,
+		val totalFiles: Int = 0,
+	) : LegacyEncryptionState
+
+	data class Error(
+		val error: Throwable,
+	) : LegacyEncryptionState
+
+	data object Success : LegacyEncryptionState
 }
-
 
 @Singleton
-class LegacyEncryptionMigrator @Inject constructor(
-    private val legacyCryptoEngine: LegacyGcmCryptoEngine,
-    private val vaultFileStorage: VaultFileStorage,
-    private val app: Application,
-    private val config: Config,
-    private val io: IO,
-    private val photoRepository: PhotoRepository,
-) {
+class LegacyEncryptionMigrator
+	@Inject
+	constructor(
+		private val legacyCryptoEngine: LegacyGcmCryptoEngine,
+		private val vaultFileStorage: VaultFileStorage,
+		private val app: Application,
+		private val config: Config,
+		private val io: IO,
+		private val photoRepository: PhotoRepository,
+	) {
+		val state = MutableStateFlow<LegacyEncryptionState>(LegacyEncryptionState.Initial)
 
-    val state = MutableStateFlow<LegacyEncryptionState>(LegacyEncryptionState.Initial)
+		private lateinit var session: LegacySession
 
-    private lateinit var session: LegacySession
+		private val mutex = Mutex()
 
-    private val mutex = Mutex()
+		fun initialize(session: LegacySession) {
+			this.session = session
+		}
 
-    fun initialize(session: LegacySession) {
-        this.session = session
-    }
+		fun migrationNeeded(): Boolean = app.fileList().any { it.contains(LEGACY_PHOTOK_FILE_EXTENSION) }
 
-    fun migrationNeeded(): Boolean {
-        return app.fileList().any { it.contains(LEGACY_PHOTOK_FILE_EXTENSION) }
-    }
+		suspend fun migrate() =
+			mutex.withLock {
+				if (::session.isInitialized.not()) {
+					state.update {
+						LegacyEncryptionState.Error(IllegalStateException("Encryption not initialized"))
+					}
 
-    suspend fun migrate() = mutex.withLock {
-        if (::session.isInitialized.not()) {
-            state.update {
-                LegacyEncryptionState.Error(IllegalStateException("Encryption not initialized"))
-            }
+					return@withLock
+				}
 
-            return@withLock
-        }
+				config.legacyCurrentlyMigrating = true
 
-        config.legacyCurrentlyMigrating = true
+				try {
+					val allPhotos = photoRepository.findAllPhotosByImportDateDesc()
 
-        try {
+					val legacyFiles =
+						app.fileList().filter { legacyFile ->
+							legacyFile.contains(LEGACY_PHOTOK_FILE_EXTENSION) &&
+								// Is .photok file
+								!legacyFile.startsWith(MIGRATIED_FILE_PREFIX) &&
+								// Is not migrated tmp file
+								allPhotos.any { legacyFile.contains(it.uuid) } // Has a matching photo
+						}
 
-            val allPhotos = photoRepository.findAllPhotosByImportDateDesc()
+					if (legacyFiles.isEmpty() || allPhotos.isEmpty()) {
+						state.update { LegacyEncryptionState.Success }
+						postMigrate()
+						return@withLock
+					}
 
-            val legacyFiles = app.fileList().filter { legacyFile ->
-                legacyFile.contains(LEGACY_PHOTOK_FILE_EXTENSION) // Is .photok file
-                        && !legacyFile.startsWith(MIGRATIED_FILE_PREFIX) // Is not migrated tmp file
-                        && allPhotos.any { legacyFile.contains(it.uuid) } // Has a matching photo
-            }
+					state.update {
+						LegacyEncryptionState.Running(
+							processedFiles = 0,
+							totalFiles = legacyFiles.size,
+						)
+					}
 
-            if (legacyFiles.isEmpty() || allPhotos.isEmpty()) {
-                state.update { LegacyEncryptionState.Success }
-                postMigrate()
-                return@withLock
-            }
+					var processedFiles = 0
+					var error: Throwable? = null
 
-            state.update {
-                LegacyEncryptionState.Running(
-                    processedFiles = 0,
-                    totalFiles = legacyFiles.size,
-                )
-            }
+					for (legacyFile in legacyFiles) {
+						migrateSingleFile(legacyFile)
+							.onFailure {
+								error = it
+								break
+							}
 
-            var processedFiles = 0
-            var error: Throwable? = null
+						processedFiles++
 
-            for (legacyFile in legacyFiles) {
-                migrateSingleFile(legacyFile)
-                    .onFailure {
-                        error = it
-                        break
-                    }
+						state.update {
+							require(it is LegacyEncryptionState.Running)
+							it.copy(processedFiles = processedFiles)
+						}
+					}
 
-                processedFiles++
+					return if (error == null) {
+						postMigrate()
 
-                state.update {
-                    require(it is LegacyEncryptionState.Running)
-                    it.copy(processedFiles = processedFiles)
-                }
-            }
+						state.update {
+							LegacyEncryptionState.Success
+						}
+					} else {
+						state.update {
+							LegacyEncryptionState.Error(error)
+						}
+					}
+				} catch (e: Exception) {
+					state.update {
+						LegacyEncryptionState.Error(e)
+					}
+				}
+			}
 
-            return if (error == null) {
-                postMigrate()
+		private fun postMigrate() {
+			val migratedFile = app.fileList().filter { it.contains(MIGRATIED_FILE_PREFIX) }
 
-                state.update {
-                    LegacyEncryptionState.Success
-                }
-            } else {
-                state.update {
-                    LegacyEncryptionState.Error(error)
-                }
-            }
-        } catch (e: Exception) {
-            state.update {
-                LegacyEncryptionState.Error(e)
-            }
-        }
-    }
+			for (file in migratedFile) {
+				val targetFileName =
+					file
+						.removePrefix(MIGRATIED_FILE_PREFIX)
+						.replace(LEGACY_PHOTOK_FILE_EXTENSION, PHOTOK_FILE_EXTENSION)
 
-    private fun postMigrate() {
-        val migratedFile = app.fileList().filter { it.contains(MIGRATIED_FILE_PREFIX) }
+				vaultFileStorage.renameEncryptedFile(file, targetFileName)
+			}
 
-        for (file in migratedFile) {
-            val targetFileName = file
-                .removePrefix(MIGRATIED_FILE_PREFIX)
-                .replace(LEGACY_PHOTOK_FILE_EXTENSION, PHOTOK_FILE_EXTENSION)
+			config.legacyCurrentlyMigrating = false
+		}
 
-            vaultFileStorage.renameEncryptedFile(file, targetFileName)
-        }
+		private suspend fun migrateSingleFile(legacyName: String): Result<Unit> =
+			runCatching {
+				require(legacyName.contains(LEGACY_PHOTOK_FILE_EXTENSION)) { "Not legacy file" }
 
-        config.legacyCurrentlyMigrating = false
-    }
+				val tmpName = "$MIGRATIED_FILE_PREFIX$legacyName"
+				val finalName =
+					legacyName.replace(
+						oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
+						newValue = PHOTOK_FILE_EXTENSION,
+					)
 
-    private suspend fun migrateSingleFile(legacyName: String): Result<Unit> = runCatching {
-        require(legacyName.contains(LEGACY_PHOTOK_FILE_EXTENSION)) { "Not legacy file" }
+				// Clean any stale temp from prior crashes
+				vaultFileStorage.deleteEncryptedFile(tmpName)
 
-        val tmpName = "$MIGRATIED_FILE_PREFIX$legacyName"
-        val finalName = legacyName.replace(
-            oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
-            newValue = PHOTOK_FILE_EXTENSION,
-        )
+				if (app.getFileStreamPath(legacyName).length() == 0L) {
+					vaultFileStorage.deleteEncryptedFile(legacyName)
+					Timber.d("Empty legacy file: $legacyName - Deleting and continuing")
+					return@runCatching
+				}
 
-        // Clean any stale temp from prior crashes
-        vaultFileStorage.deleteEncryptedFile(tmpName)
+				val originalInput = app.openFileInput(legacyName)
+				val encryptedLegacyInput = legacyCryptoEngine.createDecryptStream(originalInput, session)
+				val encryptedOutput = vaultFileStorage.openEncryptedOutput(tmpName)
 
-        if (app.getFileStreamPath(legacyName).length() == 0L) {
-            vaultFileStorage.deleteEncryptedFile(legacyName)
-            Timber.d("Empty legacy file: $legacyName - Deleting and continuing")
-            return@runCatching
-        }
+				requireNotNull(encryptedLegacyInput) { "Legacy input was null" }
+				requireNotNull(encryptedOutput) { "New output was null" }
 
-        val originalInput = app.openFileInput(legacyName)
-        val encryptedLegacyInput = legacyCryptoEngine.createDecryptStream(originalInput, session)
-        val encryptedOutput = vaultFileStorage.openEncryptedOutput(tmpName)
+				io
+					.copy(
+						input = encryptedLegacyInput,
+						output = encryptedOutput,
+					).onFailure {
+						throw Exception(buildError(it, legacyName, tmpName), it)
+					}
 
-        requireNotNull(encryptedLegacyInput) { "Legacy input was null" }
-        requireNotNull(encryptedOutput) { "New output was null" }
+				encryptedLegacyInput.close()
+				encryptedOutput.flush()
+				encryptedOutput.close()
 
+				// Finalize atomically: temp -> final (non-overwriting)
+				vaultFileStorage.deleteEncryptedFile(finalName)
+				vaultFileStorage.renameEncryptedFile(tmpName, finalName)
 
-        io.copy(
-            input = encryptedLegacyInput,
-            output = encryptedOutput,
-        ).onFailure {
-            throw Exception( buildError(it, legacyName, tmpName), it )
-        }
+				// Only now delete original
+				vaultFileStorage.deleteEncryptedFile(legacyName)
+			}
 
-        encryptedLegacyInput.close()
-        encryptedOutput.flush()
-        encryptedOutput.close()
+		private fun buildError(
+			error: Throwable,
+			legacyFileName: String,
+			tmpName: String,
+		): String {
+			val legacyFile = app.openFileInput(legacyFileName)
+			val size = BindingConverters.formatByteSizeConverter(legacyFile.available().toLong())
 
-        // Finalize atomically: temp -> final (non-overwriting)
-        vaultFileStorage.deleteEncryptedFile(finalName)
-        vaultFileStorage.renameEncryptedFile(tmpName, finalName)
+			val filesList = app.fileList()
+			val numLegacyFiles = filesList.count { it.contains(LEGACY_PHOTOK_FILE_EXTENSION) }
+			val numFinishedFiles = filesList.count { it.contains(PHOTOK_FILE_EXTENSION) }
+			val numTempFiles = filesList.count { it.contains(MIGRATIED_FILE_PREFIX) }
 
-        // Only now delete original
-        vaultFileStorage.deleteEncryptedFile(legacyName)
-    }
-
-    private fun buildError(error: Throwable, legacyFileName: String, tmpName: String): String {
-        val legacyFile = app.openFileInput(legacyFileName)
-        val size = BindingConverters.formatByteSizeConverter(legacyFile.available().toLong())
-
-        val filesList = app.fileList()
-        val numLegacyFiles = filesList.count { it.contains(LEGACY_PHOTOK_FILE_EXTENSION) }
-        val numFinishedFiles = filesList.count { it.contains(PHOTOK_FILE_EXTENSION) }
-        val numTempFiles = filesList.count { it.contains(MIGRATIED_FILE_PREFIX) }
-
-        return """
-            Migration Error.
-             
-            File Size: $size
-            File Name: $legacyFileName
-            Temp Name: $tmpName
-            
-            Legacy Files: $numLegacyFiles
-            Finished Files: $numFinishedFiles
-            Temp Files: $numTempFiles
-            
-            Causing Exception: ${error.message}
-        """.trimIndent()
-    }
-}
+			return """
+				Migration Error.
+				 
+				File Size: $size
+				File Name: $legacyFileName
+				Temp Name: $tmpName
+				
+				Legacy Files: $numLegacyFiles
+				Finished Files: $numFinishedFiles
+				Temp Files: $numTempFiles
+				
+				Causing Exception: ${error.message}
+				""".trimIndent()
+		}
+	}

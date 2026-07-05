@@ -29,56 +29,57 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.findNavController
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import onlasdan.gallery.R
 import onlasdan.gallery.ui.theme.AppTheme
-import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class EncryptionMigrationFragment : Fragment() {
+	private val viewModel: LegacyEncryptionMigrationViewModel by viewModels()
 
-    private val viewModel: LegacyEncryptionMigrationViewModel by viewModels()
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? =
+		ComposeView(requireContext()).apply {
+			setContent {
+				BackHandler { activity?.finish() }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        return ComposeView(requireContext()).apply {
-            setContent {
+				AppTheme {
+					val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-                BackHandler { activity?.finish() }
+					LaunchedEffect(uiState is LegacyEncryptionMigrationUiState.Success) {
+						if (uiState is LegacyEncryptionMigrationUiState.Success) {
+							delay(2000)
+							findNavController().navigate(R.id.action_encryptionMigrationFragment_to_galleryFragment)
+						}
+					}
 
-                AppTheme {
-                    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+					when (uiState) {
+						is LegacyEncryptionMigrationUiState.Initial ->
+							EncryptionMigrationScreenInitial(
+								uiState as LegacyEncryptionMigrationUiState.Initial,
+								viewModel::handleUiEvent,
+							)
 
-                    LaunchedEffect(uiState is LegacyEncryptionMigrationUiState.Success) {
-                        if (uiState is LegacyEncryptionMigrationUiState.Success) {
-                            delay(2000)
-                            findNavController().navigate(R.id.action_encryptionMigrationFragment_to_galleryFragment)
-                        }
-                    }
+						is LegacyEncryptionMigrationUiState.Migrating ->
+							EncryptionMigrationScreenMigrating(
+								uiState as LegacyEncryptionMigrationUiState.Migrating,
+							)
 
-                    when (uiState) {
-                        is LegacyEncryptionMigrationUiState.Initial -> EncryptionMigrationScreenInitial(
-                            uiState as LegacyEncryptionMigrationUiState.Initial,
-                            viewModel::handleUiEvent
-                        )
+						is LegacyEncryptionMigrationUiState.Success ->
+							EncryptionMigrationScreenSuccess(
+								uiState as LegacyEncryptionMigrationUiState.Success,
+							)
 
-                        is LegacyEncryptionMigrationUiState.Migrating -> EncryptionMigrationScreenMigrating(
-                            uiState as LegacyEncryptionMigrationUiState.Migrating
-                        )
-
-                        is LegacyEncryptionMigrationUiState.Success -> EncryptionMigrationScreenSuccess(
-                            uiState as LegacyEncryptionMigrationUiState.Success
-                        )
-
-                        is LegacyEncryptionMigrationUiState.Error -> EncryptionMigrationScreenError(
-                            uiState as LegacyEncryptionMigrationUiState.Error,
-                            viewModel::handleUiEvent
-                        )
-                    }
-                }
-            }
-        }
-    }
+						is LegacyEncryptionMigrationUiState.Error ->
+							EncryptionMigrationScreenError(
+								uiState as LegacyEncryptionMigrationUiState.Error,
+								viewModel::handleUiEvent,
+							)
+					}
+				}
+			}
+		}
 }

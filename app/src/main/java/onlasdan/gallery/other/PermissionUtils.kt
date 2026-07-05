@@ -19,6 +19,4 @@ package onlasdan.gallery.other
 import android.app.Activity
 import androidx.core.app.ActivityCompat
 
-fun Activity.requestInSettings(permission: String): Boolean {
-    return ActivityCompat.shouldShowRequestPermissionRationale(this, permission)
-}
+fun Activity.requestInSettings(permission: String): Boolean = ActivityCompat.shouldShowRequestPermissionRationale(this, permission)

@@ -21,13 +21,19 @@ import onlasdan.gallery.encryption.domain.models.UnlockRequest
 import onlasdan.gallery.encryption.domain.models.VaultProtection
 import javax.crypto.SecretKey
 
-interface VaultProtectionHandler<URT : UnlockRequest, CRT: CreateRequest> {
-    suspend fun unlock(request: URT, protection: VaultProtection): SecretKey
-    suspend fun create(request: CRT): VaultProtection
-    suspend fun canMigrate(): Boolean
-    suspend fun migrate(request: URT): VaultProtection
+interface VaultProtectionHandler<URT : UnlockRequest, CRT : CreateRequest> {
+	suspend fun unlock(
+		request: URT,
+		protection: VaultProtection,
+	): SecretKey
 
-    suspend fun onMigrationPersisted() {}
+	suspend fun create(request: CRT): VaultProtection
 
-    suspend fun reset()
+	suspend fun canMigrate(): Boolean
+
+	suspend fun migrate(request: URT): VaultProtection
+
+	suspend fun onMigrationPersisted() {}
+
+	suspend fun reset()
 }

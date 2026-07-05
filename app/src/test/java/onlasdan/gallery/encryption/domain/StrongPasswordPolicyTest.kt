@@ -32,138 +32,139 @@ import org.junit.Test
  *  - Strength scoring buckets are correct
  */
 class StrongPasswordPolicyTest {
+	// ─── isAcceptable ──────────────────────────────────────────────────────
 
-    // ─── isAcceptable ──────────────────────────────────────────────────────
+	@Test
+	fun `empty password is not acceptable`() {
+		assertFalse(StrongPasswordPolicy.isAcceptable(""))
+	}
 
-    @Test
-    fun `empty password is not acceptable`() {
-        assertFalse(StrongPasswordPolicy.isAcceptable(""))
-    }
+	@Test
+	fun `password shorter than 8 chars is not acceptable`() {
+		assertFalse(StrongPasswordPolicy.isAcceptable("Ab1!"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("Abc123"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("Abc123!"))
+	}
 
-    @Test
-    fun `password shorter than 8 chars is not acceptable`() {
-        assertFalse(StrongPasswordPolicy.isAcceptable("Ab1!"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("Abc123"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("Abc123!"))
-    }
+	@Test
+	fun `password exactly 8 chars with 3 classes is acceptable`() {
+		// Note: "Abc12345" would be rejected because "abc12345" is in the
+		// common passwords blacklist (isAcceptable lowercases the input
+		// before checking). Use a non-blacklisted 8-char 3-class password.
+		assertTrue(StrongPasswordPolicy.isAcceptable("Xyz98765"))
+		// 8 chars, lowercase + uppercase + digits = 3 classes
+	}
 
-    @Test
-    fun `password exactly 8 chars with 3 classes is acceptable`() {
-        // Note: "Abc12345" would be rejected because "abc12345" is in the
-        // common passwords blacklist (isAcceptable lowercases the input
-        // before checking). Use a non-blacklisted 8-char 3-class password.
-        assertTrue(StrongPasswordPolicy.isAcceptable("Xyz98765"))
-        // 8 chars, lowercase + uppercase + digits = 3 classes
-    }
+	@Test
+	fun `8-char password with only 2 classes is not acceptable`() {
+		assertFalse(StrongPasswordPolicy.isAcceptable("abc12345"))
+		// 8 chars, lowercase + digits = 2 classes, needs 3
+	}
 
-    @Test
-    fun `8-char password with only 2 classes is not acceptable`() {
-        assertFalse(StrongPasswordPolicy.isAcceptable("abc12345"))
-        // 8 chars, lowercase + digits = 2 classes, needs 3
-    }
+	@Test
+	fun `12-char lowercase-only passphrase is NOT acceptable (needs 2 classes)`() {
+		// 12 chars, only lowercase = 1 class. Length >= 12 relaxes to 2 classes required,
+		// but 1 < 2, so still rejected.
+		assertFalse(StrongPasswordPolicy.isAcceptable("correcthorse"))
+	}
 
-    @Test
-    fun `12-char lowercase-only passphrase is NOT acceptable (needs 2 classes)`() {
-        // 12 chars, only lowercase = 1 class. Length >= 12 relaxes to 2 classes required,
-        // but 1 < 2, so still rejected.
-        assertFalse(StrongPasswordPolicy.isAcceptable("correcthorse"))
-    }
+	@Test
+	fun `12-char password with 2 classes is acceptable`() {
+		assertTrue(StrongPasswordPolicy.isAcceptable("correcthorse1"))
+		// 13 chars, lowercase + digits = 2 classes, length >= 12 → 2 classes required → OK
+	}
 
-    @Test
-    fun `12-char password with 2 classes is acceptable`() {
-        assertTrue(StrongPasswordPolicy.isAcceptable("correcthorse1"))
-        // 13 chars, lowercase + digits = 2 classes, length >= 12 → 2 classes required → OK
-    }
+	@Test
+	fun `numeric PIN under 12 digits is rejected even if 8+ chars`() {
+		assertFalse(StrongPasswordPolicy.isAcceptable("12345678"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("1234567890"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("12345678901"))
+	}
 
-    @Test
-    fun `numeric PIN under 12 digits is rejected even if 8+ chars`() {
-        assertFalse(StrongPasswordPolicy.isAcceptable("12345678"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("1234567890"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("12345678901"))
-    }
+	@Test
+	fun `pure 12-digit numeric string is NOT acceptable (1 class is less than 2 required)`() {
+		// 12 digits, 1 class, length >= 12 relaxes to 2 classes required, but 1 < 2 → reject.
+		// This is intentional — even though the PIN reject rule only fires for < 12 digits,
+		// the class-diversity rule still catches a pure-digit 12-char password.
+		assertFalse(StrongPasswordPolicy.isAcceptable("123456789012"))
+	}
 
-    @Test
-    fun `pure 12-digit numeric string is NOT acceptable (1 class is less than 2 required)`() {
-        // 12 digits, 1 class, length >= 12 relaxes to 2 classes required, but 1 < 2 → reject.
-        // This is intentional — even though the PIN reject rule only fires for < 12 digits,
-        // the class-diversity rule still catches a pure-digit 12-char password.
-        assertFalse(StrongPasswordPolicy.isAcceptable("123456789012"))
-    }
+	@Test
+	fun `numeric string of 12+ digits with letters is accepted`() {
+		assertTrue(StrongPasswordPolicy.isAcceptable("123456789012a"))
+		// 13 chars, digits + lowercase = 2 classes, length >= 12 → 2 classes required → OK
+	}
 
-    @Test
-    fun `numeric string of 12+ digits with letters is accepted`() {
-        assertTrue(StrongPasswordPolicy.isAcceptable("123456789012a"))
-        // 13 chars, digits + lowercase = 2 classes, length >= 12 → 2 classes required → OK
-    }
+	@Test
+	fun `common passwords are rejected`() {
+		assertFalse(StrongPasswordPolicy.isAcceptable("password1"))
+		// "Password1" lowercase form is "password1" which is in the blacklist
+		assertFalse(StrongPasswordPolicy.isAcceptable("Password1"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("qwerty123"))
+		assertFalse(StrongPasswordPolicy.isAcceptable("admin1234"))
+	}
 
-    @Test
-    fun `common passwords are rejected`() {
-        assertFalse(StrongPasswordPolicy.isAcceptable("password1"))
-        // "Password1" lowercase form is "password1" which is in the blacklist
-        assertFalse(StrongPasswordPolicy.isAcceptable("Password1"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("qwerty123"))
-        assertFalse(StrongPasswordPolicy.isAcceptable("admin1234"))
-    }
+	@Test
+	fun `strong password with all 4 classes is acceptable`() {
+		assertTrue(StrongPasswordPolicy.isAcceptable("Abc123!@#"))
+		// 9 chars, lowercase + uppercase + digits + symbols = 4 classes
+	}
 
-    @Test
-    fun `strong password with all 4 classes is acceptable`() {
-        assertTrue(StrongPasswordPolicy.isAcceptable("Abc123!@#"))
-        // 9 chars, lowercase + uppercase + digits + symbols = 4 classes
-    }
+	// ─── strength ──────────────────────────────────────────────────────────
 
-    // ─── strength ──────────────────────────────────────────────────────────
+	@Test
+	fun `empty password returns EMPTY strength`() {
+		assertEquals(PasswordStrength.EMPTY, StrongPasswordPolicy.strength(""))
+	}
 
-    @Test
-    fun `empty password returns EMPTY strength`() {
-        assertEquals(PasswordStrength.EMPTY, StrongPasswordPolicy.strength(""))
-    }
+	@Test
+	fun `short password returns TOO_SHORT strength`() {
+		assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("Ab1!"))
+		assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("Abc123"))
+	}
 
-    @Test
-    fun `short password returns TOO_SHORT strength`() {
-        assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("Ab1!"))
-        assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("Abc123"))
-    }
+	@Test
+	fun `numeric PIN returns PIN_REJECTED strength`() {
+		// PINs shorter than MIN_LENGTH (8) return TOO_SHORT first (the length
+		// check in strength() fires before the PIN check). Only PINs that
+		// meet the length minimum but are pure digits return PIN_REJECTED.
+		assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("1234"))
+		assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("1234567"))
+		// 8+ digit PINs (length >= 8, < 12) → PIN_REJECTED
+		assertEquals(PasswordStrength.PIN_REJECTED, StrongPasswordPolicy.strength("12345678"))
+		assertEquals(PasswordStrength.PIN_REJECTED, StrongPasswordPolicy.strength("1234567890"))
+	}
 
-    @Test
-    fun `numeric PIN returns PIN_REJECTED strength`() {
-        // PINs shorter than MIN_LENGTH (8) return TOO_SHORT first (the length
-        // check in strength() fires before the PIN check). Only PINs that
-        // meet the length minimum but are pure digits return PIN_REJECTED.
-        assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("1234"))
-        assertEquals(PasswordStrength.TOO_SHORT, StrongPasswordPolicy.strength("1234567"))
-        // 8+ digit PINs (length >= 8, < 12) → PIN_REJECTED
-        assertEquals(PasswordStrength.PIN_REJECTED, StrongPasswordPolicy.strength("12345678"))
-        assertEquals(PasswordStrength.PIN_REJECTED, StrongPasswordPolicy.strength("1234567890"))
-    }
+	@Test
+	fun `common password returns COMMON strength`() {
+		assertEquals(PasswordStrength.COMMON, StrongPasswordPolicy.strength("password1"))
+		assertEquals(PasswordStrength.COMMON, StrongPasswordPolicy.strength("qwerty123"))
+	}
 
-    @Test
-    fun `common password returns COMMON strength`() {
-        assertEquals(PasswordStrength.COMMON, StrongPasswordPolicy.strength("password1"))
-        assertEquals(PasswordStrength.COMMON, StrongPasswordPolicy.strength("qwerty123"))
-    }
+	@Test
+	fun `strong 16+ char password with 3+ classes returns STRONG`() {
+		assertEquals(
+			PasswordStrength.STRONG,
+			StrongPasswordPolicy.strength("Abcdefgh12345678"),
+		)
+		// 16 chars, lowercase + uppercase + digits = 3 classes, length 16 >= 16 → STRONG
+	}
 
-    @Test
-    fun `strong 16+ char password with 3+ classes returns STRONG`() {
-        assertEquals(PasswordStrength.STRONG,
-            StrongPasswordPolicy.strength("Abcdefgh12345678"))
-        // 16 chars, lowercase + uppercase + digits = 3 classes, length 16 >= 16 → STRONG
-    }
+	// ─── isPinRejected / isTooShort ────────────────────────────────────────
 
-    // ─── isPinRejected / isTooShort ────────────────────────────────────────
+	@Test
+	fun `isPinRejected detects pure-digit PINs under 12 digits`() {
+		assertTrue(StrongPasswordPolicy.isPinRejected("1234"))
+		assertTrue(StrongPasswordPolicy.isPinRejected("12345678"))
+		assertFalse(StrongPasswordPolicy.isPinRejected("123456789012"))
+		assertFalse(StrongPasswordPolicy.isPinRejected("abc123"))
+	}
 
-    @Test
-    fun `isPinRejected detects pure-digit PINs under 12 digits`() {
-        assertTrue(StrongPasswordPolicy.isPinRejected("1234"))
-        assertTrue(StrongPasswordPolicy.isPinRejected("12345678"))
-        assertFalse(StrongPasswordPolicy.isPinRejected("123456789012"))
-        assertFalse(StrongPasswordPolicy.isPinRejected("abc123"))
-    }
-
-    @Test
-    fun `isTooShort detects passwords under 8 chars`() {
-        assertTrue(StrongPasswordPolicy.isTooShort("Ab1!"))
-        assertTrue(StrongPasswordPolicy.isTooShort("Abc123"))
-        assertFalse(StrongPasswordPolicy.isTooShort("Abc12345"))
-        assertFalse(StrongPasswordPolicy.isTooShort(""))
-    }
+	@Test
+	fun `isTooShort detects passwords under 8 chars`() {
+		assertTrue(StrongPasswordPolicy.isTooShort("Ab1!"))
+		assertTrue(StrongPasswordPolicy.isTooShort("Abc123"))
+		assertFalse(StrongPasswordPolicy.isTooShort("Abc12345"))
+		assertFalse(StrongPasswordPolicy.isTooShort(""))
+	}
 }

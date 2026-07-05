@@ -21,9 +21,9 @@ import onlasdan.gallery.sort.domain.Sort
 import onlasdan.gallery.sort.domain.SortConfig
 
 data class AlbumDetailUiState(
-    val albumId: String = "",
-    val albumName: String = "",
-    val photos: List<PhotoTile> = emptyList(),
-    val sort: Sort = SortConfig.Album.default,
-    val pinnedPhotoIds: Set<String> = emptySet(),
+	val albumId: String = "",
+	val albumName: String = "",
+	val photos: List<PhotoTile> = emptyList(),
+	val sort: Sort = SortConfig.Album.default,
+	val pinnedPhotoIds: Set<String> = emptySet(),
 )

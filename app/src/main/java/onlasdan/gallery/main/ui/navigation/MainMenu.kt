@@ -31,72 +31,72 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun MainMenu(
-    uiState: MainMenuUiState,
-    onNavigationItemClicked: (Int) -> Unit
+	uiState: MainMenuUiState,
+	onNavigationItemClicked: (Int) -> Unit,
 ) {
-    NavigationBar(
-        containerColor = colorResource(R.color.background)
-    ) {
-        MainNavItem(
-            fragmentsId = R.id.galleryFragment,
-            currentSelectedFragmentId = uiState.currentFragmentId,
-            iconRes = R.drawable.ic_image,
-            label = stringResource(R.string.gallery_all_photos_label),
-            onNavigationItemClicked = onNavigationItemClicked
-        )
+	NavigationBar(
+		containerColor = colorResource(R.color.background),
+	) {
+		MainNavItem(
+			fragmentsId = R.id.galleryFragment,
+			currentSelectedFragmentId = uiState.currentFragmentId,
+			iconRes = R.drawable.ic_image,
+			label = stringResource(R.string.gallery_all_photos_label),
+			onNavigationItemClicked = onNavigationItemClicked,
+		)
 
-        MainNavItem(
-            fragmentsId = R.id.albumsFragment,
-            additionalFragmentsId = listOf(R.id.albumDetailFragment),
-            currentSelectedFragmentId = uiState.currentFragmentId,
-            iconRes = R.drawable.ic_folder,
-            label = stringResource(R.string.gallery_albums_label),
-            onNavigationItemClicked = onNavigationItemClicked
-        )
+		MainNavItem(
+			fragmentsId = R.id.albumsFragment,
+			additionalFragmentsId = listOf(R.id.albumDetailFragment),
+			currentSelectedFragmentId = uiState.currentFragmentId,
+			iconRes = R.drawable.ic_folder,
+			label = stringResource(R.string.gallery_albums_label),
+			onNavigationItemClicked = onNavigationItemClicked,
+		)
 
-        MainNavItem(
-            fragmentsId = R.id.settingsFragment,
-            currentSelectedFragmentId = uiState.currentFragmentId,
-            iconRes = R.drawable.ic_settings,
-            label = stringResource(R.string.menu_main_settings),
-            onNavigationItemClicked = onNavigationItemClicked
-        )
-    }
+		MainNavItem(
+			fragmentsId = R.id.settingsFragment,
+			currentSelectedFragmentId = uiState.currentFragmentId,
+			iconRes = R.drawable.ic_settings,
+			label = stringResource(R.string.menu_main_settings),
+			onNavigationItemClicked = onNavigationItemClicked,
+		)
+	}
 }
 
 @Preview
 @Composable
 private fun MainMenuPreview() {
-    AppTheme {
-        MainMenu(
-            uiState = MainMenuUiState(R.id.galleryFragment),
-            onNavigationItemClicked = {}
-        )
-    }
+	AppTheme {
+		MainMenu(
+			uiState = MainMenuUiState(R.id.galleryFragment),
+			onNavigationItemClicked = {},
+		)
+	}
 }
-
 
 @Composable
 private fun RowScope.MainNavItem(
-    fragmentsId: Int,
-    currentSelectedFragmentId: Int,
-    iconRes: Int,
-    label: String,
-    onNavigationItemClicked: (Int) -> Unit,
-    additionalFragmentsId: List<Int> = emptyList(),
+	fragmentsId: Int,
+	currentSelectedFragmentId: Int,
+	iconRes: Int,
+	label: String,
+	onNavigationItemClicked: (Int) -> Unit,
+	additionalFragmentsId: List<Int> = emptyList(),
 ) {
-
-    NavigationBarItem(
-        selected = currentSelectedFragmentId == fragmentsId || additionalFragmentsId.contains(
-            currentSelectedFragmentId
-        ),
-        onClick = { onNavigationItemClicked(fragmentsId) },
-        icon = {
-            Icon(painter = painterResource(iconRes), contentDescription = label)
-        },
-        label = {
-            Text(label)
-        },
-        alwaysShowLabel = true
-    )
+	NavigationBarItem(
+		selected =
+			currentSelectedFragmentId == fragmentsId ||
+				additionalFragmentsId.contains(
+					currentSelectedFragmentId,
+				),
+		onClick = { onNavigationItemClicked(fragmentsId) },
+		icon = {
+			Icon(painter = painterResource(iconRes), contentDescription = label)
+		},
+		label = {
+			Text(label)
+		},
+		alwaysShowLabel = true,
+	)
 }

@@ -1,0 +1,50 @@
+# EditorConfig — https://editorconfig.org
+# Root-level config for PhotoZ. Applies to all editors + ktlint.
+# @since Sprint 4 — code quality tooling
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 140
+
+[*.{kt,kts}]
+# ktlint 1.x rule overrides — see https://pinterest.github.io/ktlint/latest/rules/configuration/
+#
+# FunctionNaming: Compose @Composable functions use PascalCase by convention
+# (e.g. `ConfirmPasswordDialog()`, `SettingsScreen()`). ktlint's default rule
+# requires lowercase start, which would flag every Composable. Disable it —
+# detekt's FunctionNaming rule (already configured in detekt.yml) allows both.
+ktlint_standard_function-naming = disabled
+
+# NoWildcardImports: existing code uses wildcard imports (especially Compose).
+# Keep disabled until a cleanup pass converts them to explicit imports.
+ktlint_standard_no-wildcard-imports = disabled
+
+# ClassNaming: sealed class subtypes use SCREAMING_SNAKE_CASE in this codebase
+# (e.g. RepoState.NOT_INITIALIZED). ktlint requires PascalCase — disable to
+# avoid renaming public API. detekt's ClassNaming rule is also disabled.
+ktlint_standard_class-naming = disabled
+
+# ConstPropertyName: top-level + object const vals use SCREAMING_SNAKE_CASE
+# in some places (e.g. TELEMETRY_ENABLED_BY_DEFAULT). ktlint requires this
+# for const, but we have some non-const val properties that should also be
+# SCREAMING_SNAKE_CASE. Disable to avoid mixed conventions.
+ktlint_standard_property-naming = disabled
+
+# KDoc: a few files have adjacent KDoc blocks (legacy from generated code +
+# manual additions). Disabling rather than fixing — the duplicate KDocs are
+# cosmetic and fixing them risks losing documentation context.
+ktlint_standard_kdoc = disabled
+
+# Standard ktlint rules (kept at defaults — these are auto-fixable via
+# `./gradlew ktlintFormat`):
+#  - import-ordering
+#  - no-semi (no unnecessary semicolons)
+#  - indent (tab indentation)
+# The ktlint engine version is pinned in app/build.gradle.kts (ktlint block).

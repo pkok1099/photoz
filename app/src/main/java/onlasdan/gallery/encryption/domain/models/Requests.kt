@@ -21,39 +21,47 @@ import onlasdan.gallery.encryption.domain.crypto.Bip39WordCount
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase as Phrase
 
 sealed interface UnlockRequest {
-    val protectionType: VaultProtectionType
+	val protectionType: VaultProtectionType
 
-    data class Password(val password: String) : UnlockRequest {
-        override val protectionType = VaultProtectionType.Password
-    }
+	data class Password(
+		val password: String,
+	) : UnlockRequest {
+		override val protectionType = VaultProtectionType.Password
+	}
 
-    data class Biometric(val fragment: Fragment) : UnlockRequest {
-        override val protectionType = VaultProtectionType.Biometric
-    }
+	data class Biometric(
+		val fragment: Fragment,
+	) : UnlockRequest {
+		override val protectionType = VaultProtectionType.Biometric
+	}
 
-    data class RecoveryPhrase(val phrase: Phrase) : UnlockRequest {
-        override val protectionType = VaultProtectionType.RecoveryPhrase
-    }
+	data class RecoveryPhrase(
+		val phrase: Phrase,
+	) : UnlockRequest {
+		override val protectionType = VaultProtectionType.RecoveryPhrase
+	}
 }
 
 sealed interface CreateRequest {
-    val protectionType: VaultProtectionType
+	val protectionType: VaultProtectionType
 
-    data class Password(val password: String) : CreateRequest {
-        override val protectionType = VaultProtectionType.Password
-    }
+	data class Password(
+		val password: String,
+	) : CreateRequest {
+		override val protectionType = VaultProtectionType.Password
+	}
 
-    data class Biometric(
-        val session: VaultSession,
-        val fragment: Fragment,
-    ) : CreateRequest {
-        override val protectionType = VaultProtectionType.Biometric
-    }
+	data class Biometric(
+		val session: VaultSession,
+		val fragment: Fragment,
+	) : CreateRequest {
+		override val protectionType = VaultProtectionType.Biometric
+	}
 
-    data class RecoveryPhrase(
-        val session: VaultSession,
-        val wordCount: Bip39WordCount,
-    ) : CreateRequest {
-        override val protectionType = VaultProtectionType.RecoveryPhrase
-    }
+	data class RecoveryPhrase(
+		val session: VaultSession,
+		val wordCount: Bip39WordCount,
+	) : CreateRequest {
+		override val protectionType = VaultProtectionType.RecoveryPhrase
+	}
 }

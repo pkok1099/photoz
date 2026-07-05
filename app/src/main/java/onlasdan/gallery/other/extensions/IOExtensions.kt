@@ -21,20 +21,21 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.io.InputStream
 import java.io.OutputStream
-import javax.crypto.CipherInputStream
 
 /**
  * Schedule a InputStream to be closed by the [Dispatchers.IO]
  * For use in suspend fun.
  */
-fun InputStream.lazyClose() = GlobalScope.launch(Dispatchers.IO) {
-    close()
-}
+fun InputStream.lazyClose() =
+	GlobalScope.launch(Dispatchers.IO) {
+		close()
+	}
 
 /**
  * Schedule a OutputStream to be closed by the [Dispatchers.IO].
  * For use in suspend fun.
  */
-fun OutputStream.lazyClose() = GlobalScope.launch(Dispatchers.IO) {
-    close()
-}
+fun OutputStream.lazyClose() =
+	GlobalScope.launch(Dispatchers.IO) {
+		close()
+	}

@@ -30,19 +30,19 @@ import onlasdan.gallery.uicomponnets.base.BaseActivity
  * @author PhotoZ
  */
 abstract class BindableActivity<BindingType : ViewDataBinding>(
-    @LayoutRes private val layout: Int
-) : BaseActivity(), Bindable<BindingType> {
+	@LayoutRes private val layout: Int,
+) : BaseActivity(),
+	Bindable<BindingType> {
+	final override lateinit var binding: BindingType
 
-    final override lateinit var binding: BindingType
+	override fun onCreate(savedInstanceState: Bundle?) {
+		super.onCreate(savedInstanceState)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+		binding = DataBindingUtil.setContentView(this, layout)
+		bind(binding)
+	}
 
-        binding = DataBindingUtil.setContentView(this, layout)
-        bind(binding)
-    }
-
-    override fun bind(binding: BindingType) {
-        binding.lifecycleOwner = this
-    }
+	override fun bind(binding: BindingType) {
+		binding.lifecycleOwner = this
+	}
 }

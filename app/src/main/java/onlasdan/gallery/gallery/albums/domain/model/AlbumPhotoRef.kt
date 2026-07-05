@@ -17,8 +17,8 @@
 package onlasdan.gallery.gallery.albums.domain.model
 
 data class AlbumPhotoRef(
-    val albumUUID: String,
-    val photoUUID: String,
-    val linkedAt: Long,
-    val pinned: Boolean = false,
+	val albumUUID: String,
+	val photoUUID: String,
+	val linkedAt: Long,
+	val pinned: Boolean = false,
 )

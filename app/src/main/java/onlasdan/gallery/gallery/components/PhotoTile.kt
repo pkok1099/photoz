@@ -21,22 +21,22 @@ import onlasdan.gallery.model.database.entity.internalThumbnailFileName
 import onlasdan.gallery.sync.domain.SyncState
 
 data class PhotoTile(
-    val fileName: String,
-    val type: PhotoType,
-    val uuid: String,
-    val pinned: Boolean = false,
-    // @since PR2 sync — per-thumbnail sync state badge
-    val syncState: SyncState = SyncState.LOCAL_ONLY,
-    /**
-     * Sprint 4 / M2 — Favorite flag for the heart badge.
-     *
-     * When true, the gallery renders a heart icon at the top-right corner of
-     * the thumbnail. Tapped from the long-press menu's "Mark as favorite" /
-     * "Remove from favorites" action.
-     *
-     * @since v12 — Sprint 4 / M2 favorites
-     */
-    val isFavorite: Boolean = false,
+	val fileName: String,
+	val type: PhotoType,
+	val uuid: String,
+	val pinned: Boolean = false,
+	// @since PR2 sync — per-thumbnail sync state badge
+	val syncState: SyncState = SyncState.LOCAL_ONLY,
+	/**
+	 * Sprint 4 / M2 — Favorite flag for the heart badge.
+	 *
+	 * When true, the gallery renders a heart icon at the top-right corner of
+	 * the thumbnail. Tapped from the long-press menu's "Mark as favorite" /
+	 * "Remove from favorites" action.
+	 *
+	 * @since v12 — Sprint 4 / M2 favorites
+	 */
+	val isFavorite: Boolean = false,
 ) {
-    val internalThumbnailFileName = internalThumbnailFileName(uuid)
+	val internalThumbnailFileName = internalThumbnailFileName(uuid)
 }

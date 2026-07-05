@@ -25,33 +25,42 @@ import androidx.lifecycle.LiveData
  * @author PhotoZ
  */
 object PasswordUtils {
+	/**
+	 * Validates a password string.
+	 *
+	 * @since Sprint 1 / P7 — delegates to [StrongPasswordPolicy.isAcceptable]
+	 *   which enforces: min 8 chars, not a PIN, character class diversity,
+	 *   not in the common-password list.
+	 */
+	fun validatePassword(password: String) = StrongPasswordPolicy.isAcceptable(password)
 
-    /**
-     * Validates a password string.
-     *
-     * @since Sprint 1 / P7 — delegates to [StrongPasswordPolicy.isAcceptable]
-     *   which enforces: min 8 chars, not a PIN, character class diversity,
-     *   not in the common-password list.
-     */
-    fun validatePassword(password: String) = StrongPasswordPolicy.isAcceptable(password)
+	/**
+	 * Indicates if two password equal.
+	 */
+	fun passwordsNotEmptyAndEqual(
+		password: String,
+		confirmPassword: String,
+	) = password.isNotEmpty() &&
+		confirmPassword.isNotEmpty() &&
+		password == confirmPassword
 
-    /**
-     * Indicates if two password equal.
-     */
-    fun passwordsNotEmptyAndEqual(password: String, confirmPassword: String) = password.isNotEmpty()
-            && confirmPassword.isNotEmpty()
-            && password == confirmPassword
+	fun passwordsNotEmptyAndEqual(
+		password: LiveData<String>,
+		confirmPassword: LiveData<String>,
+	) = passwordsNotEmptyAndEqual(password.value!!, confirmPassword.value!!)
 
-    fun passwordsNotEmptyAndEqual(password: LiveData<String>, confirmPassword: LiveData<String>) =
-        passwordsNotEmptyAndEqual(password.value!!, confirmPassword.value!!)
+	/**
+	 * Indicates if two password are valid and equal.
+	 */
+	fun validatePasswords(
+		password: String,
+		confirmPassword: String,
+	) = validatePassword(password) &&
+		validatePassword(confirmPassword) &&
+		passwordsNotEmptyAndEqual(password, confirmPassword)
 
-    /**
-     * Indicates if two password are valid and equal.
-     */
-    fun validatePasswords(password: String, confirmPassword: String) = validatePassword(password)
-            && validatePassword(confirmPassword)
-            && passwordsNotEmptyAndEqual(password, confirmPassword)
-
-    fun validatePasswords(password: LiveData<String>, confirmPassword: LiveData<String>) =
-        validatePasswords(password.value!!, confirmPassword.value!!)
+	fun validatePasswords(
+		password: LiveData<String>,
+		confirmPassword: LiveData<String>,
+	) = validatePasswords(password.value!!, confirmPassword.value!!)
 }

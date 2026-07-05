@@ -46,93 +46,99 @@ import onlasdan.gallery.ui.theme.AppTheme
 val IconSize = 72.dp
 
 @Composable
-fun EncryptionMigrationScreenMigrating(
-    uiState: LegacyEncryptionMigrationUiState.Migrating,
-) {
-    Scaffold { contentPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
+fun EncryptionMigrationScreenMigrating(uiState: LegacyEncryptionMigrationUiState.Migrating) {
+	Scaffold { contentPadding ->
+		Box(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(contentPadding),
+		) {
+			Column(
+				modifier =
+					Modifier
+						.verticalScroll(rememberScrollState())
+						.align(Alignment.Center),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.spacedBy(24.dp),
+			) {
+				AppName()
 
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
+				Text(
+					text = stringResource(R.string.migration_running_title),
+					fontSize = 22.sp,
+					fontWeight = FontWeight.Bold,
+				)
 
-                AppName()
+				Column(
+					horizontalAlignment = Alignment.CenterHorizontally,
+					verticalArrangement = Arrangement.spacedBy(12.dp),
+				) {
+					LoadingIndicator(
+						progressPercentage = uiState.progressPercentage,
+					)
 
-                Text(
-                    text = stringResource(R.string.migration_running_title),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+					Text(
+						text =
+							stringResource(
+								R.string.migration_running_progress,
+								uiState.processedFiles,
+								uiState.totalFiles,
+							),
+						color = MaterialTheme.colorScheme.secondary,
+					)
+				}
+			}
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    LoadingIndicator(
-                        progressPercentage = uiState.progressPercentage
-                    )
-
-                    Text(
-                        text = stringResource(
-                            R.string.migration_running_progress,
-                            uiState.processedFiles,
-                            uiState.totalFiles
-                        ),
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
-
-            Text(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                text = stringResource(R.string.migration_running_advice),
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.outline,
-            )
-        }
-    }
+			Text(
+				modifier =
+					Modifier
+						.align(Alignment.BottomCenter)
+						.padding(16.dp),
+				text = stringResource(R.string.migration_running_advice),
+				textAlign = TextAlign.Center,
+				color = MaterialTheme.colorScheme.outline,
+			)
+		}
+	}
 }
 
 @Composable
-fun LoadingIndicator(progressPercentage: Float, modifier: Modifier = Modifier) {
-    Box(modifier = modifier) {
-        Image(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(IconSize),
-            painter = painterResource(R.drawable.app_icon),
-            contentDescription = null
-        )
+fun LoadingIndicator(
+	progressPercentage: Float,
+	modifier: Modifier = Modifier,
+) {
+	Box(modifier = modifier) {
+		Image(
+			modifier =
+				Modifier
+					.align(Alignment.Center)
+					.size(IconSize),
+			painter = painterResource(R.drawable.app_icon),
+			contentDescription = null,
+		)
 
-        CircularProgressIndicator(
-            progress = { progressPercentage },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(IconSize + 40.dp),
-            strokeWidth = 10.dp,
-        )
-    }
+		CircularProgressIndicator(
+			progress = { progressPercentage },
+			modifier =
+				Modifier
+					.align(Alignment.Center)
+					.size(IconSize + 40.dp),
+			strokeWidth = 10.dp,
+		)
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme {
-        EncryptionMigrationScreenMigrating(
-            uiState = LegacyEncryptionMigrationUiState.Migrating(
-                totalFiles = 100,
-                processedFiles = 40,
-            ),
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenMigrating(
+			uiState =
+				LegacyEncryptionMigrationUiState.Migrating(
+					totalFiles = 100,
+					processedFiles = 40,
+				),
+		)
+	}
 }

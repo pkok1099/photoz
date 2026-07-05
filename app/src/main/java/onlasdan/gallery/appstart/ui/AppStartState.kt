@@ -24,7 +24,7 @@ package onlasdan.gallery.appstart.ui
  * @author PhotoZ
  */
 enum class AppStartState {
-    FIRST_START,
-    LOCKED,
-    SETUP
+	FIRST_START,
+	LOCKED,
+	SETUP,
 }

@@ -21,6 +21,8 @@ import android.net.Uri
 import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
 import onlasdan.gallery.backup.data.BackupMetaData
 import onlasdan.gallery.backup.domain.RestoreBackupV1
@@ -34,8 +36,6 @@ import onlasdan.gallery.encryption.domain.models.Session
 import onlasdan.gallery.io.IO
 import onlasdan.gallery.other.extensions.empty
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -45,96 +45,98 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class RestoreBackupViewModel @Inject constructor(
-    app: Application,
-    private val unlockBackup: UnlockBackupUseCase,
-    private val validateBackup: ValidateBackupUseCase,
-    private val io: IO,
+class RestoreBackupViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val unlockBackup: UnlockBackupUseCase,
+		private val validateBackup: ValidateBackupUseCase,
+		private val io: IO,
+		private val v1Strategy: RestoreBackupV1,
+		private val v2Strategy: RestoreBackupV2,
+		private val v3Strategy: RestoreBackupV3,
+		private val v4Strategy: RestoreBackupV4,
+		private val v5Strategy: RestoreBackupV5,
+	) : ObservableViewModel(app) {
+		@Bindable
+		var restoreState: kotlinx.coroutines.flow.MutableStateFlow<RestoreState> =
+			kotlinx.coroutines.flow.MutableStateFlow(RestoreState.INITIALIZE)
+			private set
 
-    private val v1Strategy: RestoreBackupV1,
-    private val v2Strategy: RestoreBackupV2,
-    private val v3Strategy: RestoreBackupV3,
-    private val v4Strategy: RestoreBackupV4,
-    private val v5Strategy: RestoreBackupV5,
-) : ObservableViewModel(app) {
+		/**
+		 * [BackupMetaData] holding meta data of the loaded backup.
+		 */
+		@get:Bindable
+		var metaData: BackupMetaData? = null
+			set(value) {
+				field = value
+				notifyChange(BR.metaData, value)
+			}
 
-    @Bindable
-    var restoreState: kotlinx.coroutines.flow.MutableStateFlow<RestoreState> =
-        kotlinx.coroutines.flow.MutableStateFlow(RestoreState.INITIALIZE)
-        private set
+		/**
+		 * File name of the zip.
+		 */
+		@get:Bindable
+		var zipFileName: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.zipFileName, value)
+			}
 
-    /**
-     * [BackupMetaData] holding meta data of the loaded backup.
-     */
-    @get:Bindable
-    var metaData: BackupMetaData? = null
-        set(value) {
-            field = value
-            notifyChange(BR.metaData, value)
-        }
+		@get:Bindable
+		var backupSize: Long = 0
+			set(value) {
+				field = value
+				notifyChange(BR.backupSize, value)
+			}
 
-    /**
-     * File name of the zip.
-     */
-    @get:Bindable
-    var zipFileName: String = String.empty
-        set(value) {
-            field = value
-            notifyChange(BR.zipFileName, value)
-        }
+		private lateinit var fileUri: Uri
 
-    @get:Bindable
-    var backupSize: Long = 0
-        set(value) {
-            field = value
-            notifyChange(BR.backupSize, value)
-        }
+		/**
+		 * Load and Validate a backup file. Fill [metaData].
+		 */
+		fun loadAndValidateBackup(uri: Uri) =
+			viewModelScope.launch(Dispatchers.IO) {
+				fileUri = uri
 
-    private lateinit var fileUri: Uri
+				validateBackup(uri)
+					.onFailure { restoreState.value = RestoreState.FILE_INVALID }
+					.onSuccess {
+						restoreState.value = RestoreState.FILE_VALID
 
-    /**
-     * Load and Validate a backup file. Fill [metaData].
-     */
-    fun loadAndValidateBackup(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
-        fileUri = uri
+						backupSize = it.fileSize
+						zipFileName = it.fileName
+						metaData = it.metaData
+					}
+			}
 
-        validateBackup(uri)
-            .onFailure { restoreState.value = RestoreState.FILE_INVALID }
-            .onSuccess {
-                restoreState.value = RestoreState.FILE_VALID
+		/**
+		 * Restore the validated backup with the original password.
+		 */
+		fun restoreBackup(session: Session) =
+			viewModelScope.launch(Dispatchers.IO) {
+				restoreState.value = RestoreState.RESTORING
 
+				val metaData = metaData ?: error("meta.json was loaded without success")
 
-                backupSize = it.fileSize
-                zipFileName = it.fileName
-                metaData = it.metaData
-            }
-    }
+				val zipInputStream = io.zip.openZipInput(fileUri)
 
-    /**
-     * Restore the validated backup with the original password.
-     */
-    fun restoreBackup(session: Session) = viewModelScope.launch(Dispatchers.IO) {
-        restoreState.value = RestoreState.RESTORING
+				val result =
+					when (metaData) {
+						is BackupMetaData.V1 -> v1Strategy.restore(metaData, zipInputStream, session)
+						is BackupMetaData.V2 -> v2Strategy.restore(metaData, zipInputStream, session)
+						is BackupMetaData.V3 -> v3Strategy.restore(metaData, zipInputStream, session)
+						is BackupMetaData.V4 -> v4Strategy.restore(metaData, zipInputStream, session)
+						is BackupMetaData.V5 -> v5Strategy.restore(metaData, zipInputStream, session)
+					}
 
-        val metaData = metaData ?: error("meta.json was loaded without success")
+				zipInputStream.close()
 
-        val zipInputStream = io.zip.openZipInput(fileUri)
-
-        val result = when (metaData) {
-            is BackupMetaData.V1 -> v1Strategy.restore(metaData, zipInputStream, session)
-            is BackupMetaData.V2 -> v2Strategy.restore(metaData, zipInputStream, session)
-            is BackupMetaData.V3 -> v3Strategy.restore(metaData, zipInputStream, session)
-            is BackupMetaData.V4 -> v4Strategy.restore(metaData, zipInputStream, session)
-            is BackupMetaData.V5 -> v5Strategy.restore(metaData, zipInputStream, session)
-        }
-
-        zipInputStream.close()
-
-        restoreState.value = if (result.errors > 0) {
-            RestoreState.FINISHED_WITH_ERRORS
-        } else {
-            RestoreState.FINISHED
-        }
-
-    }
-}
+				restoreState.value =
+					if (result.errors > 0) {
+						RestoreState.FINISHED_WITH_ERRORS
+					} else {
+						RestoreState.FINISHED
+					}
+			}
+	}

@@ -17,18 +17,44 @@
 package onlasdan.gallery.gallery.albums.detail.ui
 
 import android.net.Uri
-import onlasdan.gallery.sort.domain.Sort
 import onlasdan.gallery.gallery.components.ImportChoice
 import onlasdan.gallery.gallery.components.PhotoTile
+import onlasdan.gallery.sort.domain.Sort
 
 sealed interface AlbumDetailUiEvent {
-    data class OpenPhoto(val item: PhotoTile) : AlbumDetailUiEvent
-    data class OnDelete(val items: List<String>) : AlbumDetailUiEvent
-    data class OnExport(val items: List<String>, val target: Uri?) : AlbumDetailUiEvent
-    data class RemoveFromAlbum(val items: List<String>) : AlbumDetailUiEvent
-    data object DeleteAlbum : AlbumDetailUiEvent
-    data class RenameAlbum(val newName: String) : AlbumDetailUiEvent
-    data class OnImportChoice(val choice: ImportChoice) : AlbumDetailUiEvent
-    data class SortChanged(val sort: Sort) : AlbumDetailUiEvent
-    data class SetPinned(val items: List<String>, val pinned: Boolean) : AlbumDetailUiEvent
+	data class OpenPhoto(
+		val item: PhotoTile,
+	) : AlbumDetailUiEvent
+
+	data class OnDelete(
+		val items: List<String>,
+	) : AlbumDetailUiEvent
+
+	data class OnExport(
+		val items: List<String>,
+		val target: Uri?,
+	) : AlbumDetailUiEvent
+
+	data class RemoveFromAlbum(
+		val items: List<String>,
+	) : AlbumDetailUiEvent
+
+	data object DeleteAlbum : AlbumDetailUiEvent
+
+	data class RenameAlbum(
+		val newName: String,
+	) : AlbumDetailUiEvent
+
+	data class OnImportChoice(
+		val choice: ImportChoice,
+	) : AlbumDetailUiEvent
+
+	data class SortChanged(
+		val sort: Sort,
+	) : AlbumDetailUiEvent
+
+	data class SetPinned(
+		val items: List<String>,
+		val pinned: Boolean,
+	) : AlbumDetailUiEvent
 }

@@ -57,156 +57,160 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImageDetailsSheet(
-    visible: Boolean,
-    onDismissRequest: () -> Unit,
-    photo: Photo,
+	visible: Boolean,
+	onDismissRequest: () -> Unit,
+	photo: Photo,
 ) {
+	val dateFormat =
+		remember {
+			SimpleDateFormat("E, dd. MMM. yyyy • HH:mm", Locale.getDefault())
+		}
 
-    val dateFormat = remember {
-        SimpleDateFormat("E, dd. MMM. yyyy • HH:mm", Locale.getDefault())
-    }
+	val formattedDateImported =
+		remember(photo) {
+			dateFormat.format(photo.importedAt)
+		}
 
-    val formattedDateImported = remember(photo) {
-        dateFormat.format(photo.importedAt)
-    }
+	val formattedLastModified =
+		remember(photo) {
+			if (photo.lastModified != null) {
+				dateFormat.format(photo.lastModified)
+			} else {
+				null
+			}
+		}
 
-    val formattedLastModified = remember(photo) {
-        if (photo.lastModified != null) {
-            dateFormat.format(photo.lastModified)
-        } else {
-            null
-        }
-    }
+	if (visible) {
+		val state =
+			rememberModalBottomSheetState(
+				skipPartiallyExpanded = true,
+			)
 
-    if (visible) {
-        val state = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-        )
+		ModalBottomSheet(
+			sheetState = state,
+			onDismissRequest = onDismissRequest,
+		) {
+			val window = findWindow()
 
-        ModalBottomSheet(
-            sheetState = state,
-            onDismissRequest = onDismissRequest,
-        ) {
-            val window = findWindow()
+			SideEffect {
+				window?.forceLightSystemBarIcons()
+			}
 
-            SideEffect {
-                window?.forceLightSystemBarIcons()
-            }
+			Column(
+				modifier =
+					Modifier
+						.padding(horizontal = 20.dp)
+						.verticalScroll(rememberScrollState()),
+			) {
+				Text(
+					text = stringResource(R.string.view_photo_detail_import_at_label),
+					color = MaterialTheme.colorScheme.outline,
+				)
+				Text(
+					text = formattedDateImported,
+					fontWeight = FontWeight.Medium,
+				)
 
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = stringResource(R.string.view_photo_detail_import_at_label),
-                    color = MaterialTheme.colorScheme.outline,
-                )
-                Text(
-                    text = formattedDateImported,
-                    fontWeight = FontWeight.Medium,
-                )
+				Spacer(Modifier.height(20.dp))
 
-                Spacer(Modifier.height(20.dp))
+				Column(
+					verticalArrangement = Arrangement.spacedBy(16.dp),
+				) {
+					Text(
+						text = stringResource(R.string.view_photo_detail_title),
+						fontWeight = FontWeight.Medium,
+					)
 
+					DetailsRow(
+						icon = R.drawable.ic_image,
+						text = photo.fileName,
+						subText = stringResource(R.string.view_photo_detail_file_name_label),
+					)
 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.view_photo_detail_title),
-                        fontWeight = FontWeight.Medium,
-                    )
+					val formattedSize =
+						remember(photo.size) {
+							BindingConverters.formatByteSizeConverter(photo.size)
+						}
 
-                    DetailsRow(
-                        icon = R.drawable.ic_image,
-                        text = photo.fileName,
-                        subText = stringResource(R.string.view_photo_detail_file_name_label)
-                    )
+					DetailsRow(
+						icon = R.drawable.ic_photo_size,
+						text = formattedSize,
+						subText = stringResource(R.string.view_photo_detail_size_label),
+					)
 
-                    val formattedSize = remember(photo.size) {
-                        BindingConverters.formatByteSizeConverter(photo.size)
-                    }
+					DetailsRow(
+						icon = R.drawable.ic_png,
+						text = photo.type.toString(),
+						subText = stringResource(R.string.view_photo_detail_file_type_label),
+					)
 
-                    DetailsRow(
-                        icon = R.drawable.ic_photo_size,
-                        text = formattedSize,
-                        subText = stringResource(R.string.view_photo_detail_size_label)
-                    )
+					if (formattedLastModified != null) {
+						DetailsRow(
+							icon = R.drawable.ic_edit,
+							text = formattedLastModified,
+							subText = stringResource(R.string.view_photo_detail_last_modified),
+						)
+					}
+				}
 
-                    DetailsRow(
-                        icon = R.drawable.ic_png,
-                        text = photo.type.toString(),
-                        subText = stringResource(R.string.view_photo_detail_file_type_label)
-                    )
-
-                    if (formattedLastModified != null) {
-                        DetailsRow(
-                            icon = R.drawable.ic_edit,
-                            text = formattedLastModified,
-                            subText = stringResource(R.string.view_photo_detail_last_modified)
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(20.dp))
-            }
-        }
-    }
+				Spacer(Modifier.height(20.dp))
+			}
+		}
+	}
 }
 
 @Composable
 private fun DetailsRow(
-    @DrawableRes icon: Int,
-    text: String,
-    subText: String,
-    modifier: Modifier = Modifier,
+	@DrawableRes icon: Int,
+	text: String,
+	subText: String,
+	modifier: Modifier = Modifier,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = modifier,
-    ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-        )
+	Row(
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(16.dp),
+		modifier = modifier,
+	) {
+		Icon(
+			painter = painterResource(icon),
+			contentDescription = null,
+		)
 
-        Column() {
-            Text(
-                text = text,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.MiddleEllipsis,
-            )
-            Text(
-                text = subText,
-                color = MaterialTheme.colorScheme.outline,
-                maxLines = 1,
-                overflow = TextOverflow.MiddleEllipsis,
-            )
-
-        }
-    }
+		Column {
+			Text(
+				text = text,
+				fontWeight = FontWeight.Medium,
+				maxLines = 1,
+				overflow = TextOverflow.MiddleEllipsis,
+			)
+			Text(
+				text = subText,
+				color = MaterialTheme.colorScheme.outline,
+				maxLines = 1,
+				overflow = TextOverflow.MiddleEllipsis,
+			)
+		}
+	}
 }
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme() {
-        Scaffold() {
-            ImageDetailsSheet(
-                visible = true,
-                onDismissRequest = {},
-                photo = Photo(
-                    fileName = "Preview File aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    importedAt = System.currentTimeMillis(),
-                    type = PhotoType.JPEG,
-                    size = 512L,
-                    lastModified = System.currentTimeMillis() - 23942334234L,
-                ),
-            )
-        }
-    }
+	AppTheme {
+		Scaffold {
+			ImageDetailsSheet(
+				visible = true,
+				onDismissRequest = {},
+				photo =
+					Photo(
+						fileName = "Preview File aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						importedAt = System.currentTimeMillis(),
+						type = PhotoType.JPEG,
+						size = 512L,
+						lastModified = System.currentTimeMillis() - 23942334234L,
+					),
+			)
+		}
+	}
 }

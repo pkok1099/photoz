@@ -36,30 +36,32 @@ import java.util.concurrent.atomic.AtomicBoolean
  * See https://github.com/googlesamples/android-architecture/blob/dev-todo-mvvm-live/todoapp/app/src/main/java/com/example/android/architecture/blueprints/todoapp/SingleLiveEvent.java
  */
 class SingleLiveEvent<T> : MutableLiveData<T>() {
+	private val pending: AtomicBoolean = AtomicBoolean(false)
 
-    private val pending: AtomicBoolean = AtomicBoolean(false)
+	@MainThread
+	override fun observe(
+		owner: LifecycleOwner,
+		observer: Observer<in T>,
+	) {
+		if (hasActiveObservers()) {
+			Timber.w("Multiple observers on SingleLiveEvent. Only one will be notified")
+		}
 
-    @MainThread
-    override fun observe(owner: LifecycleOwner, observer: Observer<in T>) {
-        if (hasActiveObservers()) {
-            Timber.w("Multiple observers on SingleLiveEvent. Only one will be notified")
-        }
+		super.observe(owner) {
+			if (pending.compareAndSet(true, false)) {
+				observer.onChanged(it)
+			}
+		}
+	}
 
-        super.observe(owner) {
-            if (pending.compareAndSet(true, false)) {
-                observer.onChanged(it)
-            }
-        }
-    }
+	@MainThread
+	fun call() {
+		value = null
+	}
 
-    @MainThread
-    fun call() {
-        value = null
-    }
-
-    @MainThread
-    override fun setValue(value: T?) {
-        pending.set(true)
-        super.setValue(value)
-    }
+	@MainThread
+	override fun setValue(value: T?) {
+		pending.set(true)
+		super.setValue(value)
+	}
 }

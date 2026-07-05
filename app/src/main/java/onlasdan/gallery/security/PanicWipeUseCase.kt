@@ -50,91 +50,93 @@ import javax.inject.Singleton
  * @since v13 — Sprint 7 / P3 panic mode
  */
 @Singleton
-class PanicWipeUseCase @Inject constructor(
-    private val app: Application,
-    private val photoRepository: PhotoRepository,
-    private val albumRepository: AlbumRepository,
-    private val vaultService: VaultService,
-    private val sessionRepository: SessionRepository,
-    private val config: Config,
-) {
-    /**
-     * Wipe all local vault data. Returns the count of photos deleted.
-     *
-     * Steps (all best-effort — a failure at any step logs + continues so
-     * partial wipes still destroy as much as possible):
-     *  1. Delete all encrypted photo files + thumbnails from filesDir.
-     *  2. Delete all Photo DB rows.
-     *  3. Delete all Album DB rows + cross-refs.
-     *  4. Reset all VaultProtection rows (Password, Biometric, RecoveryPhrase).
-     *  5. Clear the session (VMK from memory).
-     *  6. Clear legacy password hash (1.x migration residue).
-     *
-     * Does NOT touch:
-     *  - The remote rclone backup (user can restore later).
-     *  - The rclone config (user keeps their cloud setup).
-     *  - App settings (lock timeout, stealth mode, etc.) — the user might
-     *    want to re-setup the vault with the same preferences.
-     */
-    suspend fun wipe(): Int {
-        android.util.Log.e("RcloneDiag", "PanicWipe: INITIATED — wiping all local vault data")
-        var deletedCount = 0
+class PanicWipeUseCase
+	@Inject
+	constructor(
+		private val app: Application,
+		private val photoRepository: PhotoRepository,
+		private val albumRepository: AlbumRepository,
+		private val vaultService: VaultService,
+		private val sessionRepository: SessionRepository,
+		private val config: Config,
+	) {
+		/**
+		 * Wipe all local vault data. Returns the count of photos deleted.
+		 *
+		 * Steps (all best-effort — a failure at any step logs + continues so
+		 * partial wipes still destroy as much as possible):
+		 *  1. Delete all encrypted photo files + thumbnails from filesDir.
+		 *  2. Delete all Photo DB rows.
+		 *  3. Delete all Album DB rows + cross-refs.
+		 *  4. Reset all VaultProtection rows (Password, Biometric, RecoveryPhrase).
+		 *  5. Clear the session (VMK from memory).
+		 *  6. Clear legacy password hash (1.x migration residue).
+		 *
+		 * Does NOT touch:
+		 *  - The remote rclone backup (user can restore later).
+		 *  - The rclone config (user keeps their cloud setup).
+		 *  - App settings (lock timeout, stealth mode, etc.) — the user might
+		 *    want to re-setup the vault with the same preferences.
+		 */
+		suspend fun wipe(): Int {
+			android.util.Log.e("RcloneDiag", "PanicWipe: INITIATED — wiping all local vault data")
+			var deletedCount = 0
 
-        try {
-            // 1. Delete all encrypted photo files + thumbnails.
-            val allPhotos = photoRepository.findAllPhotosByImportDateDesc()
-            for (photo in allPhotos) {
-                try {
-                    photoRepository.deleteInternalPhotoData(photo)
-                    deletedCount++
-                } catch (e: Exception) {
-                    Timber.w(e, "PanicWipe: failed to delete photo data for %s (continuing)", photo.uuid)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "PanicWipe: photo file deletion phase failed")
-        }
+			try {
+				// 1. Delete all encrypted photo files + thumbnails.
+				val allPhotos = photoRepository.findAllPhotosByImportDateDesc()
+				for (photo in allPhotos) {
+					try {
+						photoRepository.deleteInternalPhotoData(photo)
+						deletedCount++
+					} catch (e: Exception) {
+						Timber.w(e, "PanicWipe: failed to delete photo data for %s (continuing)", photo.uuid)
+					}
+				}
+			} catch (e: Exception) {
+				Timber.e(e, "PanicWipe: photo file deletion phase failed")
+			}
 
-        try {
-            // 2. Delete all Photo DB rows.
-            photoRepository.deleteAll()
-        } catch (e: Exception) {
-            Timber.e(e, "PanicWipe: Photo DB deletion failed")
-        }
+			try {
+				// 2. Delete all Photo DB rows.
+				photoRepository.deleteAll()
+			} catch (e: Exception) {
+				Timber.e(e, "PanicWipe: Photo DB deletion failed")
+			}
 
-        try {
-            // 3. Delete all Album DB rows + cross-refs.
-            albumRepository.deleteAll()
-            albumRepository.unlinkAll()
-        } catch (e: Exception) {
-            Timber.e(e, "PanicWipe: Album DB deletion failed")
-        }
+			try {
+				// 3. Delete all Album DB rows + cross-refs.
+				albumRepository.deleteAll()
+				albumRepository.unlinkAll()
+			} catch (e: Exception) {
+				Timber.e(e, "PanicWipe: Album DB deletion failed")
+			}
 
-        try {
-            // 4. Reset all VaultProtection rows.
-            vaultService.reset(VaultProtectionType.Password)
-            vaultService.reset(VaultProtectionType.Biometric)
-            vaultService.reset(VaultProtectionType.RecoveryPhrase)
-        } catch (e: Exception) {
-            Timber.e(e, "PanicWipe: VaultProtection reset failed")
-        }
+			try {
+				// 4. Reset all VaultProtection rows.
+				vaultService.reset(VaultProtectionType.Password)
+				vaultService.reset(VaultProtectionType.Biometric)
+				vaultService.reset(VaultProtectionType.RecoveryPhrase)
+			} catch (e: Exception) {
+				Timber.e(e, "PanicWipe: VaultProtection reset failed")
+			}
 
-        try {
-            // 5. Clear session.
-            sessionRepository.reset()
-        } catch (e: Exception) {
-            Timber.w(e, "PanicWipe: session reset failed")
-        }
+			try {
+				// 5. Clear session.
+				sessionRepository.reset()
+			} catch (e: Exception) {
+				Timber.w(e, "PanicWipe: session reset failed")
+			}
 
-        try {
-            // 6. Clear legacy password hash.
-            config.legacyPasswordHash = null
-            config.legacyUserSalt = null
-        } catch (e: Exception) {
-            Timber.w(e, "PanicWipe: legacy hash clear failed")
-        }
+			try {
+				// 6. Clear legacy password hash.
+				config.legacyPasswordHash = null
+				config.legacyUserSalt = null
+			} catch (e: Exception) {
+				Timber.w(e, "PanicWipe: legacy hash clear failed")
+			}
 
-        android.util.Log.e("RcloneDiag", "PanicWipe: COMPLETE — deleted $deletedCount photos")
-        return deletedCount
-    }
-}
+			android.util.Log.e("RcloneDiag", "PanicWipe: COMPLETE — deleted $deletedCount photos")
+			return deletedCount
+		}
+	}

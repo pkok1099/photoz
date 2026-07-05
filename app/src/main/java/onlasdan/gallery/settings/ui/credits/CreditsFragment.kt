@@ -16,8 +16,6 @@
 
 package onlasdan.gallery.settings.ui.credits
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -44,39 +42,36 @@ import onlasdan.gallery.ui.theme.AppTheme
  */
 @AndroidEntryPoint
 class CreditsFragment : Fragment() {
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					val entries = loadContributors()
+					CreditsScreen(
+						entries = entries,
+						onBack = { findNavController().navigateUp() },
+					)
+				}
+			}
+		}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    val entries = loadContributors()
-                    CreditsScreen(
-                        entries = entries,
-                        onBack = { findNavController().navigateUp() },
-                    )
-                }
-            }
-        }
-    }
+	private fun loadContributors(): ArrayList<CreditEntry> =
+		try {
+			val json = String(requireActivity().assets.open(CONTRIBUTORS_FILE).readBytes())
+			val listType = object : TypeToken<ArrayList<CreditEntry??>?>() {}.type
+			val entries: ArrayList<CreditEntry> = Gson().fromJson(json, listType)
+			entries.add(0, CreditEntry.createHeader())
+			entries.add(CreditEntry.createFooter())
+			entries
+		} catch (e: Exception) {
+			ArrayList()
+		}
 
-    private fun loadContributors(): ArrayList<CreditEntry> {
-        return try {
-            val json = String(requireActivity().assets.open(CONTRIBUTORS_FILE).readBytes())
-            val listType = object : TypeToken<ArrayList<CreditEntry??>?>() {}.type
-            val entries: ArrayList<CreditEntry> = Gson().fromJson(json, listType)
-            entries.add(0, CreditEntry.createHeader())
-            entries.add(CreditEntry.createFooter())
-            entries
-        } catch (e: Exception) {
-            ArrayList()
-        }
-    }
-
-    companion object {
-        const val CONTRIBUTORS_FILE = "contributors.json"
-    }
+	companion object {
+		const val CONTRIBUTORS_FILE = "contributors.json"
+	}
 }

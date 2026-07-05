@@ -16,7 +16,6 @@
 
 package onlasdan.gallery.unlock.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -71,154 +70,160 @@ import onlasdan.gallery.ui.theme.AppTheme
  */
 @Composable
 fun UnlockScreen(
-    unlockState: UnlockState,
-    showBiometricButton: Boolean,
-    showForgotPassword: Boolean,
-    onUnlock: (String) -> Unit,
-    onBiometricClick: () -> Unit,
-    onForgotPassword: () -> Unit,
+	unlockState: UnlockState,
+	showBiometricButton: Boolean,
+	showForgotPassword: Boolean,
+	onUnlock: (String) -> Unit,
+	onBiometricClick: () -> Unit,
+	onForgotPassword: () -> Unit,
 ) {
-    var password by remember { mutableStateOf("") }
-    val keyboard = LocalSoftwareKeyboardController.current
+	var password by remember { mutableStateOf("") }
+	val keyboard = LocalSoftwareKeyboardController.current
 
-    // Clear password on error so the user can retype.
-    LaunchedEffect(unlockState) {
-        if (unlockState == UnlockState.PasswordError) {
-            password = ""
-        }
-    }
+	// Clear password on error so the user can retype.
+	LaunchedEffect(unlockState) {
+		if (unlockState == UnlockState.PasswordError) {
+			password = ""
+		}
+	}
 
-    val isLoading = unlockState == UnlockState.Loading
-    val showWrongPassword = unlockState == UnlockState.PasswordError
+	val isLoading = unlockState == UnlockState.Loading
+	val showWrongPassword = unlockState == UnlockState.PasswordError
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // App title (lobster font, 62sp — matches AppNameTitleStyle)
-            Text(
-                text = stringResource(R.string.app_name),
-                fontSize = 62.sp,
-                fontFamily = FontFamily.Cursive,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 20.dp, bottom = 40.dp),
-            )
+	Box(modifier = Modifier.fillMaxSize()) {
+		Column(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.statusBarsPadding(),
+			horizontalAlignment = Alignment.CenterHorizontally,
+		) {
+			// App title (lobster font, 62sp — matches AppNameTitleStyle)
+			Text(
+				text = stringResource(R.string.app_name),
+				fontSize = 62.sp,
+				fontFamily = FontFamily.Cursive,
+				color = MaterialTheme.colorScheme.onBackground,
+				textAlign = TextAlign.Center,
+				modifier = Modifier.padding(top = 20.dp, bottom = 40.dp),
+			)
 
-            // "Unlock your safe" heading
-            Text(
-                text = stringResource(R.string.unlock_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier
-                    .padding(start = 20.dp)
-                    .width(280.dp),
-            )
+			// "Unlock your safe" heading
+			Text(
+				text = stringResource(R.string.unlock_title),
+				style = MaterialTheme.typography.headlineMedium,
+				fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+				modifier =
+					Modifier
+						.padding(start = 20.dp)
+						.width(280.dp),
+			)
 
-            // Password field + wrong password warning
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.unlock_enter_password)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onDone = {
-                            keyboard?.hide()
-                            if (password.isNotEmpty() && !isLoading) {
-                                onUnlock(password)
-                            }
-                        },
-                    ),
-                    enabled = !isLoading,
-                    isError = showWrongPassword,
-                    supportingText = {
-                        if (showWrongPassword) {
-                            Text(
-                                text = stringResource(R.string.unlock_wrong_password),
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+			// Password field + wrong password warning
+			Column(
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 20.dp, vertical = 30.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+			) {
+				OutlinedTextField(
+					value = password,
+					onValueChange = { password = it },
+					label = { Text(stringResource(R.string.unlock_enter_password)) },
+					singleLine = true,
+					visualTransformation = PasswordVisualTransformation(),
+					keyboardOptions =
+						androidx.compose.foundation.text.KeyboardOptions(
+							keyboardType = KeyboardType.Password,
+							imeAction = ImeAction.Done,
+						),
+					keyboardActions =
+						androidx.compose.foundation.text.KeyboardActions(
+							onDone = {
+								keyboard?.hide()
+								if (password.isNotEmpty() && !isLoading) {
+									onUnlock(password)
+								}
+							},
+						),
+					enabled = !isLoading,
+					isError = showWrongPassword,
+					supportingText = {
+						if (showWrongPassword) {
+							Text(
+								text = stringResource(R.string.unlock_wrong_password),
+								color = MaterialTheme.colorScheme.error,
+							)
+						}
+					},
+					modifier = Modifier.fillMaxWidth(),
+				)
+			}
 
-            // Unlock button
-            Button(
-                onClick = {
-                    keyboard?.hide()
-                    onUnlock(password)
-                },
-                enabled = password.isNotEmpty() && !isLoading,
-                modifier = Modifier.padding(top = 10.dp),
-            ) {
-                Text(stringResource(R.string.unlock_button))
-            }
-        }
+			// Unlock button
+			Button(
+				onClick = {
+					keyboard?.hide()
+					onUnlock(password)
+				},
+				enabled = password.isNotEmpty() && !isLoading,
+				modifier = Modifier.padding(top = 10.dp),
+			) {
+				Text(stringResource(R.string.unlock_button))
+			}
+		}
 
-        // Bottom-aligned buttons: forgot password + biometric
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (showForgotPassword) {
-                TextButton(onClick = onForgotPassword) {
-                    Text(
-                        text = stringResource(R.string.recovery_phrase_forgot_password),
-                        fontSize = 14.sp,
-                    )
-                }
-            }
-            if (showBiometricButton) {
-                TextButton(onClick = onBiometricClick) {
-                    Text(stringResource(R.string.biometric_unlock_hint_button))
-                }
-            }
-        }
+		// Bottom-aligned buttons: forgot password + biometric
+		Column(
+			modifier =
+				Modifier
+					.align(Alignment.BottomCenter)
+					.padding(bottom = 20.dp),
+			horizontalAlignment = Alignment.CenterHorizontally,
+		) {
+			if (showForgotPassword) {
+				TextButton(onClick = onForgotPassword) {
+					Text(
+						text = stringResource(R.string.recovery_phrase_forgot_password),
+						fontSize = 14.sp,
+					)
+				}
+			}
+			if (showBiometricButton) {
+				TextButton(onClick = onBiometricClick) {
+					Text(stringResource(R.string.biometric_unlock_hint_button))
+				}
+			}
+		}
 
-        // Loading overlay
-        if (isLoading) {
-            Surface(
-                color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-        }
-    }
+		// Loading overlay
+		if (isLoading) {
+			Surface(
+				color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
+				modifier = Modifier.fillMaxSize(),
+			) {
+				Box(
+					contentAlignment = Alignment.Center,
+				) {
+					CircularProgressIndicator()
+				}
+			}
+		}
+	}
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun UnlockScreenPreview() {
-    AppTheme {
-        UnlockScreen(
-            unlockState = UnlockState.Initial,
-            showBiometricButton = true,
-            showForgotPassword = true,
-            onUnlock = {},
-            onBiometricClick = {},
-            onForgotPassword = {},
-        )
-    }
+	AppTheme {
+		UnlockScreen(
+			unlockState = UnlockState.Initial,
+			showBiometricButton = true,
+			showForgotPassword = true,
+			onUnlock = {},
+			onBiometricClick = {},
+			onForgotPassword = {},
+		)
+	}
 }

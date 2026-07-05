@@ -41,46 +41,48 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class AlbumsFragment : Fragment() {
+	@Inject
+	lateinit var albumsNavigator: AlbumsNavigator
 
-    @Inject
-    lateinit var albumsNavigator: AlbumsNavigator
+	private val viewModel: AlbumsViewModel by viewModels()
 
-    private val viewModel: AlbumsViewModel by viewModels()
+	@EncryptedImageLoader
+	@Inject
+	lateinit var encryptedImageLoader: ImageLoader
 
-    @EncryptedImageLoader
-    @Inject
-    lateinit var encryptedImageLoader: ImageLoader
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	) = ComposeView(requireContext()).apply {
+		setContent {
+			CompositionLocalProvider(
+				LocalEncryptedImageLoader provides encryptedImageLoader,
+				LocalFragment provides this@AlbumsFragment,
+				LocalConfig provides config,
+			) {
+				AlbumsScreen(viewModel)
+			}
+		}
+	}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ) = ComposeView(requireContext()).apply {
-        setContent {
-            CompositionLocalProvider(
-                LocalEncryptedImageLoader provides encryptedImageLoader,
-                LocalFragment provides this@AlbumsFragment,
-                LocalConfig provides config,
-            ) {
-                AlbumsScreen(viewModel)
-            }
-        }
-    }
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+		finishOnBackWhileStarted(
+			enabled = config.galleryStartPage == StartPage.Albums,
+		)
 
-        finishOnBackWhileStarted(
-            enabled = config.galleryStartPage == StartPage.Albums,
-        )
-
-        launchLifecycleAwareJob {
-            viewModel.navEvent.collect { event ->
-                albumsNavigator.navigate(event, findNavController())
-            }
-        }
-    }
+		launchLifecycleAwareJob {
+			viewModel.navEvent.collect { event ->
+				albumsNavigator.navigate(event, findNavController())
+			}
+		}
+	}
 }

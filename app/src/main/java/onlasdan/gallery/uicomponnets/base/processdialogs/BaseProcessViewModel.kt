@@ -19,10 +19,10 @@ package onlasdan.gallery.uicomponnets.base.processdialogs
 import android.app.Application
 import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
-import onlasdan.gallery.BR
-import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import onlasdan.gallery.BR
+import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
 
 /**
  * Abstract base for all processing view models.
@@ -34,133 +34,134 @@ import kotlinx.coroutines.launch
  * @sine 1.0.0
  * @author PhotoZ
  */
-abstract class BaseProcessViewModel<T>(app: Application) : ObservableViewModel(app) {
+abstract class BaseProcessViewModel<T>(
+	app: Application,
+) : ObservableViewModel(app) {
+	/**
+	 * List of [T].
+	 * Gets set automatically by fragment.
+	 * Gets processed in [processLoop].
+	 */
+	lateinit var items: List<T>
 
-    /**
-     * List of [T].
-     * Gets set automatically by fragment.
-     * Gets processed in [processLoop].
-     */
-    lateinit var items: List<T>
+	/**
+	 * The processing state should be checked every time in [processLoop].
+	 */
+	@get:Bindable
+	var processState: ProcessState = ProcessState.INITIALIZE
+		set(value) {
+			field = value
+			notifyChange(BR.processState, value)
+		}
 
-    /**
-     * The processing state should be checked every time in [processLoop].
-     */
-    @get:Bindable
-    var processState: ProcessState = ProcessState.INITIALIZE
-        set(value) {
-            field = value
-            notifyChange(BR.processState, value)
-        }
+	@get:Bindable
+	var progressPercent: Int = 0
+		set(value) {
+			field = value
+			notifyChange(BR.progressPercent, value)
+		}
 
-    @get:Bindable
-    var progressPercent: Int = 0
-        set(value) {
-            field = value
-            notifyChange(BR.progressPercent, value)
-        }
+	@get:Bindable
+	var current: Int = 0
+		set(value) {
+			field = value
+			notifyChange(BR.current, value)
+		}
 
+	/**
+	 * The number of elements to get processed.
+	 * Gets set automatically.
+	 */
+	@get:Bindable
+	var elementsToProcess = 0
+		set(value) {
+			field = value
+			notifyChange(BR.elementsToProcess, value)
+		}
 
-    @get:Bindable
-    var current: Int = 0
-        set(value) {
-            field = value
-            notifyChange(BR.current, value)
-        }
+	/**
+	 * Indicates if failures occurred.
+	 * Gets evaluated by base DialogFragment to show warning. Should be set in [processItem] if an elements fails.
+	 */
+	var failuresOccurred = false
 
-    /**
-     * The number of elements to get processed.
-     * Gets set automatically.
-     */
-    @get:Bindable
-    var elementsToProcess = 0
-        set(value) {
-            field = value
-            notifyChange(BR.elementsToProcess, value)
-        }
+	/**
+	 * Runs [preProcess], [processLoop] and [postProcess].
+	 * launched in [viewModelScope].
+	 */
+	fun runProcessing() =
+		viewModelScope.launch(Dispatchers.IO) {
+			preProcess()
+			processLoop()
+			postProcess()
+		}
 
-    /**
-     * Indicates if failures occurred.
-     * Gets evaluated by base DialogFragment to show warning. Should be set in [processItem] if an elements fails.
-     */
-    var failuresOccurred = false
+	/**
+	 * Gets executed before [processLoop].
+	 */
+	open suspend fun preProcess() {
+		processState = ProcessState.PROCESSING
+		updateProgress()
+	}
 
-    /**
-     * Runs [preProcess], [processLoop] and [postProcess].
-     * launched in [viewModelScope].
-     */
-    fun runProcessing() = viewModelScope.launch(Dispatchers.IO) {
-        preProcess()
-        processLoop()
-        postProcess()
-    }
+	/**
+	 * Processing loop.
+	 * Calls [processItem].
+	 * Handles: Aborting and Updating progress.
+	 */
+	private suspend fun processLoop() {
+		for (item in items) {
+			if (processState == ProcessState.ABORTED) {
+				return
+			}
 
-    /**
-     * Gets executed before [processLoop].
-     */
-    open suspend fun preProcess() {
-        processState = ProcessState.PROCESSING
-        updateProgress()
-    }
+			processItem(item)
+			itemProcessed()
+		}
+	}
 
-    /**
-     * Processing loop.
-     * Calls [processItem].
-     * Handles: Aborting and Updating progress.
-     */
-    private suspend fun processLoop() {
-        for (item in items) {
-            if (processState == ProcessState.ABORTED) {
-                return
-            }
+	/**
+	 * Template method. Gets called by [processLoop].
+	 * Should implement the processing of one item.
+	 */
+	abstract suspend fun processItem(item: T)
 
-            processItem(item)
-            itemProcessed()
-        }
-    }
+	/**
+	 * Get executed after [processLoop].
+	 */
+	open suspend fun postProcess() {
+		if (processState != ProcessState.ABORTED) {
+			processState = ProcessState.FINISHED
+		}
+	}
 
-    /**
-     * Template method. Gets called by [processLoop].
-     * Should implement the processing of one item.
-     */
-    abstract suspend fun processItem(item: T)
+	/**
+	 * Updates the state to [ProcessState.ABORTED].
+	 */
+	open fun cancel() {
+		processState = ProcessState.ABORTED
+	}
 
-    /**
-     * Get executed after [processLoop].
-     */
-    open suspend fun postProcess() {
-        if (processState != ProcessState.ABORTED) {
-            processState = ProcessState.FINISHED
-        }
-    }
+	/**
+	 * Update the progress.
+	 */
+	private fun itemProcessed() {
+		current++
+		updateProgress()
+	}
 
-    /**
-     * Updates the state to [ProcessState.ABORTED].
-     */
-    open fun cancel() {
-        processState = ProcessState.ABORTED
-    }
+	private fun updateProgress() {
+		if (elementsToProcess == 0) {
+			return
+		}
 
-    /**
-     * Update the progress.
-     */
-    private fun itemProcessed() {
-        current++
-        updateProgress()
-    }
+		progressPercent = (current * 100) / elementsToProcess
+	}
 
-    private fun updateProgress() {
-        if (elementsToProcess == 0) {
-            return
-        }
-
-        progressPercent = (current * 100) / elementsToProcess
-    }
-
-    /**
-     * Sets [failuresOccurred] to true
-     */
-    fun failuresOccurred() {
-        failuresOccurred = true
-    }
+	/**
+	 * Sets [failuresOccurred] to true
+	 */
+	fun failuresOccurred() {
+		failuresOccurred = true
+	}
 }

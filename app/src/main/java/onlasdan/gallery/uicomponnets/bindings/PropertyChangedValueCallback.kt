@@ -24,9 +24,11 @@ package onlasdan.gallery.uicomponnets.bindings
  * @author PhotoZ
  */
 interface PropertyChangedValueCallback {
-
-    /**
-     * Called when data changes.
-     */
-    fun onCallback(property: Int, newValue: Any?)
+	/**
+	 * Called when data changes.
+	 */
+	fun onCallback(
+		property: Int,
+		newValue: Any?,
+	)
 }

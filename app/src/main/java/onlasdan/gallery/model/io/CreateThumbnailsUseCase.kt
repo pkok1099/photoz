@@ -22,13 +22,12 @@ import coil.request.ImageRequest
 import coil.size.Size
 import coil.transform.Transformation
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import onlasdan.gallery.io.VaultFileStorage
 import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.transcoding.domain.ImageStorage
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
 
 /**
  * Maximum size of the thumbnail in pixels
@@ -45,69 +44,80 @@ private const val THUMBNAIL_SIZE = 512
  * @since 1.7.2
  * @author Starry Shivam
  */
-class CreateThumbnailsUseCase @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val imageStorage: ImageStorage,
-    private val vaultFileStorage: VaultFileStorage,
-) {
+class CreateThumbnailsUseCase
+	@Inject
+	constructor(
+		@ApplicationContext private val context: Context,
+		private val imageStorage: ImageStorage,
+		private val vaultFileStorage: VaultFileStorage,
+	) {
+		/**
+		 * @param photo The photo object for which the thumbnail is to be created.
+		 * @param data The data for the photo. May be ByteArray or system Uri
+		 */
+		suspend operator fun invoke(
+			photo: Photo,
+			data: Any?,
+		): Result<Unit> =
+			withContext(Dispatchers.IO) {
+				// Thumbnail
+				val thumbnailRequest =
+					ImageRequest
+						.Builder(context)
+						.data(data)
+						.size(THUMBNAIL_SIZE)
+						.transformations(CenterCropTransformation)
+						.allowHardware(false)
+						.build()
 
-    /**
-     * @param photo The photo object for which the thumbnail is to be created.
-     * @param data The data for the photo. May be ByteArray or system Uri
-     */
-    suspend operator fun invoke(photo: Photo, data: Any?): Result<Unit> =
-        withContext(Dispatchers.IO) {
+				val thumbnailResult =
+					imageStorage.execAndWrite(
+						imageRequest = thumbnailRequest,
+						outputStream = vaultFileStorage.openEncryptedOutput(photo.internalThumbnailFileName),
+						compressionPercent = 40,
+					)
 
-            // Thumbnail
-            val thumbnailRequest = ImageRequest.Builder(context)
-                .data(data)
-                .size(THUMBNAIL_SIZE)
-                .transformations(CenterCropTransformation)
-                .allowHardware(false)
-                .build()
+				// Video Preview
+				val videoPreviewResult =
+					if (photo.type.isVideo) {
+						val videoPreviewRequest =
+							ImageRequest
+								.Builder(context)
+								.data(data)
+								.allowHardware(false)
+								.build()
 
-            val thumbnailResult = imageStorage.execAndWrite(
-                imageRequest = thumbnailRequest,
-                outputStream = vaultFileStorage.openEncryptedOutput(photo.internalThumbnailFileName),
-                compressionPercent = 40,
-            )
+						imageStorage.execAndWrite(
+							imageRequest = videoPreviewRequest,
+							outputStream = vaultFileStorage.openEncryptedOutput(photo.internalVideoPreviewFileName),
+							compressionPercent = 90,
+						)
+					} else {
+						// Success if not a video
+						Result.success(Unit)
+					}
 
-            // Video Preview
-            val videoPreviewResult = if (photo.type.isVideo) {
-                val videoPreviewRequest = ImageRequest.Builder(context)
-                    .data(data)
-                    .allowHardware(false)
-                    .build()
-
-                imageStorage.execAndWrite(
-                    imageRequest = videoPreviewRequest,
-                    outputStream = vaultFileStorage.openEncryptedOutput(photo.internalVideoPreviewFileName),
-                    compressionPercent = 90,
-                )
-            } else {
-                // Success if not a video
-                Result.success(Unit)
-            }
-
-            if (thumbnailResult.isSuccess && videoPreviewResult.isSuccess) {
-                Result.success(Unit)
-            } else {
-                Result.failure(
-                    thumbnailResult.exceptionOrNull() ?: Exception("error creating thumbnail")
-                )
-            }
-        }
-}
+				if (thumbnailResult.isSuccess && videoPreviewResult.isSuccess) {
+					Result.success(Unit)
+				} else {
+					Result.failure(
+						thumbnailResult.exceptionOrNull() ?: Exception("error creating thumbnail"),
+					)
+				}
+			}
+	}
 
 object CenterCropTransformation : Transformation {
+	override val cacheKey: String = javaClass.name
 
-    override val cacheKey: String = javaClass.name
+	override suspend fun transform(
+		input: Bitmap,
+		size: Size,
+	): Bitmap {
+		val minDim = minOf(input.width, input.height)
+		val startX = (input.width - minDim) / 2
+		val startY = (input.height - minDim) / 2
 
-    override suspend fun transform(input: Bitmap, size: Size): Bitmap {
-        val minDim = minOf(input.width, input.height)
-        val startX = (input.width - minDim) / 2
-        val startY = (input.height - minDim) / 2
-
-        return Bitmap.createBitmap(input, startX, startY, minDim, minDim)
-    }
+		return Bitmap.createBitmap(input, startX, startY, minDim, minDim)
+	}
 }

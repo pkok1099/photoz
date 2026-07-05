@@ -16,6 +16,8 @@
 
 package onlasdan.gallery.backup.domain
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import onlasdan.gallery.backup.data.BackupMetaData
 import onlasdan.gallery.backup.data.BackupMetaData.Companion.CURRENT_BACKUP_VERSION
 import onlasdan.gallery.backup.data.BackupMetaData.Companion.LEGACY_BACKUP_VERSION
@@ -25,49 +27,50 @@ import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.gallery.albums.domain.AlbumRepository
 import onlasdan.gallery.model.repositories.PhotoRepository
 import onlasdan.gallery.settings.data.Config
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import kotlin.io.encoding.Base64
 
 /**
  * Creates a [BackupMetaData] from the current database
  */
-class DumpDatabaseUseCase @Inject constructor(
-    private val config: Config,
-    private val photoRepository: PhotoRepository,
-    private val albumRepository: AlbumRepository,
-    private val vaultProtectionRepository: VaultProtectionRepository,
-) {
-    suspend operator fun invoke(version: Int): BackupMetaData = withContext(Dispatchers.IO) {
-        val photos = photoRepository.findAllPhotosByImportDateDesc().map { it.toBackup() }
-        val albums = albumRepository.getAlbums().map { it.toBackup() }
-        val albumPhotoLinks = albumRepository.getAllAlbumPhotoLinks().map { it.toBackup() }
+class DumpDatabaseUseCase
+	@Inject
+	constructor(
+		private val config: Config,
+		private val photoRepository: PhotoRepository,
+		private val albumRepository: AlbumRepository,
+		private val vaultProtectionRepository: VaultProtectionRepository,
+	) {
+		suspend operator fun invoke(version: Int): BackupMetaData =
+			withContext(Dispatchers.IO) {
+				val photos = photoRepository.findAllPhotosByImportDateDesc().map { it.toBackup() }
+				val albums = albumRepository.getAlbums().map { it.toBackup() }
+				val albumPhotoLinks = albumRepository.getAllAlbumPhotoLinks().map { it.toBackup() }
 
-        when (version) {
-            LEGACY_BACKUP_VERSION -> {
-                BackupMetaData.V3(
-                    password = requireNotNull(config.legacyPasswordHash) { "Legacy password hash is required for V3 backup" },
-                    photos = photos,
-                    albums = albums,
-                    albumPhotoRefs = albumPhotoLinks,
-                    backupVersion = version,
-                )
-            }
-            CURRENT_BACKUP_VERSION -> {
-                val protection = vaultProtectionRepository.getProtection(VaultProtectionType.Password)
-                requireNotNull(protection)
+				when (version) {
+					LEGACY_BACKUP_VERSION -> {
+						BackupMetaData.V3(
+							password = requireNotNull(config.legacyPasswordHash) { "Legacy password hash is required for V3 backup" },
+							photos = photos,
+							albums = albums,
+							albumPhotoRefs = albumPhotoLinks,
+							backupVersion = version,
+						)
+					}
+					CURRENT_BACKUP_VERSION -> {
+						val protection = vaultProtectionRepository.getProtection(VaultProtectionType.Password)
+						requireNotNull(protection)
 
-                BackupMetaData.V5(
-                    wrappedVMK = Base64.encode(protection.wrappedVMK),
-                    params = protection.params,
-                    photos = photos,
-                    albums = albums,
-                    albumPhotoRefs = albumPhotoLinks,
-                    backupVersion = version,
-                )
-            }
-            else -> error("Not supported to create backup metadata with version $version")
-        }
-    }
-}
+						BackupMetaData.V5(
+							wrappedVMK = Base64.encode(protection.wrappedVMK),
+							params = protection.params,
+							photos = photos,
+							albums = albums,
+							albumPhotoRefs = albumPhotoLinks,
+							backupVersion = version,
+						)
+					}
+					else -> error("Not supported to create backup metadata with version $version")
+				}
+			}
+	}

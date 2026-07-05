@@ -57,66 +57,70 @@ import kotlin.coroutines.suspendCoroutine
  *  - No thumbnails (`.tn`) or video previews (`.vp`) in this version.
  *  - `backupVersion` must equal 1 for this format.
  */
-class RestoreBackupV1 @Inject constructor(
-    private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
-    private val photoRepository: PhotoRepository,
-    private val createThumbnails: CreateThumbnailsUseCase,
-) : RestoreBackupStrategy<BackupMetaData.V1> {
-    override suspend fun restore(
-        metaData: BackupMetaData.V1,
-        stream: ZipInputStream,
-        session: Session,
-    ): RestoreResult {
-        var errors = 0
+class RestoreBackupV1
+	@Inject
+	constructor(
+		private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
+		private val photoRepository: PhotoRepository,
+		private val createThumbnails: CreateThumbnailsUseCase,
+	) : RestoreBackupStrategy<BackupMetaData.V1> {
+		override suspend fun restore(
+			metaData: BackupMetaData.V1,
+			stream: ZipInputStream,
+			session: Session,
+		): RestoreResult {
+			var errors = 0
 
-        var ze = stream.nextEntry
+			var ze = stream.nextEntry
 
-        while (ze != null) {
-            val photoBackup = metaData.photos.find {
-                ze.name.contains(it.uuid)
-            }
+			while (ze != null) {
+				val photoBackup =
+					metaData.photos.find {
+						ze.name.contains(it.uuid)
+					}
 
-            if (photoBackup == null) {
-                ze = stream.nextEntry
-                continue
-            }
+				if (photoBackup == null) {
+					ze = stream.nextEntry
+					continue
+				}
 
-            // Dummy. Used for method that need a photo object
-            val dummyPhoto = photoBackup.toDomain()
+				// Dummy. Used for method that need a photo object
+				val dummyPhoto = photoBackup.toDomain()
 
-            val encryptedZipInput =
-                legacyGcmCryptoEngine.createDecryptStream(stream, session)
-            if (encryptedZipInput == null) {
-                ze = stream.nextEntry
-                continue
-            }
+				val encryptedZipInput =
+					legacyGcmCryptoEngine.createDecryptStream(stream, session)
+				if (encryptedZipInput == null) {
+					ze = stream.nextEntry
+					continue
+				}
 
-            val photoBytes = suspendCoroutine {
-                it.resume(encryptedZipInput.readBytes())
-            }
-            val photoBytesInputStream = ByteArrayInputStream(photoBytes)
+				val photoBytes =
+					suspendCoroutine {
+						it.resume(encryptedZipInput.readBytes())
+					}
+				val photoBytesInputStream = ByteArrayInputStream(photoBytes)
 
-            val photoFileCreated =
-                photoRepository.createPhotoFile(dummyPhoto, photoBytesInputStream) != -1L
+				val photoFileCreated =
+					photoRepository.createPhotoFile(dummyPhoto, photoBytesInputStream) != -1L
 
-            if (!photoFileCreated) {
-                errors++
-                ze = stream.nextEntry
-                continue
-            }
+				if (!photoFileCreated) {
+					errors++
+					ze = stream.nextEntry
+					continue
+				}
 
-            createThumbnails(dummyPhoto, photoBytes)
-                .onFailure { errors++ }
+				createThumbnails(dummyPhoto, photoBytes)
+					.onFailure { errors++ }
 
-            ze = stream.nextEntry
-        }
+				ze = stream.nextEntry
+			}
 
-        metaData
-            .getPhotosInOriginalOrder()
-            .forEach {
-                photoRepository.insert(it.toDomain().copy(importedAt = System.currentTimeMillis()))
-            }
+			metaData
+				.getPhotosInOriginalOrder()
+				.forEach {
+					photoRepository.insert(it.toDomain().copy(importedAt = System.currentTimeMillis()))
+				}
 
-        return RestoreResult(errors)
-    }
-}
+			return RestoreResult(errors)
+		}
+	}

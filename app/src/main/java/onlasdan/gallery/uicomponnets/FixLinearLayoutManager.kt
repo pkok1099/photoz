@@ -19,9 +19,10 @@ package onlasdan.gallery.uicomponnets
 import android.content.Context
 import androidx.recyclerview.widget.LinearLayoutManager
 
-class FixLinearLayoutManager(context: Context) : LinearLayoutManager(context) {
+class FixLinearLayoutManager(
+	context: Context,
+) : LinearLayoutManager(context) {
+	override fun canScrollHorizontally() = false
 
-    override fun canScrollHorizontally() = false
-
-    override fun canScrollVertically() = false
+	override fun canScrollVertically() = false
 }

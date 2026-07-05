@@ -30,21 +30,21 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class DeleteViewModel @Inject constructor(
-    app: Application,
-    private val photoRepository: PhotoRepository
-) : BaseProcessViewModel<Photo>(app) {
+class DeleteViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val photoRepository: PhotoRepository,
+	) : BaseProcessViewModel<Photo>(app) {
+		override suspend fun processItem(item: Photo) {
+			if (item.uuid.isEmpty()) {
+				failuresOccurred = true
+				return
+			}
 
-    override suspend fun processItem(item: Photo) {
-        if (item.uuid.isEmpty()) {
-            failuresOccurred = true
-            return
-        }
-
-        val success = photoRepository.safeDeletePhoto(item)
-        if (!success) {
-            failuresOccurred = true
-        }
-    }
-
-}
+			val success = photoRepository.safeDeletePhoto(item)
+			if (!success) {
+				failuresOccurred = true
+			}
+		}
+	}

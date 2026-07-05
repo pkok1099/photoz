@@ -61,163 +61,169 @@ import onlasdan.gallery.ui.theme.AppTheme
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CreditsScreen(
-    entries: List<CreditEntry>,
-    onBack: () -> Unit,
+	entries: List<CreditEntry>,
+	onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
+	val context = LocalContext.current
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_other_credits_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_back),
-                            contentDescription = "Back",
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            items(entries) { entry ->
-                when {
-                    entry.isHeader -> CreditsHeaderItem()
-                    entry.isFooter -> CreditsFooterItem()
-                    else -> CreditsEntryItem(
-                        entry = entry,
-                        onClick = { url ->
-                            url?.let {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it))
-                                context.startActivity(intent)
-                            }
-                        },
-                    )
-                }
-            }
-        }
-    }
+	Scaffold(
+		topBar = {
+			TopAppBar(
+				title = { Text(stringResource(R.string.settings_other_credits_title)) },
+				navigationIcon = {
+					IconButton(onClick = onBack) {
+						Icon(
+							painter = painterResource(R.drawable.ic_back),
+							contentDescription = "Back",
+						)
+					}
+				},
+			)
+		},
+	) { padding ->
+		LazyColumn(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(padding),
+		) {
+			items(entries) { entry ->
+				when {
+					entry.isHeader -> CreditsHeaderItem()
+					entry.isFooter -> CreditsFooterItem()
+					else ->
+						CreditsEntryItem(
+							entry = entry,
+							onClick = { url ->
+								url?.let {
+									val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it))
+									context.startActivity(intent)
+								}
+							},
+						)
+				}
+			}
+		}
+	}
 }
 
 @Composable
 private fun CreditsHeaderItem() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = stringResource(R.string.credits_contributors_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp),
-        )
-        // Community icon (120dp height, matches the XML layout)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_community),
-                contentDescription = null,
-                modifier = Modifier.size(120.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Text(
-            text = stringResource(R.string.credits_contributors_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 8.dp),
-        )
-    }
+	Column(
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.padding(bottom = 16.dp),
+		horizontalAlignment = Alignment.CenterHorizontally,
+	) {
+		Text(
+			text = stringResource(R.string.credits_contributors_title),
+			style = MaterialTheme.typography.headlineMedium,
+			fontWeight = FontWeight.Bold,
+			textAlign = TextAlign.Center,
+			modifier = Modifier.padding(start = 24.dp, end = 24.dp),
+		)
+		// Community icon (120dp height, matches the XML layout)
+		Box(
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.height(120.dp),
+			contentAlignment = Alignment.Center,
+		) {
+			Icon(
+				painter = painterResource(R.drawable.ic_community),
+				contentDescription = null,
+				modifier = Modifier.size(120.dp),
+				tint = MaterialTheme.colorScheme.primary,
+			)
+		}
+		Text(
+			text = stringResource(R.string.credits_contributors_hint),
+			style = MaterialTheme.typography.bodyMedium,
+			textAlign = TextAlign.Center,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			modifier = Modifier.padding(horizontal = 24.dp).padding(top = 8.dp),
+		)
+	}
 }
 
 @Composable
 private fun CreditsFooterItem() {
-    // Footer is the icon-credits section — for now just a spacer + text.
-    // The original item_icon_credits.xml has icon attribution text.
-    Text(
-        text = stringResource(R.string.credits_icons_title),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(16.dp),
-    )
+	// Footer is the icon-credits section — for now just a spacer + text.
+	// The original item_icon_credits.xml has icon attribution text.
+	Text(
+		text = stringResource(R.string.credits_icons_title),
+		style = MaterialTheme.typography.titleMedium,
+		fontWeight = FontWeight.Bold,
+		modifier = Modifier.padding(16.dp),
+	)
 }
 
 @Composable
 private fun CreditsEntryItem(
-    entry: CreditEntry,
-    onClick: (String?) -> Unit,
+	entry: CreditEntry,
+	onClick: (String?) -> Unit,
 ) {
-    val link = entry.website ?: entry.contact
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !link.isNullOrBlank()) { onClick(link) }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_person),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            // Name (bold)
-            if (!entry.name.isNullOrBlank()) {
-                Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            // Contribution
-            if (!entry.contribution.isNullOrBlank()) {
-                Text(
-                    text = entry.contribution,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // Contact / website
-            if (!link.isNullOrBlank()) {
-                Text(
-                    text = link,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-    }
+	val link = entry.website ?: entry.contact
+	Row(
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.clickable(enabled = !link.isNullOrBlank()) { onClick(link) }
+				.padding(horizontal = 16.dp, vertical = 8.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(8.dp),
+	) {
+		Icon(
+			painter = painterResource(R.drawable.ic_person),
+			contentDescription = null,
+			modifier = Modifier.size(20.dp),
+			tint = MaterialTheme.colorScheme.onSurfaceVariant,
+		)
+		Column(modifier = Modifier.weight(1f)) {
+			// Name (bold)
+			if (!entry.name.isNullOrBlank()) {
+				Text(
+					text = entry.name,
+					style = MaterialTheme.typography.bodyLarge,
+					fontWeight = FontWeight.Bold,
+				)
+			}
+			// Contribution
+			if (!entry.contribution.isNullOrBlank()) {
+				Text(
+					text = entry.contribution,
+					style = MaterialTheme.typography.bodyMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant,
+				)
+			}
+			// Contact / website
+			if (!link.isNullOrBlank()) {
+				Text(
+					text = link,
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.primary,
+					modifier = Modifier.padding(top = 2.dp),
+				)
+			}
+		}
+	}
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun CreditsScreenPreview() {
-    AppTheme {
-        CreditsScreen(
-            entries = listOf(
-                CreditEntry.createHeader(),
-                CreditEntry("Translation", "Jane Doe", "jane@example.com", "https://example.com"),
-                CreditEntry("Icons", "John Smith", null, null),
-                CreditEntry.createFooter(),
-            ),
-            onBack = {},
-        )
-    }
+	AppTheme {
+		CreditsScreen(
+			entries =
+				listOf(
+					CreditEntry.createHeader(),
+					CreditEntry("Translation", "Jane Doe", "jane@example.com", "https://example.com"),
+					CreditEntry("Icons", "John Smith", null, null),
+					CreditEntry.createFooter(),
+				),
+			onBack = {},
+		)
+	}
 }

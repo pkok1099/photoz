@@ -31,17 +31,18 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class ExportViewModel @Inject constructor(
-    app: Application,
-    private val photoRepository: PhotoRepository
-) : BaseProcessViewModel<Photo>(app) {
+class ExportViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val photoRepository: PhotoRepository,
+	) : BaseProcessViewModel<Photo>(app) {
+		lateinit var target: Uri
 
-    lateinit var target: Uri
-
-    override suspend fun processItem(item: Photo) {
-        val result = photoRepository.exportPhoto(item, target)
-        if (!result) {
-            failuresOccurred = true
-        }
-    }
-}
+		override suspend fun processItem(item: Photo) {
+			val result = photoRepository.exportPhoto(item, target)
+			if (!result) {
+				failuresOccurred = true
+			}
+		}
+	}

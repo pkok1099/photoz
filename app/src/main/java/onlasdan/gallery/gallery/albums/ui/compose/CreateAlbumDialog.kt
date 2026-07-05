@@ -16,7 +16,6 @@
 
 package onlasdan.gallery.gallery.albums.ui.compose
 
-import android.inputmethodservice.Keyboard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,103 +52,106 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun CreateAlbumDialog(
-    show: Boolean,
-    onDismissRequest: () -> Unit,
-    modifier: Modifier = Modifier,
+	show: Boolean,
+	onDismissRequest: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val viewModel: CreateAlbumViewModel = hiltViewModel()
+	val viewModel: CreateAlbumViewModel = hiltViewModel()
 
-    if (show) {
-        Dialog(
-            onDismissRequest = onDismissRequest,
-        ) {
-            CreateAlbumDialogContent(
-                onDismissRequest = onDismissRequest,
-                onCreatePressed = { viewModel.createAlbum(it) },
-                modifier = modifier,
-            )
-        }
-    }
+	if (show) {
+		Dialog(
+			onDismissRequest = onDismissRequest,
+		) {
+			CreateAlbumDialogContent(
+				onDismissRequest = onDismissRequest,
+				onCreatePressed = { viewModel.createAlbum(it) },
+				modifier = modifier,
+			)
+		}
+	}
 }
 
 @Composable
 private fun CreateAlbumDialogContent(
-    onCreatePressed: (String) -> Unit,
-    onDismissRequest: () -> Unit,
-    modifier: Modifier = Modifier,
+	onCreatePressed: (String) -> Unit,
+	onDismissRequest: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val focusRequester = remember {
-        FocusRequester()
-    }
+	val focusRequester =
+		remember {
+			FocusRequester()
+		}
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
+	LaunchedEffect(Unit) {
+		focusRequester.requestFocus()
+	}
 
-    Card(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.extraLarge,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(16.dp)
-        ) {
-            var albumName by remember { mutableStateOf("") }
+	Card(
+		modifier = modifier,
+		shape = MaterialTheme.shapes.extraLarge,
+	) {
+		Column(
+			horizontalAlignment = Alignment.CenterHorizontally,
+			verticalArrangement = Arrangement.spacedBy(12.dp),
+			modifier = Modifier.padding(16.dp),
+		) {
+			var albumName by remember { mutableStateOf("") }
 
-            Text(
-                stringResource(R.string.gallery_albums_create_title),
-                style = MaterialTheme.typography.headlineSmall
-            )
+			Text(
+				stringResource(R.string.gallery_albums_create_title),
+				style = MaterialTheme.typography.headlineSmall,
+			)
 
-            OutlinedTextField(
-                value = albumName,
-                onValueChange = { albumName = it },
-                placeholder = { Text(stringResource(R.string.gallery_albums_create_placeholder)) },
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    autoCorrect = true,
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        onCreatePressed(albumName.trim())
-                        onDismissRequest()
-                    }
-                ),
-                maxLines = 1,
-                modifier = Modifier.focusRequester(focusRequester)
-            )
+			OutlinedTextField(
+				value = albumName,
+				onValueChange = { albumName = it },
+				placeholder = { Text(stringResource(R.string.gallery_albums_create_placeholder)) },
+				keyboardOptions =
+					KeyboardOptions(
+						capitalization = KeyboardCapitalization.Words,
+						autoCorrect = true,
+						keyboardType = KeyboardType.Text,
+						imeAction = ImeAction.Done,
+					),
+				keyboardActions =
+					KeyboardActions(
+						onDone = {
+							onCreatePressed(albumName.trim())
+							onDismissRequest()
+						},
+					),
+				maxLines = 1,
+				modifier = Modifier.focusRequester(focusRequester),
+			)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                TextButton(onClick = onDismissRequest) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-                Button(
-                    onClick = {
-                        onCreatePressed(albumName.trim())
-                        onDismissRequest()
-                    },
-                    enabled = albumName.isNotEmpty()
-                ) {
-                    Text(stringResource(R.string.common_create))
-                }
-            }
-        }
-    }
+			Row(
+				modifier = Modifier.fillMaxWidth(),
+				horizontalArrangement = Arrangement.SpaceBetween,
+			) {
+				TextButton(onClick = onDismissRequest) {
+					Text(stringResource(R.string.common_cancel))
+				}
+				Button(
+					onClick = {
+						onCreatePressed(albumName.trim())
+						onDismissRequest()
+					},
+					enabled = albumName.isNotEmpty(),
+				) {
+					Text(stringResource(R.string.common_create))
+				}
+			}
+		}
+	}
 }
 
 @Preview
 @Composable
 private fun CreateAlbumDialogPreview() {
-    AppTheme {
-        CreateAlbumDialogContent(
-            onCreatePressed = {},
-            onDismissRequest = {},
-        )
-    }
+	AppTheme {
+		CreateAlbumDialogContent(
+			onCreatePressed = {},
+			onDismissRequest = {},
+		)
+	}
 }

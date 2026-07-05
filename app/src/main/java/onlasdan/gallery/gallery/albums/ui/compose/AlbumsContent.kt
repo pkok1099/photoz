@@ -31,63 +31,64 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun AlbumsContent(
-    content: AlbumsUiState.Content,
-    handleUiEvent: (AlbumsUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+	content: AlbumsUiState.Content,
+	handleUiEvent: (AlbumsUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-    ) {
-        AlbumsGrid(
-            albums = content.albums,
-            onAlbumClicked = { handleUiEvent(AlbumsUiEvent.OpenAlbum(it)) },
-            modifier = Modifier.fillMaxWidth(),
-        )
+	Box(
+		modifier = modifier.fillMaxSize(),
+	) {
+		AlbumsGrid(
+			albums = content.albums,
+			onAlbumClicked = { handleUiEvent(AlbumsUiEvent.OpenAlbum(it)) },
+			modifier = Modifier.fillMaxWidth(),
+		)
 
-        MagicFab(
-            label = stringResource(R.string.magic_fab_new_album_label),
-            onClick = {
-                handleUiEvent(AlbumsUiEvent.ShowCreateDialog)
-            }
-        )
-    }
+		MagicFab(
+			label = stringResource(R.string.magic_fab_new_album_label),
+			onClick = {
+				handleUiEvent(AlbumsUiEvent.ShowCreateDialog)
+			},
+		)
+	}
 }
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun AlbumsContentPreview() {
-    AppTheme {
-        AlbumsContent(
-            content = AlbumsUiState.Content(
-                listOf(
-                    AlbumItem(
-                        id = "1",
-                        name = "Album 1",
-                        itemCount = 10,
-                    ),
-                    AlbumItem(
-                        id = "2",
-                        name = "Album 2",
-                        itemCount = 20,
-                    ),
-                    AlbumItem(
-                        id = "3",
-                        name = "Album 3",
-                        itemCount = 30,
-                    ),
-                    AlbumItem(
-                        id = "4",
-                        name = "Album 4",
-                        itemCount = 40
-                    ),
-                    AlbumItem(
-                        id = "5",
-                        name = "Album 5",
-                        itemCount = 50
-                    ),
-                )
-            ),
-            handleUiEvent = {}
-        )
-    }
+	AppTheme {
+		AlbumsContent(
+			content =
+				AlbumsUiState.Content(
+					listOf(
+						AlbumItem(
+							id = "1",
+							name = "Album 1",
+							itemCount = 10,
+						),
+						AlbumItem(
+							id = "2",
+							name = "Album 2",
+							itemCount = 20,
+						),
+						AlbumItem(
+							id = "3",
+							name = "Album 3",
+							itemCount = 30,
+						),
+						AlbumItem(
+							id = "4",
+							name = "Album 4",
+							itemCount = 40,
+						),
+						AlbumItem(
+							id = "5",
+							name = "Album 5",
+							itemCount = 50,
+						),
+					),
+				),
+			handleUiEvent = {},
+		)
+	}
 }

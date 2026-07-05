@@ -74,281 +74,285 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.setup.ui.RecoveryPhraseQrSheet
 import onlasdan.gallery.ui.components.ConfirmationDialog
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecoveryPhraseSheet(
-    onDismissRequest: () -> Unit,
-    onNavigateToSetup: () -> Unit,
+	onDismissRequest: () -> Unit,
+	onNavigateToSetup: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
+	val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+	val scope = rememberCoroutineScope()
 
-    val viewModel: RecoveryPhraseViewModel = hiltViewModel()
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	val viewModel: RecoveryPhraseViewModel = hiltViewModel()
+	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val context = LocalContext.current
-    val activity = LocalActivity.current
-    val clipboard = LocalClipboard.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
+	val clipboard = LocalClipboard.current
 
-    var showConfirmDialog by remember { mutableStateOf(false) }
+	var showConfirmDialog by remember { mutableStateOf(false) }
 
-    ConfirmationDialog(
-        show = showConfirmDialog,
-        onDismissRequest = { showConfirmDialog = false },
-        text = stringResource(R.string.recovery_phrase_create_new_confirm),
-        onConfirm = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.CreateNewPhrase) },
-    )
+	ConfirmationDialog(
+		show = showConfirmDialog,
+		onDismissRequest = { showConfirmDialog = false },
+		text = stringResource(R.string.recovery_phrase_create_new_confirm),
+		onConfirm = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.CreateNewPhrase) },
+	)
 
-    LaunchedEffect(Unit) {
-        viewModel.navEvents.collect { event ->
-            when (event) {
-                RecoveryPhraseNavEvent.NavigateToSetup -> {
-                    scope.launch { sheetState.hide() }.invokeOnCompletion {
-                        onDismissRequest()
-                        onNavigateToSetup()
-                    }
-                }
-            }
-        }
-    }
+	LaunchedEffect(Unit) {
+		viewModel.navEvents.collect { event ->
+			when (event) {
+				RecoveryPhraseNavEvent.NavigateToSetup -> {
+					scope.launch { sheetState.hide() }.invokeOnCompletion {
+						onDismissRequest()
+						onNavigateToSetup()
+					}
+				}
+			}
+		}
+	}
 
-    val selectFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
-        it ?: return@rememberLauncherForActivityResult
-        val phrase = uiState.phrase ?: return@rememberLauncherForActivityResult
-        if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
-        viewModel.handleUiEvent(RecoveryPhraseUiEvent.SaveToFile(context, it, phrase))
-    }
+	val selectFileLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
+			it ?: return@rememberLauncherForActivityResult
+			val phrase = uiState.phrase ?: return@rememberLauncherForActivityResult
+			if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
+			viewModel.handleUiEvent(RecoveryPhraseUiEvent.SaveToFile(context, it, phrase))
+		}
 
-    val phrase = uiState.phrase
-    if (uiState.inputs.qrSheetVisible && phrase != null) {
-        RecoveryPhraseQrSheet(
-            phrase = phrase,
-            onDismiss = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.DismissQrSheet) },
-            onSaved = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.MarkPhraseSaved) },
-        )
-    }
+	val phrase = uiState.phrase
+	if (uiState.inputs.qrSheetVisible && phrase != null) {
+		RecoveryPhraseQrSheet(
+			phrase = phrase,
+			onDismiss = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.DismissQrSheet) },
+			onSaved = { viewModel.handleUiEvent(RecoveryPhraseUiEvent.MarkPhraseSaved) },
+		)
+	}
 
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.recovery_phrase_title),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-            )
+	ModalBottomSheet(
+		onDismissRequest = onDismissRequest,
+		sheetState = sheetState,
+	) {
+		Column(
+			modifier =
+				Modifier
+					.verticalScroll(rememberScrollState())
+					.fillMaxWidth()
+					.padding(horizontal = 24.dp),
+			horizontalAlignment = Alignment.CenterHorizontally,
+			verticalArrangement = Arrangement.Center,
+		) {
+			Text(
+				text = stringResource(R.string.recovery_phrase_title),
+				style = MaterialTheme.typography.headlineSmall,
+				textAlign = TextAlign.Center,
+			)
 
-            Spacer(Modifier.height(8.dp))
+			Spacer(Modifier.height(8.dp))
 
-            Text(
-                text = stringResource(R.string.recovery_phrase_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+			Text(
+				text = stringResource(R.string.recovery_phrase_description),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				textAlign = TextAlign.Center,
+			)
 
-            if (uiState.phrase == null || uiState.phrase!!.words.isEmpty()) {
-                CircularProgressIndicator(
-                    modifier = Modifier.padding(20.dp)
-                )
-            } else {
-                RecoveryPhraseFlowRow(
-                    phrase = uiState.phrase,
-                    animated = true,
-                )
-            }
+			if (uiState.phrase == null || uiState.phrase!!.words.isEmpty()) {
+				CircularProgressIndicator(
+					modifier = Modifier.padding(20.dp),
+				)
+			} else {
+				RecoveryPhraseFlowRow(
+					phrase = uiState.phrase,
+					animated = true,
+				)
+			}
 
-            Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                IconButton(
-                    onClick = { selectFileLauncher.launch("photok-recovery-phrase.txt") },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_download),
-                        contentDescription = null,
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        val p = uiState.phrase ?: return@IconButton
-                        viewModel.handleUiEvent(RecoveryPhraseUiEvent.Share(context, p))
-                    },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_share),
-                        contentDescription = null,
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        uiState.phrase ?: return@IconButton
-                        viewModel.handleUiEvent(RecoveryPhraseUiEvent.ShowQrCode)
-                    },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_qr_code),
-                        contentDescription = null,
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        val p = uiState.phrase ?: return@IconButton
-                        viewModel.handleUiEvent(RecoveryPhraseUiEvent.CopyToClipboard(clipboard, p))
-                    },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_content_copy),
-                        contentDescription = null,
-                    )
-                }
-            }
+			Row(
+				horizontalArrangement = Arrangement.SpaceEvenly,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				IconButton(
+					onClick = { selectFileLauncher.launch("photok-recovery-phrase.txt") },
+				) {
+					Icon(
+						painter = painterResource(R.drawable.ic_download),
+						contentDescription = null,
+					)
+				}
+				IconButton(
+					onClick = {
+						val p = uiState.phrase ?: return@IconButton
+						viewModel.handleUiEvent(RecoveryPhraseUiEvent.Share(context, p))
+					},
+				) {
+					Icon(
+						painter = painterResource(R.drawable.ic_share),
+						contentDescription = null,
+					)
+				}
+				IconButton(
+					onClick = {
+						uiState.phrase ?: return@IconButton
+						viewModel.handleUiEvent(RecoveryPhraseUiEvent.ShowQrCode)
+					},
+				) {
+					Icon(
+						painter = painterResource(R.drawable.ic_qr_code),
+						contentDescription = null,
+					)
+				}
+				IconButton(
+					onClick = {
+						val p = uiState.phrase ?: return@IconButton
+						viewModel.handleUiEvent(RecoveryPhraseUiEvent.CopyToClipboard(clipboard, p))
+					},
+				) {
+					Icon(
+						painter = painterResource(R.drawable.ic_content_copy),
+						contentDescription = null,
+					)
+				}
+			}
 
-            Spacer(Modifier.height(8.dp))
+			Spacer(Modifier.height(8.dp))
 
-            Button(
-                onClick = { showConfirmDialog = true },
-                enabled = !uiState.inputs.loading,
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .fillMaxWidth(),
-            ) {
-                Text(text = stringResource(R.string.recovery_phrase_create_new))
-            }
+			Button(
+				onClick = { showConfirmDialog = true },
+				enabled = !uiState.inputs.loading,
+				modifier =
+					Modifier
+						.navigationBarsPadding()
+						.padding(horizontal = 20.dp)
+						.fillMaxWidth(),
+			) {
+				Text(text = stringResource(R.string.recovery_phrase_create_new))
+			}
 
-            Spacer(Modifier.height(8.dp))
-        }
-    }
+			Spacer(Modifier.height(8.dp))
+		}
+	}
 }
 
 // Vertical padding needed because animateContentSize() clips animation
 @Composable
 fun RecoveryPhraseFlowRow(
-    phrase: RecoveryPhrase?,
-    animated: Boolean,
-    verticalPadding: Dp = 20.dp,
-    modifier: Modifier = Modifier,
+	phrase: RecoveryPhrase?,
+	animated: Boolean,
+	verticalPadding: Dp = 20.dp,
+	modifier: Modifier = Modifier,
 ) {
-    val isPreview = LocalInspectionMode.current
+	val isPreview = LocalInspectionMode.current
 
-    var words by remember {
-        mutableStateOf(phrase?.words.orEmpty())
-    }
+	var words by remember {
+		mutableStateOf(phrase?.words.orEmpty())
+	}
 
-    LaunchedEffect(phrase) {
-        if (phrase != null) {
-            words = phrase.words
-        }
-    }
+	LaunchedEffect(phrase) {
+		if (phrase != null) {
+			words = phrase.words
+		}
+	}
 
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        maxItemsInEachRow = if (words.size > 12) 4 else 3,
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .padding(vertical = verticalPadding)
-    ) {
-        words.forEachIndexed { index, word ->
-            var show by remember(phrase, animated) {
-                mutableStateOf(!animated || isPreview)
-            }
+	FlowRow(
+		horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+		verticalArrangement = Arrangement.spacedBy(8.dp),
+		maxItemsInEachRow = if (words.size > 12) 4 else 3,
+		modifier =
+			modifier
+				.fillMaxWidth()
+				.animateContentSize()
+				.padding(vertical = verticalPadding),
+	) {
+		words.forEachIndexed { index, word ->
+			var show by remember(phrase, animated) {
+				mutableStateOf(!animated || isPreview)
+			}
 
-            LaunchedEffect(phrase) {
-                if (animated) {
-                    delay(300L)
+			LaunchedEffect(phrase) {
+				if (animated) {
+					delay(300L)
 
-                    delay((index.toLong() + 1) * 20)
-                    show = true
-                }
-            }
+					delay((index.toLong() + 1) * 20)
+					show = true
+				}
+			}
 
-            val scale by animateFloatAsState(
-                targetValue = if (show) 1f else 0f,
-                animationSpec = spring(
-                    dampingRatio = 0.6f,
-                    stiffness = 200f
-                ),
-                visibilityThreshold = 0.01f,
-            )
+			val scale by animateFloatAsState(
+				targetValue = if (show) 1f else 0f,
+				animationSpec =
+					spring(
+						dampingRatio = 0.6f,
+						stiffness = 200f,
+					),
+				visibilityThreshold = 0.01f,
+			)
 
-            WordChip(
-                number = index + 1,
-                word = word,
-                modifier = Modifier.graphicsLayer {
-                    this.scaleX = scale
-                    this.scaleY = scale
-                    this.alpha = scale
-                }
-            )
-        }
-    }
+			WordChip(
+				number = index + 1,
+				word = word,
+				modifier =
+					Modifier.graphicsLayer {
+						this.scaleX = scale
+						this.scaleY = scale
+						this.alpha = scale
+					},
+			)
+		}
+	}
 }
 
 @Composable
 internal fun WordChip(
-    number: Int,
-    word: String,
-    modifier: Modifier = Modifier,
+	number: Int,
+	word: String,
+	modifier: Modifier = Modifier,
 ) {
-    val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val rotation = remember { Animatable(0f) }
+	val haptic = LocalHapticFeedback.current
+	val scope = rememberCoroutineScope()
+	val rotation = remember { Animatable(0f) }
 
-    Box(
-        modifier = modifier
-            .graphicsLayer { rotationZ = rotation.value }
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-            ) {
-                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                scope.launch {
-                    if (rotation.isRunning) rotation.stop()
-                    rotation.snapTo(12f)
-                    rotation.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 500f))
-                }
-            }
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp),
-            )
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(8.dp),
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "$number",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = word,
-                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
+	Box(
+		modifier =
+			modifier
+				.graphicsLayer { rotationZ = rotation.value }
+				.clickable(
+					indication = null,
+					interactionSource = remember { MutableInteractionSource() },
+				) {
+					haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+					scope.launch {
+						if (rotation.isRunning) rotation.stop()
+						rotation.snapTo(12f)
+						rotation.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 500f))
+					}
+				}.background(
+					color = MaterialTheme.colorScheme.surfaceVariant,
+					shape = RoundedCornerShape(8.dp),
+				).border(
+					width = 1.dp,
+					color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+					shape = RoundedCornerShape(8.dp),
+				).padding(horizontal = 12.dp, vertical = 8.dp),
+	) {
+		Column(horizontalAlignment = Alignment.CenterHorizontally) {
+			Text(
+				text = "$number",
+				style = MaterialTheme.typography.labelSmall,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+			)
+			Text(
+				text = word,
+				style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+				color = MaterialTheme.colorScheme.onSurface,
+			)
+		}
+	}
 }

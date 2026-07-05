@@ -60,90 +60,110 @@ import javax.inject.Singleton
  * @since v13 — Sprint 6 / M5 cache rotation
  */
 @Singleton
-class CacheRotationUseCase @Inject constructor(
-    private val app: Application,
-    private val photoDao: PhotoDao,
-    private val config: Config,
-) {
-    /**
-     * Run both age-based and size-based rotation. Returns the count of
-     * thumbnails deleted.
-     *
-     * Safe to call on every app start — both policies are no-ops when their
-     * respective limits are 0, and the actual file deletions are best-effort
-     * (failures are logged but don't propagate).
-     */
-    suspend fun run(): Int {
-        val maxAgeDays = config.cacheMaxAgeDays
-        val maxSizeMb = config.cacheMaxSizeMb
-        if (maxAgeDays <= 0 && maxSizeMb <= 0) return 0
+class CacheRotationUseCase
+	@Inject
+	constructor(
+		private val app: Application,
+		private val photoDao: PhotoDao,
+		private val config: Config,
+	) {
+		/**
+		 * Run both age-based and size-based rotation. Returns the count of
+		 * thumbnails deleted.
+		 *
+		 * Safe to call on every app start — both policies are no-ops when their
+		 * respective limits are 0, and the actual file deletions are best-effort
+		 * (failures are logged but don't propagate).
+		 */
+		suspend fun run(): Int {
+			val maxAgeDays = config.cacheMaxAgeDays
+			val maxSizeMb = config.cacheMaxSizeMb
+			if (maxAgeDays <= 0 && maxSizeMb <= 0) return 0
 
-        // Fetch UPLOADED photos only — LOCAL_ONLY photos are never evicted.
-        // We use the vault-agnostic findPhotosInSyncState (the cache is
-        // shared across all vaults in the device's filesDir, so vault
-        // scoping doesn't apply here — we can delete any UPLOADED photo's
-        // thumbnail regardless of which vault it belongs to).
-        val uploadedPhotos = try {
-            // Pass the current vault_id (or null fallback) — the DAO query
-            // filters by vault_id, but since cache rotation is a global
-            // concern, we pass a sentinel that matches all vaults via the
-            // NULL-or-equal pattern. The simpler approach: just call the
-            // vault-agnostic getAll() and filter in-memory.
-            photoDao.getAll().filter { it.syncState == SyncState.UPLOADED }
-        } catch (e: Exception) {
-            Timber.w(e, "CacheRotation: failed to query UPLOADED photos")
-            return 0
-        }
+			// Fetch UPLOADED photos only — LOCAL_ONLY photos are never evicted.
+			// We use the vault-agnostic findPhotosInSyncState (the cache is
+			// shared across all vaults in the device's filesDir, so vault
+			// scoping doesn't apply here — we can delete any UPLOADED photo's
+			// thumbnail regardless of which vault it belongs to).
+			val uploadedPhotos =
+				try {
+					// Pass the current vault_id (or null fallback) — the DAO query
+					// filters by vault_id, but since cache rotation is a global
+					// concern, we pass a sentinel that matches all vaults via the
+					// NULL-or-equal pattern. The simpler approach: just call the
+					// vault-agnostic getAll() and filter in-memory.
+					photoDao.getAll().filter { it.syncState == SyncState.UPLOADED }
+				} catch (e: Exception) {
+					Timber.w(e, "CacheRotation: failed to query UPLOADED photos")
+					return 0
+				}
 
-        var deleted = 0
+			var deleted = 0
 
-        // ─── Age-based rotation ────────────────────────────────────────────
-        if (maxAgeDays > 0) {
-            val cutoff = System.currentTimeMillis() - maxAgeDays * 24L * 60 * 60 * 1000
-            for (photo in uploadedPhotos) {
-                val tnFile = File(app.filesDir, internalThumbnailFileName(photo.uuid))
-                if (!tnFile.exists()) continue
-                if (tnFile.lastModified() < cutoff) {
-                    if (tnFile.delete()) {
-                        deleted++
-                        Timber.d("CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
-                            tnFile.name, tnFile.lastModified(), cutoff)
-                    }
-                }
-            }
-        }
+			// ─── Age-based rotation ────────────────────────────────────────────
+			if (maxAgeDays > 0) {
+				val cutoff = System.currentTimeMillis() - maxAgeDays * 24L * 60 * 60 * 1000
+				for (photo in uploadedPhotos) {
+					val tnFile = File(app.filesDir, internalThumbnailFileName(photo.uuid))
+					if (!tnFile.exists()) continue
+					if (tnFile.lastModified() < cutoff) {
+						if (tnFile.delete()) {
+							deleted++
+							Timber.d(
+								"CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
+								tnFile.name,
+								tnFile.lastModified(),
+								cutoff,
+							)
+						}
+					}
+				}
+			}
 
-        // ─── Size-based rotation ───────────────────────────────────────────
-        if (maxSizeMb > 0) {
-            val maxBytes = maxSizeMb.toLong() * 1024 * 1024
-            // Collect all existing thumbnail files for UPLOADED photos,
-            // sorted oldest-first (LRU eviction).
-            val tnFiles = uploadedPhotos.mapNotNull { photo ->
-                val f = File(app.filesDir, internalThumbnailFileName(photo.uuid))
-                if (f.exists()) f else null
-            }.sortedBy { it.lastModified() }
+			// ─── Size-based rotation ───────────────────────────────────────────
+			if (maxSizeMb > 0) {
+				val maxBytes = maxSizeMb.toLong() * 1024 * 1024
+				// Collect all existing thumbnail files for UPLOADED photos,
+				// sorted oldest-first (LRU eviction).
+				val tnFiles =
+					uploadedPhotos
+						.mapNotNull { photo ->
+							val f = File(app.filesDir, internalThumbnailFileName(photo.uuid))
+							if (f.exists()) f else null
+						}.sortedBy { it.lastModified() }
 
-            var totalSize = tnFiles.sumOf { it.length() }
-            if (totalSize > maxBytes) {
-                for (f in tnFiles) {
-                    if (totalSize <= maxBytes) break
-                    val size = f.length()
-                    if (f.delete()) {
-                        totalSize -= size
-                        deleted++
-                        Timber.d("CacheRotation (size): deleted %s (size=%d, totalNow=%d, max=%d)",
-                            f.name, size, totalSize, maxBytes)
-                    }
-                }
-            }
-        }
+				var totalSize = tnFiles.sumOf { it.length() }
+				if (totalSize > maxBytes) {
+					for (f in tnFiles) {
+						if (totalSize <= maxBytes) break
+						val size = f.length()
+						if (f.delete()) {
+							totalSize -= size
+							deleted++
+							Timber.d(
+								"CacheRotation (size): deleted %s (size=%d, totalNow=%d, max=%d)",
+								f.name,
+								size,
+								totalSize,
+								maxBytes,
+							)
+						}
+					}
+				}
+			}
 
-        if (deleted > 0) {
-            Timber.i("CacheRotation: deleted %d thumbnails (ageDays=%d, sizeMb=%d)",
-                deleted, maxAgeDays, maxSizeMb)
-            android.util.Log.i("RcloneDiag",
-                "CacheRotation: deleted $deleted thumbnails (ageDays=$maxAgeDays, sizeMb=$maxSizeMb)")
-        }
-        return deleted
-    }
-}
+			if (deleted > 0) {
+				Timber.i(
+					"CacheRotation: deleted %d thumbnails (ageDays=%d, sizeMb=%d)",
+					deleted,
+					maxAgeDays,
+					maxSizeMb,
+				)
+				android.util.Log.i(
+					"RcloneDiag",
+					"CacheRotation: deleted $deleted thumbnails (ageDays=$maxAgeDays, sizeMb=$maxSizeMb)",
+				)
+			}
+			return deleted
+		}
+	}

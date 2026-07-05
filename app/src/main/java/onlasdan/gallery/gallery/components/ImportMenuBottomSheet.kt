@@ -41,12 +41,10 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider
 import androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,278 +60,289 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.model.database.entity.PhotoType
 import onlasdan.gallery.other.extensions.launchAndIgnoreTimer
 import onlasdan.gallery.settings.ui.compose.LocalConfig
 import onlasdan.gallery.ui.theme.AppTheme
 import onlasdan.gallery.ui.theme.Colors
-import kotlinx.coroutines.launch
 
 sealed interface ImportChoice {
-    data class AddNewFiles(val fileUris: List<Uri>) : ImportChoice
-    data class RestoreBackup(val backupUri: Uri) : ImportChoice
-    /**
-     * Sprint 3 / M10 — Photo Picker import.
-     *
-     * Photo Picker URIs (`content://media/picker/...`) do NOT expose
-     * `RELATIVE_PATH`, so the auto-album-from-folder logic in
-     * PhotoRepository.ensureAlbumForPhoto won't fire for these URIs.
-     *
-     * The caller (gallery) shows a Path Maker dialog after the picker
-     * returns to let the user pick which album the photos go into.
-     * The chosen album name is passed via [targetAlbum].
-     *
-     * @since v11 — Sprint 3 / M10 multi-vault
-     */
-    data class AddFromPhotoPicker(
-        val fileUris: List<Uri>,
-        val targetAlbum: String,
-    ) : ImportChoice
+	data class AddNewFiles(
+		val fileUris: List<Uri>,
+	) : ImportChoice
+
+	data class RestoreBackup(
+		val backupUri: Uri,
+	) : ImportChoice
+
+	/**
+	 * Sprint 3 / M10 — Photo Picker import.
+	 *
+	 * Photo Picker URIs (`content://media/picker/...`) do NOT expose
+	 * `RELATIVE_PATH`, so the auto-album-from-folder logic in
+	 * PhotoRepository.ensureAlbumForPhoto won't fire for these URIs.
+	 *
+	 * The caller (gallery) shows a Path Maker dialog after the picker
+	 * returns to let the user pick which album the photos go into.
+	 * The chosen album name is passed via [targetAlbum].
+	 *
+	 * @since v11 — Sprint 3 / M10 multi-vault
+	 */
+	data class AddFromPhotoPicker(
+		val fileUris: List<Uri>,
+		val targetAlbum: String,
+	) : ImportChoice
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportMenuBottomSheet(
-    open: Boolean,
-    onDismissRequest: () -> Unit,
-    onImportChoice: (ImportChoice) -> Unit,
-    albumName: String?,
-    modifier: Modifier = Modifier,
+	open: Boolean,
+	onDismissRequest: () -> Unit,
+	onImportChoice: (ImportChoice) -> Unit,
+	albumName: String?,
+	modifier: Modifier = Modifier,
 ) {
-    if (open) {
-        ModalBottomSheet(
-            modifier = modifier,
-            onDismissRequest = onDismissRequest,
-            dragHandle = {
-                BottomSheetDefaults.DragHandle()
-            }
-        ) {
-            ImportMenuDialogContent(
-                onImportChoice = onImportChoice,
-                onDismissRequest = onDismissRequest,
-                albumName = albumName,
-            )
-        }
-    }
+	if (open) {
+		ModalBottomSheet(
+			modifier = modifier,
+			onDismissRequest = onDismissRequest,
+			dragHandle = {
+				BottomSheetDefaults.DragHandle()
+			},
+		) {
+			ImportMenuDialogContent(
+				onImportChoice = onImportChoice,
+				onDismissRequest = onDismissRequest,
+				albumName = albumName,
+			)
+		}
+	}
 }
 
 @Composable
 private fun ImportMenuDialogContent(
-    onDismissRequest: () -> Unit,
-    onImportChoice: (ImportChoice) -> Unit,
-    albumName: String?,
-    modifier: Modifier = Modifier
+	onDismissRequest: () -> Unit,
+	onImportChoice: (ImportChoice) -> Unit,
+	albumName: String?,
+	modifier: Modifier = Modifier,
 ) {
-    val onImportNewItems: (List<Uri>) -> Unit = { urisToImport ->
-        onDismissRequest()
+	val onImportNewItems: (List<Uri>) -> Unit = { urisToImport ->
+		onDismissRequest()
 
-        if (urisToImport.isNotEmpty()) {
-            onImportChoice(
-                ImportChoice.AddNewFiles(fileUris = urisToImport)
-            )
-        }
-    }
+		if (urisToImport.isNotEmpty()) {
+			onImportChoice(
+				ImportChoice.AddNewFiles(fileUris = urisToImport),
+			)
+		}
+	}
 
-    val openDocumentLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { onImportNewItems(it) }
+	val openDocumentLauncher =
+		rememberLauncherForActivityResult(
+			ActivityResultContracts.OpenMultipleDocuments(),
+		) { onImportNewItems(it) }
 
-    val restoreBackupLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-            onDismissRequest()
-            it ?: return@rememberLauncherForActivityResult
+	val restoreBackupLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+			onDismissRequest()
+			it ?: return@rememberLauncherForActivityResult
 
-            onImportChoice(
-                ImportChoice.RestoreBackup(backupUri = it)
-            )
-        }
+			onImportChoice(
+				ImportChoice.RestoreBackup(backupUri = it),
+			)
+		}
 
-    // ─── Sprint 3 / M10 — Embedded Photo Picker ──────────────────────────
-    // PickVisualMedia is the system Photo Picker (Android 13+). It returns
-    // URIs that do NOT expose RELATIVE_PATH — by design, for privacy. The
-    // auto-album-from-folder logic in PhotoRepository.ensureAlbumForPhoto
-    // won't fire for these URIs (it skips when albumPath equals filename,
-    // which is the SAF/picker fallback).
-    //
-    // After the picker returns, we show a Path Maker dialog (state below)
-    // to let the user pick which album the photos go into. The dialog's
-    // "Confirm" button emits ImportChoice.AddFromPhotoPicker with the
-    // chosen target album name.
-    var pendingPickerUris by remember { mutableStateOf<List<Uri>?>(null) }
+	// ─── Sprint 3 / M10 — Embedded Photo Picker ──────────────────────────
+	// PickVisualMedia is the system Photo Picker (Android 13+). It returns
+	// URIs that do NOT expose RELATIVE_PATH — by design, for privacy. The
+	// auto-album-from-folder logic in PhotoRepository.ensureAlbumForPhoto
+	// won't fire for these URIs (it skips when albumPath equals filename,
+	// which is the SAF/picker fallback).
+	//
+	// After the picker returns, we show a Path Maker dialog (state below)
+	// to let the user pick which album the photos go into. The dialog's
+	// "Confirm" button emits ImportChoice.AddFromPhotoPicker with the
+	// chosen target album name.
+	var pendingPickerUris by remember { mutableStateOf<List<Uri>?>(null) }
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            pendingPickerUris = uris
-        }
-    }
+	val photoPickerLauncher =
+		rememberLauncherForActivityResult(
+			ActivityResultContracts.PickMultipleVisualMedia(),
+		) { uris ->
+			if (!uris.isNullOrEmpty()) {
+				pendingPickerUris = uris
+			}
+		}
 
-    val config = LocalConfig.current
-    val isPreview = LocalInspectionMode.current
+	val config = LocalConfig.current
+	val isPreview = LocalInspectionMode.current
 
-    val activity = LocalActivity.current
+	val activity = LocalActivity.current
 
-    Column(
-        modifier = modifier.padding(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        ImportMenuItem(
-            text = stringResource(R.string.import_menu_new_files_title),
-            description = stringResource(R.string.import_menu_new_files_description),
-            iconPainter = painterResource(R.drawable.ic_add),
-            chips = { modifier ->
-                val showWarningChip = remember { config?.deleteImportedFiles == true || isPreview }
+	Column(
+		modifier = modifier.padding(bottom = 12.dp),
+		verticalArrangement = Arrangement.spacedBy(12.dp),
+	) {
+		ImportMenuItem(
+			text = stringResource(R.string.import_menu_new_files_title),
+			description = stringResource(R.string.import_menu_new_files_description),
+			iconPainter = painterResource(R.drawable.ic_add),
+			chips = { modifier ->
+				val showWarningChip = remember { config?.deleteImportedFiles == true || isPreview }
 
-                if (showWarningChip) {
-                    ImportWarningChip(modifier = modifier)
-                }
-                if (albumName != null) {
-                    AlbumNameChip(albumName, modifier = modifier)
-                }
-            },
-            onClick = {
-                openDocumentLauncher.launchAndIgnoreTimer(
-                    input = PhotoType.entries.map { it.mimeType }.toTypedArray(),
-                    activity = activity,
-                )
-            }
-        )
+				if (showWarningChip) {
+					ImportWarningChip(modifier = modifier)
+				}
+				if (albumName != null) {
+					AlbumNameChip(albumName, modifier = modifier)
+				}
+			},
+			onClick = {
+				openDocumentLauncher.launchAndIgnoreTimer(
+					input = PhotoType.entries.map { it.mimeType }.toTypedArray(),
+					activity = activity,
+				)
+			},
+		)
 
-        // ─── Sprint 3 / M10 — Photo Picker entry ──────────────────────────
-        ImportMenuItem(
-            text = stringResource(R.string.import_menu_photo_picker_title),
-            description = stringResource(R.string.import_menu_photo_picker_description),
-            iconPainter = painterResource(R.drawable.ic_image),
-            chips = { modifier ->
-                NoFolderInfoChip(modifier = modifier)
-            },
-            onClick = {
-                photoPickerLauncher.launchAndIgnoreTimer(
-                    input = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
-                    activity = activity,
-                )
-            }
-        )
+		// ─── Sprint 3 / M10 — Photo Picker entry ──────────────────────────
+		ImportMenuItem(
+			text = stringResource(R.string.import_menu_photo_picker_title),
+			description = stringResource(R.string.import_menu_photo_picker_description),
+			iconPainter = painterResource(R.drawable.ic_image),
+			chips = { modifier ->
+				NoFolderInfoChip(modifier = modifier)
+			},
+			onClick = {
+				photoPickerLauncher.launchAndIgnoreTimer(
+					input = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+					activity = activity,
+				)
+			},
+		)
 
-        HorizontalDivider()
+		HorizontalDivider()
 
-        ImportMenuItem(
-            text = stringResource(R.string.import_menu_restore_title),
-            description = stringResource(R.string.import_menu_restore_description),
-            iconPainter = painterResource(R.drawable.ic_backup_restore),
-            onClick = {
-                restoreBackupLauncher.launchAndIgnoreTimer(
-                    input = arrayOf("application/zip"),
-                    activity = activity
-                )
-            }
-        )
-    }
+		ImportMenuItem(
+			text = stringResource(R.string.import_menu_restore_title),
+			description = stringResource(R.string.import_menu_restore_description),
+			iconPainter = painterResource(R.drawable.ic_backup_restore),
+			onClick = {
+				restoreBackupLauncher.launchAndIgnoreTimer(
+					input = arrayOf("application/zip"),
+					activity = activity,
+				)
+			},
+		)
+	}
 
-    // ─── Sprint 3 / M10 — Path Maker dialog (shown after picker returns) ──
-    pendingPickerUris?.let { uris ->
-        PathMakerDialog(
-            photoCount = uris.size,
-            existingAlbums = albumName?.let { listOf(it) } ?: emptyList(),
-            onConfirm = { chosenAlbum ->
-                val urisToImport = uris
-                pendingPickerUris = null
-                onDismissRequest()
-                onImportChoice(
-                    ImportChoice.AddFromPhotoPicker(
-                        fileUris = urisToImport,
-                        targetAlbum = chosenAlbum,
-                    )
-                )
-            },
-            onDismiss = {
-                pendingPickerUris = null
-            },
-        )
-    }
+	// ─── Sprint 3 / M10 — Path Maker dialog (shown after picker returns) ──
+	pendingPickerUris?.let { uris ->
+		PathMakerDialog(
+			photoCount = uris.size,
+			existingAlbums = albumName?.let { listOf(it) } ?: emptyList(),
+			onConfirm = { chosenAlbum ->
+				val urisToImport = uris
+				pendingPickerUris = null
+				onDismissRequest()
+				onImportChoice(
+					ImportChoice.AddFromPhotoPicker(
+						fileUris = urisToImport,
+						targetAlbum = chosenAlbum,
+					),
+				)
+			},
+			onDismiss = {
+				pendingPickerUris = null
+			},
+		)
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportWarningChip(modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
-    val tooltipState = rememberTooltipState(isPersistent = false)
+	val scope = rememberCoroutineScope()
+	val tooltipState = rememberTooltipState(isPersistent = false)
 
-    TooltipBox(
-        positionProvider = rememberTooltipPositionProvider(
-            positioning = TooltipAnchorPosition.Above,
-        ),
-        state = tooltipState,
-        tooltip = {
-            PlainTooltip(shape = RoundedCornerShape(8.dp)) {
-                Text(text = stringResource(R.string.import_menu_delete_warning))
-            }
-        }
-    ) {
-        AssistChip(
-            modifier = modifier,
-            onClick = { scope.launch { tooltipState.show() } },
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                )
-            },
-            label = {
-                Text(
-                    text = stringResource(R.string.import_menu_delete_warning),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            colors = AssistChipDefaults.assistChipColors(
-                leadingIconContentColor = Colors.Warning,
-                labelColor = Colors.Warning,
-            ),
-        )
-    }
+	TooltipBox(
+		positionProvider =
+			rememberTooltipPositionProvider(
+				positioning = TooltipAnchorPosition.Above,
+			),
+		state = tooltipState,
+		tooltip = {
+			PlainTooltip(shape = RoundedCornerShape(8.dp)) {
+				Text(text = stringResource(R.string.import_menu_delete_warning))
+			}
+		},
+	) {
+		AssistChip(
+			modifier = modifier,
+			onClick = { scope.launch { tooltipState.show() } },
+			leadingIcon = {
+				Icon(
+					painter = painterResource(R.drawable.ic_warning),
+					contentDescription = null,
+				)
+			},
+			label = {
+				Text(
+					text = stringResource(R.string.import_menu_delete_warning),
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+				)
+			},
+			colors =
+				AssistChipDefaults.assistChipColors(
+					leadingIconContentColor = Colors.Warning,
+					labelColor = Colors.Warning,
+				),
+		)
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumNameChip(
-    albumName: String,
-    modifier: Modifier = Modifier,
+	albumName: String,
+	modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val tooltipState = rememberTooltipState(isPersistent = false)
+	val scope = rememberCoroutineScope()
+	val tooltipState = rememberTooltipState(isPersistent = false)
 
-    TooltipBox(
-        positionProvider = rememberTooltipPositionProvider(
-            positioning = TooltipAnchorPosition.Above,
-        ),
-        state = tooltipState,
-        tooltip = {
-            PlainTooltip(shape = RoundedCornerShape(8.dp)) {
-                Text(text = stringResource(R.string.import_menu_album_tooltip, albumName.trim()))
-            }
-        }
-    ) {
-        AssistChip(
-            modifier = modifier,
-            onClick = { scope.launch { tooltipState.show() } },
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_folder),
-                    contentDescription = null,
-                )
-            },
-            label = {
-                Text(
-                    text = albumName.trim(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-        )
-    }
+	TooltipBox(
+		positionProvider =
+			rememberTooltipPositionProvider(
+				positioning = TooltipAnchorPosition.Above,
+			),
+		state = tooltipState,
+		tooltip = {
+			PlainTooltip(shape = RoundedCornerShape(8.dp)) {
+				Text(text = stringResource(R.string.import_menu_album_tooltip, albumName.trim()))
+			}
+		},
+	) {
+		AssistChip(
+			modifier = modifier,
+			onClick = { scope.launch { tooltipState.show() } },
+			leadingIcon = {
+				Icon(
+					painter = painterResource(R.drawable.ic_folder),
+					contentDescription = null,
+				)
+			},
+			label = {
+				Text(
+					text = albumName.trim(),
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+				)
+			},
+		)
+	}
 }
 
 val IconSize = 24.dp
@@ -342,94 +351,95 @@ val DescriptionStartPadding = IconSize + IconEndPadding
 
 @Composable
 fun ImportMenuItem(
-    text: String,
-    description: String,
-    iconPainter: Painter,
-    onClick: () -> Unit,
-    chips: @Composable (Modifier) -> Unit = {},
-    modifier: Modifier = Modifier,
+	text: String,
+	description: String,
+	iconPainter: Painter,
+	onClick: () -> Unit,
+	chips: @Composable (Modifier) -> Unit = {},
+	modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(
-                start = 24.dp,
-                end = 24.dp * 2,
-            ),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                modifier = Modifier.size(IconSize),
-                painter = iconPainter,
-                contentDescription = null,
-            )
+	Column(
+		modifier =
+			modifier
+				.fillMaxWidth()
+				.clickable { onClick() }
+				.padding(
+					start = 24.dp,
+					end = 24.dp * 2,
+				),
+		verticalArrangement = Arrangement.spacedBy(4.dp),
+	) {
+		Row(
+			horizontalArrangement = Arrangement.spacedBy(4.dp),
+			verticalAlignment = Alignment.CenterVertically,
+		) {
+			Icon(
+				modifier = Modifier.size(IconSize),
+				painter = iconPainter,
+				contentDescription = null,
+			)
 
-            Text(
-                text = text,
-                style = MaterialTheme.typography.titleLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+			Text(
+				text = text,
+				style = MaterialTheme.typography.titleLarge,
+				maxLines = 2,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
 
-        Text(
-            modifier = Modifier.padding(start = DescriptionStartPadding),
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+		Text(
+			modifier = Modifier.padding(start = DescriptionStartPadding),
+			text = description,
+			style = MaterialTheme.typography.bodyMedium,
+		)
 
-        Column {
-            chips(Modifier.padding(start = DescriptionStartPadding))
-        }
-    }
+		Column {
+			chips(Modifier.padding(start = DescriptionStartPadding))
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @PreviewLightDark()
 @Composable
 private fun Preview() {
-    AppTheme {
-        ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
-            ImportMenuDialogContent(
-                onDismissRequest = {},
-                onImportChoice = {},
-                albumName = null,
-            )
-        }
-    }
+	AppTheme {
+		ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
+			ImportMenuDialogContent(
+				onDismissRequest = {},
+				onImportChoice = {},
+				albumName = null,
+			)
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview
 @Composable
 private fun PreviewAlbum() {
-    AppTheme {
-        ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
-            ImportMenuDialogContent(
-                onDismissRequest = {},
-                onImportChoice = {},
-                albumName = stringResource(R.string.gallery_albums_create_placeholder),
-            )
-        }
-    }
+	AppTheme {
+		ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
+			ImportMenuDialogContent(
+				onDismissRequest = {},
+				onImportChoice = {},
+				albumName = stringResource(R.string.gallery_albums_create_placeholder),
+			)
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview(widthDp = 280, heightDp = 600, locale = "de")
 @Composable
 private fun SmallPreview() {
-    AppTheme {
-        ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
-            ImportMenuDialogContent(
-                onDismissRequest = {},
-                onImportChoice = {},
-                albumName = null,
-            )
-        }
-    }
+	AppTheme {
+		ModalBottomSheet(sheetState = rememberStandardBottomSheetState(), onDismissRequest = {}) {
+			ImportMenuDialogContent(
+				onDismissRequest = {},
+				onImportChoice = {},
+				albumName = null,
+			)
+		}
+	}
 }

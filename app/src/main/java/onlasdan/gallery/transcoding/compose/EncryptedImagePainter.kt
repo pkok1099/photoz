@@ -31,18 +31,20 @@ import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
  */
 @Composable
 fun rememberEncryptedImagePainter(
-    data: EncryptedImageRequestData,
-    @DrawableRes placeholder: Int = R.color.lightGray,
+	data: EncryptedImageRequestData,
+	@DrawableRes placeholder: Int = R.color.lightGray,
 ): AsyncImagePainter {
-    val context = LocalContext.current
+	val context = LocalContext.current
 
-    return rememberAsyncImagePainter(
-        model = ImageRequest.Builder(context)
-            .data(data)
-            .placeholder(placeholder)
-            .fallback(R.color.design_default_color_error)
-            .error(R.color.design_default_color_error)
-            .build(),
-        imageLoader = LocalEncryptedImageLoader.current ?: LocalContext.current.imageLoader
-    )
+	return rememberAsyncImagePainter(
+		model =
+			ImageRequest
+				.Builder(context)
+				.data(data)
+				.placeholder(placeholder)
+				.fallback(R.color.design_default_color_error)
+				.error(R.color.design_default_color_error)
+				.build(),
+		imageLoader = LocalEncryptedImageLoader.current ?: LocalContext.current.imageLoader,
+	)
 }

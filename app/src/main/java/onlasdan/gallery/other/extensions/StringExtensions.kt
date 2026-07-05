@@ -20,7 +20,7 @@ package onlasdan.gallery.other.extensions
  * Returns an empty string.
  */
 val String.Companion.empty: String
-    get() = ""
+	get() = ""
 
 /**
  * Remove a sequence from a string.

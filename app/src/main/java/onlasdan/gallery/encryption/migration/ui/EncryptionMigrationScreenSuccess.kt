@@ -39,56 +39,54 @@ import onlasdan.gallery.ui.components.AppName
 import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
-fun EncryptionMigrationScreenSuccess(
-    uiState: LegacyEncryptionMigrationUiState.Success
-) {
-    Scaffold { contentPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
+fun EncryptionMigrationScreenSuccess(uiState: LegacyEncryptionMigrationUiState.Success) {
+	Scaffold { contentPadding ->
+		Box(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(contentPadding),
+		) {
+			Column(
+				modifier =
+					Modifier
+						.verticalScroll(rememberScrollState())
+						.align(Alignment.Center),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.spacedBy(24.dp),
+			) {
+				AppName()
 
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
+				Text(
+					text = stringResource(R.string.migration_done_title),
+					fontSize = 22.sp,
+					fontWeight = FontWeight.Bold,
+				)
 
-                AppName()
+				Column(
+					horizontalAlignment = Alignment.CenterHorizontally,
+					verticalArrangement = Arrangement.spacedBy(12.dp),
+				) {
+					LoadingIndicator(
+						progressPercentage = 1f,
+					)
 
-                Text(
-                    text = stringResource(R.string.migration_done_title),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    LoadingIndicator(
-                        progressPercentage = 1f
-                    )
-
-                    Text(
-                        text = stringResource(R.string.migration_done_progress),
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
-        }
-    }
+					Text(
+						text = stringResource(R.string.migration_done_progress),
+						color = MaterialTheme.colorScheme.secondary,
+					)
+				}
+			}
+		}
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun PreviewSuccess() {
-    AppTheme {
-        EncryptionMigrationScreenSuccess(
-            uiState = LegacyEncryptionMigrationUiState.Success
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenSuccess(
+			uiState = LegacyEncryptionMigrationUiState.Success,
+		)
+	}
 }

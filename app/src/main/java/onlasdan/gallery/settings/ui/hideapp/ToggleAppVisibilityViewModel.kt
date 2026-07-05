@@ -21,14 +21,14 @@ import android.view.View
 import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
 import onlasdan.gallery.R
 import onlasdan.gallery.other.extensions.empty
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.settings.ui.hideapp.usecase.ToggleMainComponentUseCase
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -38,93 +38,96 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class ToggleAppVisibilityViewModel @Inject constructor(
-    private val app: Application,
-    private val config: Config,
-    private val toggleMainComponentUseCase: ToggleMainComponentUseCase
-) : ObservableViewModel(app) {
+class ToggleAppVisibilityViewModel
+	@Inject
+	constructor(
+		private val app: Application,
+		private val config: Config,
+		private val toggleMainComponentUseCase: ToggleMainComponentUseCase,
+	) : ObservableViewModel(app) {
+		@get:Bindable
+		var title: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.title, value)
+			}
 
-    @get:Bindable
-    var title: String = String.empty
-        set(value) {
-            field = value
-            notifyChange(BR.title, value)
-        }
+		@get:Bindable
+		var buttonText: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.buttonText, value)
+			}
 
-    @get:Bindable
-    var buttonText: String = String.empty
-        set(value) {
-            field = value
-            notifyChange(BR.buttonText, value)
-        }
+		@get:Bindable
+		var buttonEnabled: Boolean = false
+			set(value) {
+				field = value
+				notifyChange(BR.buttonEnabled, value)
+			}
 
-    @get:Bindable
-    var buttonEnabled: Boolean = false
-        set(value) {
-            field = value
-            notifyChange(BR.buttonEnabled, value)
-        }
+		@get:Bindable
+		var currentState: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.currentState, value)
+			}
 
-    @get:Bindable
-    var currentState: String = String.empty
-        set(value) {
-            field = value
-            notifyChange(BR.currentState, value)
-        }
+		@get:Bindable
+		var hintVisibility: Int = View.VISIBLE
+			set(value) {
+				field = value
+				notifyChange(BR.hintVisibility, value)
+			}
 
-    @get:Bindable
-    var hintVisibility: Int = View.VISIBLE
-        set(value) {
-            field = value
-            notifyChange(BR.hintVisibility, value)
-        }
+		var confirmText: String = String.empty
 
-    var confirmText: String = String.empty
+		override fun setup() {
+			super.setup()
+			if (toggleMainComponentUseCase.isMainComponentDisabled()) {
+				title = app.getString(R.string.hide_app_title_show)
+				currentState = app.getString(R.string.hide_app_status_hidden)
+				hintVisibility = View.GONE
+				buttonText = app.getString(R.string.hide_app_title_show)
+				buttonEnabled = true
+				confirmText = app.getString(R.string.hide_app_confirm_show)
+			} else {
+				title = app.getString(R.string.hide_app_title_hide)
+				currentState = app.getString(R.string.hide_app_status_visible)
+				hintVisibility = View.VISIBLE
+				confirmText = app.getString(R.string.hide_app_confirm_hide)
+				startButtonTextCountDown()
+			}
+		}
 
-    override fun setup() {
-        super.setup()
-        if (toggleMainComponentUseCase.isMainComponentDisabled()) {
-            title = app.getString(R.string.hide_app_title_show)
-            currentState = app.getString(R.string.hide_app_status_hidden)
-            hintVisibility = View.GONE
-            buttonText = app.getString(R.string.hide_app_title_show)
-            buttonEnabled = true
-            confirmText = app.getString(R.string.hide_app_confirm_show)
-        } else {
-            title = app.getString(R.string.hide_app_title_hide)
-            currentState = app.getString(R.string.hide_app_status_visible)
-            hintVisibility = View.VISIBLE
-            confirmText = app.getString(R.string.hide_app_confirm_hide)
-            startButtonTextCountDown()
-        }
+		fun toggleMainComponent() = toggleMainComponentUseCase()
 
-    }
+		fun isMainComponentDisabled() = toggleMainComponentUseCase.isMainComponentDisabled()
 
-    fun toggleMainComponent() = toggleMainComponentUseCase()
+		/**
+		 * Constructs a displayable secret launch code.
+		 */
+		fun secretLaunchCode() =
+			app.getString(R.string.settings_security_launch_code_prefix) +
+				config.securityDialLaunchCode +
+				app.getString(R.string.settings_security_launch_code_suffix)
 
-    fun isMainComponentDisabled() = toggleMainComponentUseCase.isMainComponentDisabled()
+		private fun startButtonTextCountDown() =
+			viewModelScope.launch {
+				var secondsRemaining = 5
 
-    /**
-     * Constructs a displayable secret launch code.
-     */
-    fun secretLaunchCode() = app.getString(R.string.settings_security_launch_code_prefix) +
-            config.securityDialLaunchCode +
-            app.getString(R.string.settings_security_launch_code_suffix)
+				for (a in 1..5) {
+					buttonText = secondsRemaining.toString()
+					delay(1000)
+					secondsRemaining--
+				}
 
-    private fun startButtonTextCountDown() = viewModelScope.launch {
-        var secondsRemaining = 5
-
-        for (a in 1..5) {
-            buttonText = secondsRemaining.toString()
-            delay(1000)
-            secondsRemaining--
-        }
-
-        buttonEnabled = true
-        buttonText = if (isMainComponentDisabled()) {
-            app.getString(R.string.hide_app_title_show)
-        } else {
-            app.getString(R.string.hide_app_title_hide)
-        }
-    }
-}
+				buttonEnabled = true
+				buttonText =
+					if (isMainComponentDisabled()) {
+						app.getString(R.string.hide_app_title_show)
+					} else {
+						app.getString(R.string.hide_app_title_hide)
+					}
+			}
+	}

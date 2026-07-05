@@ -17,20 +17,19 @@
 package onlasdan.gallery.transcoding.compose.model
 
 data class EncryptedImageRequestData(
-    val internalFileName: String,
-    val mimeType: String,
-    val playAnimation: Boolean = false,
-
-    /**
-     * UUID of the photo this request refers to, used by on-demand cloud-sync restore.
-     *
-     * - **Thumbnails / album covers / video previews**: leave as `null`. These artifacts are
-     *   always kept local; they never get evicted, so restore is a no-op.
-     * - **Full-size originals in the image viewer**: set to the photo's UUID. If the local
-     *   original is missing (because it was uploaded and the local copy was evicted),
-     *   EncryptedImageFetcher will trigger a download from the rclone remote before reading.
-     *
-     * @since PR1 sync feature
-     */
-    val photoUuid: String? = null,
+	val internalFileName: String,
+	val mimeType: String,
+	val playAnimation: Boolean = false,
+	/**
+	 * UUID of the photo this request refers to, used by on-demand cloud-sync restore.
+	 *
+	 * - **Thumbnails / album covers / video previews**: leave as `null`. These artifacts are
+	 *   always kept local; they never get evicted, so restore is a no-op.
+	 * - **Full-size originals in the image viewer**: set to the photo's UUID. If the local
+	 *   original is missing (because it was uploaded and the local copy was evicted),
+	 *   EncryptedImageFetcher will trigger a download from the rclone remote before reading.
+	 *
+	 * @since PR1 sync feature
+	 */
+	val photoUuid: String? = null,
 )

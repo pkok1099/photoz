@@ -39,96 +39,96 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun ConfirmPasswordDialog(
-    visible: Boolean,
-    subtitle: String? = null,
-    onSuccess: () -> Unit,
-    onDismissRequest: () -> Unit,
+	visible: Boolean,
+	subtitle: String? = null,
+	onSuccess: () -> Unit,
+	onDismissRequest: () -> Unit,
 ) {
-    if (visible) {
-        DialogViewModelStoreOwner {
-            val viewModel = hiltViewModel<ConfirmpasswordViewModel>()
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	if (visible) {
+		DialogViewModelStoreOwner {
+			val viewModel = hiltViewModel<ConfirmpasswordViewModel>()
+			val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-            LaunchedEffect(uiState.success) {
-                if (uiState.success) {
-                    onSuccess()
-                    onDismissRequest()
-                }
-            }
+			LaunchedEffect(uiState.success) {
+				if (uiState.success) {
+					onSuccess()
+					onDismissRequest()
+				}
+			}
 
-            Content(
-                uiState = uiState,
-                subtitle = subtitle,
-                handleUiEvent = viewModel::handleUiEvent,
-                onDismissRequest = onDismissRequest
-            )
-        }
-    }
+			Content(
+				uiState = uiState,
+				subtitle = subtitle,
+				handleUiEvent = viewModel::handleUiEvent,
+				onDismissRequest = onDismissRequest,
+			)
+		}
+	}
 }
 
 @Composable
 private fun Content(
-    uiState: ConfirmPasswordUiState,
-    subtitle: String? = null,
-    handleUiEvent: (ConfirmPasswordUiEvent) -> Unit,
-    onDismissRequest: () -> Unit,
+	uiState: ConfirmPasswordUiState,
+	subtitle: String? = null,
+	handleUiEvent: (ConfirmPasswordUiEvent) -> Unit,
+	onDismissRequest: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        confirmButton = {
-            Button(
-                onClick = {
-                    handleUiEvent(ConfirmPasswordUiEvent.ConfirmPassword)
-                },
-                enabled = uiState.password.isNotEmpty() && !uiState.loading,
-            ) {
-                Text(stringResource(R.string.common_ok))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismissRequest,
-                enabled = !uiState.loading,
-            ) {
-                Text(stringResource(R.string.common_cancel))
-            }
-        },
-        title = {
-            Text(
-                text = stringResource(R.string.setup_confirm_password)
-            )
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (subtitle != null) {
-                    Text(text = subtitle)
-                }
+	AlertDialog(
+		onDismissRequest = onDismissRequest,
+		confirmButton = {
+			Button(
+				onClick = {
+					handleUiEvent(ConfirmPasswordUiEvent.ConfirmPassword)
+				},
+				enabled = uiState.password.isNotEmpty() && !uiState.loading,
+			) {
+				Text(stringResource(R.string.common_ok))
+			}
+		},
+		dismissButton = {
+			TextButton(
+				onClick = onDismissRequest,
+				enabled = !uiState.loading,
+			) {
+				Text(stringResource(R.string.common_cancel))
+			}
+		},
+		title = {
+			Text(
+				text = stringResource(R.string.setup_confirm_password),
+			)
+		},
+		text = {
+			Column(
+				verticalArrangement = Arrangement.spacedBy(12.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+			) {
+				if (subtitle != null) {
+					Text(text = subtitle)
+				}
 
-                PasswordField(
-                    value = uiState.password,
-                    onValueChange = { handleUiEvent(ConfirmPasswordUiEvent.PasswordValueChange(it)) },
-                    label = stringResource(R.string.common_password),
-                    error = uiState.error,
-                    imeAction = ImeAction.Done,
-                    onDone = { handleUiEvent(ConfirmPasswordUiEvent.ConfirmPassword) },
-                )
-            }
-        }
-    )
+				PasswordField(
+					value = uiState.password,
+					onValueChange = { handleUiEvent(ConfirmPasswordUiEvent.PasswordValueChange(it)) },
+					label = stringResource(R.string.common_password),
+					error = uiState.error,
+					imeAction = ImeAction.Done,
+					onDone = { handleUiEvent(ConfirmPasswordUiEvent.ConfirmPassword) },
+				)
+			}
+		},
+	)
 }
 
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme {
-        Content(
-            uiState = ConfirmPasswordUiState(password = "asd"),
-            subtitle = "Subtitle",
-            handleUiEvent = {},
-            onDismissRequest = {},
-        )
-    }
+	AppTheme {
+		Content(
+			uiState = ConfirmPasswordUiState(password = "asd"),
+			subtitle = "Subtitle",
+			handleUiEvent = {},
+			onDismissRequest = {},
+		)
+	}
 }

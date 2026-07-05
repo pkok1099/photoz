@@ -19,15 +19,16 @@ package onlasdan.gallery.settings.domain.models
 import androidx.annotation.StringRes
 import onlasdan.gallery.R
 
-enum class SystemDesignEnum(override val value: String, @param:StringRes override val label: Int) : SettingsEnum {
-    System("system", R.string.settings_app_design_system_default),
-    Dark("dark", R.string.settings_app_design_system_dark),
-    Light("light", R.string.settings_app_design_system_light);
+enum class SystemDesignEnum(
+	override val value: String,
+	@param:StringRes override val label: Int,
+) : SettingsEnum {
+	System("system", R.string.settings_app_design_system_default),
+	Dark("dark", R.string.settings_app_design_system_dark),
+	Light("light", R.string.settings_app_design_system_light),
+	;
 
-
-    companion object {
-        fun fromValue(value: String?): SystemDesignEnum {
-            return SystemDesignEnum.entries.find { it.value == value } ?: System
-        }
-    }
+	companion object {
+		fun fromValue(value: String?): SystemDesignEnum = SystemDesignEnum.entries.find { it.value == value } ?: System
+	}
 }

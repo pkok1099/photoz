@@ -33,77 +33,88 @@ import timber.log.Timber
  * @since 1.0.0
  * @author PhotoZ
  */
-abstract class ObservableViewModel(app: Application) : AndroidViewModel(app), Observable {
+abstract class ObservableViewModel(
+	app: Application,
+) : AndroidViewModel(app),
+	Observable {
+	private val changeListeners: PropertyChangeRegistry = PropertyChangeRegistry()
+	private val valueChangeRegistry: PropertyValueChangeRegistry = PropertyValueChangeRegistry()
 
-    private val changeListeners: PropertyChangeRegistry = PropertyChangeRegistry()
-    private val valueChangeRegistry: PropertyValueChangeRegistry = PropertyValueChangeRegistry()
+	override fun addOnPropertyChangedCallback(listener: OnPropertyChangedCallback) {
+		changeListeners.add(listener)
+	}
 
-    override fun addOnPropertyChangedCallback(listener: OnPropertyChangedCallback) {
-        changeListeners.add(listener)
-    }
+	override fun removeOnPropertyChangedCallback(listener: OnPropertyChangedCallback) {
+		changeListeners.remove(listener)
+	}
 
-    override fun removeOnPropertyChangedCallback(listener: OnPropertyChangedCallback) {
-        changeListeners.remove(listener)
-    }
+	/**
+	 * Add callback to [valueChangeRegistry]
+	 */
+	fun <T> addOnPropertyValueChangedCallback(callback: PropertyChangedValueCallback) = valueChangeRegistry.addValueCallback(callback)
 
-    /**
-     * Add callback to [valueChangeRegistry]
-     */
-    fun <T> addOnPropertyValueChangedCallback(callback: PropertyChangedValueCallback) =
-        valueChangeRegistry.addValueCallback(callback)
+	/**
+	 * Remove callback from [valueChangeRegistry]
+	 */
+	fun removeOnPropertyValueChangedCallback(callback: PropertyChangedValueCallback) = valueChangeRegistry.removeValueCallback(callback)
 
-    /**
-     * Remove callback from [valueChangeRegistry]
-     */
-    fun removeOnPropertyValueChangedCallback(callback: PropertyChangedValueCallback) =
-        valueChangeRegistry.removeValueCallback(callback)
+	/**
+	 * Notify changes on all properties.
+	 */
+	fun notifyChange() {
+		changeListeners.notifyCallbacks(this, 0, null)
+	}
 
-    /**
-     * Notify changes on all properties.
-     */
-    fun notifyChange() {
-        changeListeners.notifyCallbacks(this, 0, null)
-    }
+	/**
+	 * Notify changes in [view].
+	 */
+	fun notifyChange(view: Int) {
+		changeListeners.notifyCallbacks(this, view, null)
+	}
 
-    /**
-     * Notify changes in [view].
-     */
-    fun notifyChange(view: Int) {
-        changeListeners.notifyCallbacks(this, view, null)
-    }
+	/**
+	 * Notify changes in instances of [PropertyChangedValueCallback].
+	 */
+	fun notifyChange(
+		property: Int,
+		newValue: Any?,
+	) {
+		changeListeners.notifyCallbacks(this, property, null)
+		valueChangeRegistry.notifyCallbacks(property, newValue)
+	}
 
-    /**
-     * Notify changes in instances of [PropertyChangedValueCallback].
-     */
-    fun notifyChange(property: Int, newValue: Any?) {
-        changeListeners.notifyCallbacks(this, property, null)
-        valueChangeRegistry.notifyCallbacks(property, newValue)
-    }
+	/**
+	 * Handy version of [addOnPropertyChangedCallback].
+	 * Takes a [block] that gets posted to MainLooper.
+	 */
+	@Suppress("UNCHECKED_CAST")
+	fun <T> addOnPropertyChange(
+		propertyId: Int,
+		block: (newValue: T) -> Unit,
+	) {
+		valueChangeRegistry.addValueCallback(
+			object : PropertyChangedValueCallback {
+				override fun onCallback(
+					property: Int,
+					newValue: Any?,
+				) {
+					if (property == propertyId) {
+						Handler(Looper.getMainLooper()).post {
+							try {
+								block(newValue as T)
+							} catch (e: ClassCastException) {
+								Timber.d("newValue is not type of T")
+							}
+						}
+					}
+				}
+			},
+		)
+	}
 
-    /**
-     * Handy version of [addOnPropertyChangedCallback].
-     * Takes a [block] that gets posted to MainLooper.
-     */
-    @Suppress("UNCHECKED_CAST")
-    fun <T> addOnPropertyChange(propertyId: Int, block: (newValue: T) -> Unit) {
-        valueChangeRegistry.addValueCallback(object : PropertyChangedValueCallback {
-            override fun onCallback(property: Int, newValue: Any?) {
-                if (property == propertyId) {
-                    Handler(Looper.getMainLooper()).post {
-                        try {
-                            block(newValue as T)
-                        } catch (e: ClassCastException) {
-                            Timber.d("newValue is not type of T")
-                        }
-                    }
-                }
-            }
-        })
-    }
-
-    /**
-     * Used for setting up the viewModel. Can be overridden.
-     */
-    open fun setup() {
-    }
+	/**
+	 * Used for setting up the viewModel. Can be overridden.
+	 */
+	open fun setup() {
+	}
 }

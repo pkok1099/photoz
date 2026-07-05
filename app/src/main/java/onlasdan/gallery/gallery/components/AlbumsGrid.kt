@@ -26,20 +26,20 @@ import onlasdan.gallery.gallery.albums.ui.compose.AlbumItem
 
 @Composable
 fun AlbumsGrid(
-    albums: List<AlbumItem>,
-    onAlbumClicked: (String) -> Unit,
-    modifier: Modifier = Modifier,
+	albums: List<AlbumItem>,
+	onAlbumClicked: (String) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        items(albums, key = { it.id }) { album ->
-            AlbumTile(
-                album = album,
-                onAlbumClicked = onAlbumClicked,
-                modifier = Modifier.animateItem(),
-            )
-        }
-    }
+	LazyVerticalGrid(
+		columns = GridCells.Fixed(2),
+		modifier = modifier.fillMaxWidth(),
+	) {
+		items(albums, key = { it.id }) { album ->
+			AlbumTile(
+				album = album,
+				onAlbumClicked = onAlbumClicked,
+				modifier = Modifier.animateItem(),
+			)
+		}
+	}
 }

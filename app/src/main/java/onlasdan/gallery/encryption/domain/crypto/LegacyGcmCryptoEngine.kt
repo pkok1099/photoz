@@ -16,10 +16,10 @@
 
 package onlasdan.gallery.encryption.domain.crypto
 
+import okio.IOException
 import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.encryption.domain.models.LegacySession
 import onlasdan.gallery.encryption.domain.models.Session
-import okio.IOException
 import timber.log.Timber
 import java.io.InputStream
 import java.io.OutputStream
@@ -28,41 +28,45 @@ import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.inject.Inject
 
-class LegacyGcmCryptoEngine @Inject constructor(): CryptoEngine {
-    override fun createEncryptStream(
-        output: OutputStream,
-        session: Session,
-        useGcm: Boolean,
-    ): OutputStream? {
-        require(session is LegacySession)
+class LegacyGcmCryptoEngine
+	@Inject
+	constructor() : CryptoEngine {
+		override fun createEncryptStream(
+			output: OutputStream,
+			session: Session,
+			useGcm: Boolean,
+		): OutputStream? {
+			require(session is LegacySession)
 
-        return try {
-            val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-                init(Cipher.ENCRYPT_MODE, session.key, session.iv)
-            }
+			return try {
+				val cipher =
+					Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+						init(Cipher.ENCRYPT_MODE, session.key, session.iv)
+					}
 
-             CipherOutputStream(output, cipher)
-        } catch (e: Exception) {
-            Timber.e("Error creating CipherOutputStream: $e")
-            return null
-        }
-    }
+				CipherOutputStream(output, cipher)
+			} catch (e: Exception) {
+				Timber.e("Error creating CipherOutputStream: $e")
+				return null
+			}
+		}
 
-    override fun createDecryptStream(
-        input: InputStream,
-        session: Session,
-    ): InputStream? {
-        require(session is LegacySession)
+		override fun createDecryptStream(
+			input: InputStream,
+			session: Session,
+		): InputStream? {
+			require(session is LegacySession)
 
-        return try {
-            val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-                init(Cipher.DECRYPT_MODE, session.key, session.iv)
-            }
+			return try {
+				val cipher =
+					Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+						init(Cipher.DECRYPT_MODE, session.key, session.iv)
+					}
 
-            CipherInputStream(input, cipher)
-        } catch (e: IOException) {
-            Timber.e("Error creating CipherInputStream: $e")
-            return null
-        }
-    }
-}
+				CipherInputStream(input, cipher)
+			} catch (e: IOException) {
+				Timber.e("Error creating CipherInputStream: $e")
+				return null
+			}
+		}
+	}

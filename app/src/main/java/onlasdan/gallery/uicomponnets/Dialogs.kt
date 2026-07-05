@@ -31,31 +31,37 @@ import onlasdan.gallery.other.onMain
  * @author PhotoZ
  */
 object Dialogs {
+	fun showConfirmDialog(
+		context: Context,
+		title: String,
+		onNegativeButtonClicked: DialogInterface.OnClickListener? = null,
+		onPositiveButtonClicked: DialogInterface.OnClickListener,
+	) {
+		onMain {
+			AlertDialog
+				.Builder(context)
+				.setMessage(HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY))
+				.setPositiveButton(R.string.common_yes, onPositiveButtonClicked)
+				.setNegativeButton(R.string.common_no, onNegativeButtonClicked)
+				.show()
+		}
+	}
 
-    fun showConfirmDialog(
-        context: Context,
-        title: String,
-        onNegativeButtonClicked: DialogInterface.OnClickListener? = null,
-        onPositiveButtonClicked: DialogInterface.OnClickListener,
-    ) {
-        onMain {
-            AlertDialog.Builder(context)
-                .setMessage(HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY))
-                .setPositiveButton(R.string.common_yes, onPositiveButtonClicked)
-                .setNegativeButton(R.string.common_no, onNegativeButtonClicked)
-                .show()
-        }
-    }
+	fun showLongToast(
+		context: Context,
+		message: String,
+	) {
+		onMain {
+			Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+		}
+	}
 
-    fun showLongToast(context: Context, message: String) {
-        onMain {
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun showShortToast(context: Context, message: String) {
-        onMain {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }
-    }
+	fun showShortToast(
+		context: Context,
+		message: String,
+	) {
+		onMain {
+			Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+		}
+	}
 }

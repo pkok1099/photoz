@@ -50,63 +50,65 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class DialLauncher : DaggerBroadcastReceiver() {
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
+	@Inject
+	lateinit var panicWipeUseCase: PanicWipeUseCase
 
-    @Inject
-    lateinit var panicWipeUseCase: PanicWipeUseCase
+	private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+	override fun onReceive(
+		context: Context?,
+		intent: Intent?,
+	) {
+		super.onReceive(context, intent)
+		context ?: return
+		val dialedCode = intent?.data?.host ?: return
 
-    override fun onReceive(context: Context?, intent: Intent?) {
-        super.onReceive(context, intent)
-        context ?: return
-        val dialedCode = intent?.data?.host ?: return
+		val launchCode = config.securityDialLaunchCode
+		val panicCode = config.panicDialCode
 
-        val launchCode = config.securityDialLaunchCode
-        val panicCode = config.panicDialCode
+		when (dialedCode) {
+			// Normal launch — open the app.
+			launchCode -> {
+				val launchIntent = Intent(context, MainActivity::class.java)
+				launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+				context.startActivity(launchIntent)
+			}
 
-        when (dialedCode) {
-            // Normal launch — open the app.
-            launchCode -> {
-                val launchIntent = Intent(context, MainActivity::class.java)
-                launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(launchIntent)
-            }
+			// Sprint 7+ / P3 — Panic wipe. Silent, irreversible.
+			// The remote backup is NOT touched — user can restore later.
+			panicCode -> {
+				android.util.Log.e("RcloneDiag", "DialLauncher: PANIC CODE detected — initiating wipe")
+				scope.launch {
+					try {
+						panicWipeUseCase.wipe()
+						android.util.Log.e("RcloneDiag", "DialLauncher: PANIC WIPE COMPLETE")
+					} catch (e: Exception) {
+						Timber.e(e, "DialLauncher: panic wipe failed")
+					}
+				}
+				// Show fake crash so the investigator thinks the app crashed,
+				// not that it wiped. The wipe runs in the background.
+				showFakeCrash(context)
+			}
 
-            // Sprint 7+ / P3 — Panic wipe. Silent, irreversible.
-            // The remote backup is NOT touched — user can restore later.
-            panicCode -> {
-                android.util.Log.e("RcloneDiag", "DialLauncher: PANIC CODE detected — initiating wipe")
-                scope.launch {
-                    try {
-                        panicWipeUseCase.wipe()
-                        android.util.Log.e("RcloneDiag", "DialLauncher: PANIC WIPE COMPLETE")
-                    } catch (e: Exception) {
-                        Timber.e(e, "DialLauncher: panic wipe failed")
-                    }
-                }
-                // Show fake crash so the investigator thinks the app crashed,
-                // not that it wiped. The wipe runs in the background.
-                showFakeCrash(context)
-            }
+			// Sprint 7+ / L2 — Wrong code → fake crash.
+			// Makes the app look broken, not hidden.
+			else -> {
+				android.util.Log.d("RcloneDiag", "DialLauncher: unrecognized code '$dialedCode' — showing fake crash")
+				showFakeCrash(context)
+			}
+		}
+	}
 
-            // Sprint 7+ / L2 — Wrong code → fake crash.
-            // Makes the app look broken, not hidden.
-            else -> {
-                android.util.Log.d("RcloneDiag", "DialLauncher: unrecognized code '$dialedCode' — showing fake crash")
-                showFakeCrash(context)
-            }
-        }
-    }
-
-    /**
-     * Launch [FakeCrashActivity] — mimics the Android system crash dialog.
-     */
-    private fun showFakeCrash(context: Context) {
-        val intent = Intent(context, FakeCrashActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        context.startActivity(intent)
-    }
+	/**
+	 * Launch [FakeCrashActivity] — mimics the Android system crash dialog.
+	 */
+	private fun showFakeCrash(context: Context) {
+		val intent = Intent(context, FakeCrashActivity::class.java)
+		intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+		context.startActivity(intent)
+	}
 }

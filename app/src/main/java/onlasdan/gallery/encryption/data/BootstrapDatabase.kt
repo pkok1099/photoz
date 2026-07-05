@@ -73,17 +73,16 @@ import onlasdan.gallery.model.database.Converters
  * @since v16 — Sprint 3 / TODO #6 SQLCipher
  */
 @Database(
-    entities = [VaultProtectionTable::class],
-    version = 1,
-    exportSchema = true,
+	entities = [VaultProtectionTable::class],
+	version = 1,
+	exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class BootstrapDatabase : RoomDatabase() {
+	abstract fun getVaultProtectionDao(): VaultProtectionDao
 
-    abstract fun getVaultProtectionDao(): VaultProtectionDao
-
-    companion object {
-        /** Plaintext bootstrap DB filename (lives in app's filesDir). */
-        const val DATABASE_NAME = "photok_meta.db"
-    }
+	companion object {
+		/** Plaintext bootstrap DB filename (lives in app's filesDir). */
+		const val DATABASE_NAME = "photok_meta.db"
+	}
 }

@@ -31,21 +31,21 @@ import onlasdan.gallery.R
 
 @Composable
 fun AppName(
-    color: Color = colorResource(R.color.appTitleColor),
-    fontSize: TextUnit = 38.sp,
-    modifier: Modifier = Modifier,
+	color: Color = colorResource(R.color.appTitleColor),
+	fontSize: TextUnit = 38.sp,
+	modifier: Modifier = Modifier,
 ) {
-    Text(
-        text = stringResource(R.string.app_name),
-        color = color,
-        fontFamily = FontFamily(Font(R.font.lobster_regular)),
-        fontSize = fontSize,
-        modifier = modifier
-    )
+	Text(
+		text = stringResource(R.string.app_name),
+		color = color,
+		fontFamily = FontFamily(Font(R.font.lobster_regular)),
+		fontSize = fontSize,
+		modifier = modifier,
+	)
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFF)
 @Composable
 private fun AppNamePreview() {
-    AppName()
+	AppName()
 }

@@ -46,98 +46,101 @@ import org.robolectric.RuntimeEnvironment
  */
 @RunWith(RobolectricTestRunner::class)
 class SqlCipherKeyProviderTest {
+	/**
+	 * Check if AndroidKeyStore is available in the current test environment.
+	 * Returns true on real devices + instrumented tests, false in Robolectric.
+	 */
+	private fun androidKeyStoreAvailable(): Boolean =
+		try {
+			val ks = java.security.KeyStore.getInstance("AndroidKeyStore")
+			ks.load(null)
+			true
+		} catch (e: Exception) {
+			false
+		}
 
-    /**
-     * Check if AndroidKeyStore is available in the current test environment.
-     * Returns true on real devices + instrumented tests, false in Robolectric.
-     */
-    private fun androidKeyStoreAvailable(): Boolean = try {
-        val ks = java.security.KeyStore.getInstance("AndroidKeyStore")
-        ks.load(null)
-        true
-    } catch (e: Exception) {
-        false
-    }
+	@Test
+	fun `getOrCreatePassphrase returns 32 bytes`() {
+		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		val passphrase = provider.getOrCreatePassphrase()
+		assertEquals("SQLCipher passphrase must be 32 bytes (AES-256)", 32, passphrase.size)
+	}
 
-    @Test
-    fun `getOrCreatePassphrase returns 32 bytes`() {
-        assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-        val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        val passphrase = provider.getOrCreatePassphrase()
-        assertEquals("SQLCipher passphrase must be 32 bytes (AES-256)", 32, passphrase.size)
-    }
+	@Test
+	fun `getOrCreatePassphrase is non-zero sanity check`() {
+		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		val passphrase = provider.getOrCreatePassphrase()
+		val allZero = passphrase.all { it == 0.toByte() }
+		assertTrue("Passphrase must not be all-zero (SecureRandom failure?)", !allZero)
+	}
 
-    @Test
-    fun `getOrCreatePassphrase is non-zero sanity check`() {
-        assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-        val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        val passphrase = provider.getOrCreatePassphrase()
-        val allZero = passphrase.all { it == 0.toByte() }
-        assertTrue("Passphrase must not be all-zero (SecureRandom failure?)", !allZero)
-    }
+	@Test
+	fun `getOrCreatePassphrase returns same bytes on repeated calls`() {
+		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		val first = provider.getOrCreatePassphrase()
+		val second = provider.getOrCreatePassphrase()
+		// Same Keystore alias → same key. The encoded bytes must match.
+		org.junit.Assert.assertArrayEquals(
+			"Repeated getOrCreatePassphrase must return identical bytes",
+			first,
+			second,
+		)
+	}
 
-    @Test
-    fun `getOrCreatePassphrase returns same bytes on repeated calls`() {
-        assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-        val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        val first = provider.getOrCreatePassphrase()
-        val second = provider.getOrCreatePassphrase()
-        // Same Keystore alias → same key. The encoded bytes must match.
-        org.junit.Assert.assertArrayEquals(
-            "Repeated getOrCreatePassphrase must return identical bytes",
-            first, second,
-        )
-    }
+	@Test
+	fun `deleteKey clears the Keystore entry`() {
+		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		// Generate the key first
+		val first = provider.getOrCreatePassphrase()
+		// Delete it
+		provider.deleteKey()
+		// Generate again — should be a NEW random key
+		val second = provider.getOrCreatePassphrase()
+		assertNotNull(second)
+		assertEquals(32, second.size)
+		// Note: we can't strictly assert first != second because there's
+		// a 1 in 2^256 chance they're equal. But it's astronomically
+		// unlikely — if this assertion ever fails, buy a lottery ticket.
+		org.junit.Assert.assertNotEquals(
+			"After deleteKey + regenerate, the new key should differ from the old",
+			first.toList(),
+			second.toList(),
+		)
+	}
 
-    @Test
-    fun `deleteKey clears the Keystore entry`() {
-        assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-        val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        // Generate the key first
-        val first = provider.getOrCreatePassphrase()
-        // Delete it
-        provider.deleteKey()
-        // Generate again — should be a NEW random key
-        val second = provider.getOrCreatePassphrase()
-        assertNotNull(second)
-        assertEquals(32, second.size)
-        // Note: we can't strictly assert first != second because there's
-        // a 1 in 2^256 chance they're equal. But it's astronomically
-        // unlikely — if this assertion ever fails, buy a lottery ticket.
-        org.junit.Assert.assertNotEquals(
-            "After deleteKey + regenerate, the new key should differ from the old",
-            first.toList(), second.toList(),
-        )
-    }
+	// ─── FallbackSqlCipherKeyProvider tests — always run (no Keystore needed) ──
 
-    // ─── FallbackSqlCipherKeyProvider tests — always run (no Keystore needed) ──
+	@Test
+	fun `fallback provider returns 32 bytes`() {
+		val provider = FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		val passphrase = provider.getOrCreatePassphrase()
+		assertEquals(32, passphrase.size)
+	}
 
-    @Test
-    fun `fallback provider returns 32 bytes`() {
-        val provider = FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        val passphrase = provider.getOrCreatePassphrase()
-        assertEquals(32, passphrase.size)
-    }
+	@Test
+	fun `fallback provider returns same bytes across instances`() {
+		// Two instances of the fallback provider share the same
+		// SharedPreferences file — they should return the same passphrase
+		// after the first call generates + persists it.
+		val app = RuntimeEnvironment.getApplication()
+		val first = FallbackSqlCipherKeyProvider(app).getOrCreatePassphrase()
+		val second = FallbackSqlCipherKeyProvider(app).getOrCreatePassphrase()
+		org.junit.Assert.assertArrayEquals(
+			"Fallback provider must persist the passphrase across instances",
+			first,
+			second,
+		)
+	}
 
-    @Test
-    fun `fallback provider returns same bytes across instances`() {
-        // Two instances of the fallback provider share the same
-        // SharedPreferences file — they should return the same passphrase
-        // after the first call generates + persists it.
-        val app = RuntimeEnvironment.getApplication()
-        val first = FallbackSqlCipherKeyProvider(app).getOrCreatePassphrase()
-        val second = FallbackSqlCipherKeyProvider(app).getOrCreatePassphrase()
-        org.junit.Assert.assertArrayEquals(
-            "Fallback provider must persist the passphrase across instances",
-            first, second,
-        )
-    }
-
-    @Test
-    fun `fallback provider passphrase is non-zero`() {
-        val provider = FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication())
-        val passphrase = provider.getOrCreatePassphrase()
-        val allZero = passphrase.all { it == 0.toByte() }
-        assertTrue("Fallback passphrase must not be all-zero", !allZero)
-    }
+	@Test
+	fun `fallback provider passphrase is non-zero`() {
+		val provider = FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication())
+		val passphrase = provider.getOrCreatePassphrase()
+		val allZero = passphrase.all { it == 0.toByte() }
+		assertTrue("Fallback passphrase must not be all-zero", !allZero)
+	}
 }

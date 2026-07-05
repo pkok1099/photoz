@@ -1,16 +1,12 @@
 package onlasdan.gallery.other.extensions
 
 import android.app.Activity
-import android.os.Build
-import android.view.View
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import onlasdan.gallery.BaseApplication
 import kotlinx.coroutines.launch
+import onlasdan.gallery.BaseApplication
 
 /**
  * Get the "application" as [BaseApplication] from any activity.
@@ -23,6 +19,6 @@ fun Activity.getBaseApplication(): BaseApplication = application as BaseApplicat
  */
 
 inline fun AppCompatActivity.launchLifecycleAwareJob(
-    state: Lifecycle.State = Lifecycle.State.CREATED,
-    crossinline block: suspend () -> Unit
+	state: Lifecycle.State = Lifecycle.State.CREATED,
+	crossinline block: suspend () -> Unit,
 ) = lifecycleScope.launch { repeatOnLifecycle(state) { block() } }

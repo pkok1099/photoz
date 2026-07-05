@@ -20,6 +20,11 @@ import android.app.Activity
 import onlasdan.gallery.review.ReviewTrigger
 import javax.inject.Inject
 
-class InAppReviewImpl @Inject constructor() : InAppReview {
-    override fun requestInAppReview(activity: Activity, trigger: ReviewTrigger) {}
-}
+class InAppReviewImpl
+	@Inject
+	constructor() : InAppReview {
+		override fun requestInAppReview(
+			activity: Activity,
+			trigger: ReviewTrigger,
+		) {}
+	}

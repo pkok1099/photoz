@@ -59,73 +59,78 @@ import java.util.concurrent.Executors
  */
 @Composable
 fun QrScannerView(
-    onQrCodeDecoded: (String) -> Unit,
-    modifier: Modifier = Modifier,
+	onQrCodeDecoded: (String) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    if (LocalInspectionMode.current) {
-        Box(
-            modifier = modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.Magenta)
-        )
+	if (LocalInspectionMode.current) {
+		Box(
+			modifier =
+				modifier
+					.clip(RoundedCornerShape(24.dp))
+					.background(Color.Magenta),
+		)
 
-        return
-    }
+		return
+	}
 
-    val lifecycleOwner = LocalLifecycleOwner.current
+	val lifecycleOwner = LocalLifecycleOwner.current
 
-    PermissionGate(
-        permission = Manifest.permission.CAMERA,
-        rationaleText = stringResource(R.string.recovery_phrase_restore_camera_permission_rationale),
-        label = stringResource(R.string.recovery_phrase_restore_camera_permission_button),
-        modifier = modifier,
-    ) {
-        val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-        val analyzer = remember { QrCodeAnalyzer(onQrCodeDecoded) }
-        var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+	PermissionGate(
+		permission = Manifest.permission.CAMERA,
+		rationaleText = stringResource(R.string.recovery_phrase_restore_camera_permission_rationale),
+		label = stringResource(R.string.recovery_phrase_restore_camera_permission_button),
+		modifier = modifier,
+	) {
+		val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+		val analyzer = remember { QrCodeAnalyzer(onQrCodeDecoded) }
+		var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
-        DisposableEffect(Unit) {
-            onDispose {
-                cameraProvider?.unbindAll()
-                cameraExecutor.shutdown()
-            }
-        }
+		DisposableEffect(Unit) {
+			onDispose {
+				cameraProvider?.unbindAll()
+				cameraExecutor.shutdown()
+			}
+		}
 
-        AndroidView(
-            factory = { ctx ->
-                PreviewView(ctx).also { previewView ->
-                    val future = ProcessCameraProvider.getInstance(ctx)
-                    future.addListener({
-                        runCatching {
-                            val provider = future.get()
-                            cameraProvider = provider
+		AndroidView(
+			factory = { ctx ->
+				PreviewView(ctx).also { previewView ->
+					val future = ProcessCameraProvider.getInstance(ctx)
+					future.addListener({
+						runCatching {
+							val provider = future.get()
+							cameraProvider = provider
 
-                            val preview = Preview.Builder()
-                                .setTargetFrameRate(Range(30, 60))
-                                .build()
-                                .also {
-                                    it.surfaceProvider = previewView.surfaceProvider
-                                }
+							val preview =
+								Preview
+									.Builder()
+									.setTargetFrameRate(Range(30, 60))
+									.build()
+									.also {
+										it.surfaceProvider = previewView.surfaceProvider
+									}
 
-                            val imageAnalysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-                                .also { it.setAnalyzer(cameraExecutor, analyzer) }
+							val imageAnalysis =
+								ImageAnalysis
+									.Builder()
+									.setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+									.build()
+									.also { it.setAnalyzer(cameraExecutor, analyzer) }
 
-                            provider.unbindAll()
-                            provider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageAnalysis,
-                            )
-                        }.onFailure { e ->
-                            Timber.e(e, "Failed to bind camera use cases")
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-                }
-            },
-            modifier = modifier.clip(RoundedCornerShape(24.dp)),
-        )
-    }
+							provider.unbindAll()
+							provider.bindToLifecycle(
+								lifecycleOwner,
+								CameraSelector.DEFAULT_BACK_CAMERA,
+								preview,
+								imageAnalysis,
+							)
+						}.onFailure { e ->
+							Timber.e(e, "Failed to bind camera use cases")
+						}
+					}, ContextCompat.getMainExecutor(ctx))
+				}
+			},
+			modifier = modifier.clip(RoundedCornerShape(24.dp)),
+		)
+	}
 }

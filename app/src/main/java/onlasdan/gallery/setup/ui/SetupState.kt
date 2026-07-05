@@ -23,8 +23,8 @@ package onlasdan.gallery.setup.ui
  * @author PhotoZ
  */
 enum class SetupState {
-    SETUP,
-    LOADING,
-    FINISHED,
-    SHOW_RECOVERY_PHRASE,
+	SETUP,
+	LOADING,
+	FINISHED,
+	SHOW_RECOVERY_PHRASE,
 }

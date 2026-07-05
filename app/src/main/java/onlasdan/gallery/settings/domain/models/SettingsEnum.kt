@@ -17,6 +17,6 @@
 package onlasdan.gallery.settings.domain.models
 
 interface SettingsEnum {
-    val value: String
-    val label: Int
+	val value: String
+	val label: Int
 }

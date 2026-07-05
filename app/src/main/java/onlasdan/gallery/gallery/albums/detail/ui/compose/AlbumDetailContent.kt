@@ -41,143 +41,144 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun AlbumDetailContent(
-    uiState: AlbumDetailUiState,
-    handleUiEvent: (AlbumDetailUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+	uiState: AlbumDetailUiState,
+	handleUiEvent: (AlbumDetailUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val multiSelectionState =
-        rememberMultiSelectionState(items = uiState.photos.map { it.uuid })
+	val multiSelectionState =
+		rememberMultiSelectionState(items = uiState.photos.map { it.uuid })
 
-    var showAlbumSelection by rememberSaveable(multiSelectionState.selectedItems.value) {
-        mutableStateOf(false)
-    }
+	var showAlbumSelection by rememberSaveable(multiSelectionState.selectedItems.value) {
+		mutableStateOf(false)
+	}
 
-    PhotoGallery(
-        photos = uiState.photos,
-        albumName = uiState.albumName,
-        multiSelectionState = multiSelectionState,
-        onOpenPhoto = { handleUiEvent(AlbumDetailUiEvent.OpenPhoto(it)) },
-        onExport = { targetUri ->
-            handleUiEvent(
-                AlbumDetailUiEvent.OnExport(
-                    multiSelectionState.selectedItems.value.toList(),
-                    targetUri,
-                )
-            )
-        },
-        onDelete = {
-            handleUiEvent(
-                AlbumDetailUiEvent.OnDelete(
-                    multiSelectionState.selectedItems.value.toList()
-                )
-            )
-        },
-        onImportChoice = {
-            handleUiEvent(AlbumDetailUiEvent.OnImportChoice(it))
-        },
-        // @since batch-operations feature — one-tap "Add to album" icon on
-        //   the multi-selection bar. Was previously only reachable via the
-        //   More dropdown.
-        onAddToAlbum = {
-            showAlbumSelection = true
-        },
-        additionalMultiSelectionActions = {
-            val selectedIds = multiSelectionState.selectedItems.value.toList()
-            val anyPinned = selectedIds.any { it in uiState.pinnedPhotoIds }
-            val anyUnpinned = selectedIds.any { it !in uiState.pinnedPhotoIds }
+	PhotoGallery(
+		photos = uiState.photos,
+		albumName = uiState.albumName,
+		multiSelectionState = multiSelectionState,
+		onOpenPhoto = { handleUiEvent(AlbumDetailUiEvent.OpenPhoto(it)) },
+		onExport = { targetUri ->
+			handleUiEvent(
+				AlbumDetailUiEvent.OnExport(
+					multiSelectionState.selectedItems.value.toList(),
+					targetUri,
+				),
+			)
+		},
+		onDelete = {
+			handleUiEvent(
+				AlbumDetailUiEvent.OnDelete(
+					multiSelectionState.selectedItems.value.toList(),
+				),
+			)
+		},
+		onImportChoice = {
+			handleUiEvent(AlbumDetailUiEvent.OnImportChoice(it))
+		},
+		// @since batch-operations feature — one-tap "Add to album" icon on
+		//   the multi-selection bar. Was previously only reachable via the
+		//   More dropdown.
+		onAddToAlbum = {
+			showAlbumSelection = true
+		},
+		additionalMultiSelectionActions = {
+			val selectedIds = multiSelectionState.selectedItems.value.toList()
+			val anyPinned = selectedIds.any { it in uiState.pinnedPhotoIds }
+			val anyUnpinned = selectedIds.any { it !in uiState.pinnedPhotoIds }
 
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.menu_ms_remove_from_album)) },
-                onClick = {
-                    handleUiEvent(AlbumDetailUiEvent.RemoveFromAlbum(selectedIds))
-                    multiSelectionState.dismissMore()
-                    multiSelectionState.cancelSelection()
-                },
-                leadingIcon = {
-                    Icon(
-                        painterResource(R.drawable.ic_close),
-                        contentDescription = stringResource(R.string.menu_ms_remove_from_album),
-                    )
-                }
-            )
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_folder),
-                        contentDescription = null
-                    )
-                },
-                text = { Text(stringResource(R.string.menu_ms_add_to_album)) },
-                onClick = {
-                    showAlbumSelection = true
-                    multiSelectionState.dismissMore()
-                },
-            )
-            if (anyUnpinned) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_pin),
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.menu_ms_pin)) },
-                    onClick = {
-                        handleUiEvent(AlbumDetailUiEvent.SetPinned(selectedIds, pinned = true))
-                        multiSelectionState.dismissMore()
-                        multiSelectionState.cancelSelection()
-                    },
-                )
-            }
-            if (anyPinned) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_pin_off),
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.menu_ms_unpin)) },
-                    onClick = {
-                        handleUiEvent(AlbumDetailUiEvent.SetPinned(selectedIds, pinned = false))
-                        multiSelectionState.dismissMore()
-                        multiSelectionState.cancelSelection()
-                    },
-                )
-            }
-        },
-        modifier = modifier,
-    )
+			HorizontalDivider()
+			DropdownMenuItem(
+				text = { Text(stringResource(R.string.menu_ms_remove_from_album)) },
+				onClick = {
+					handleUiEvent(AlbumDetailUiEvent.RemoveFromAlbum(selectedIds))
+					multiSelectionState.dismissMore()
+					multiSelectionState.cancelSelection()
+				},
+				leadingIcon = {
+					Icon(
+						painterResource(R.drawable.ic_close),
+						contentDescription = stringResource(R.string.menu_ms_remove_from_album),
+					)
+				},
+			)
+			DropdownMenuItem(
+				leadingIcon = {
+					Icon(
+						painter = painterResource(R.drawable.ic_folder),
+						contentDescription = null,
+					)
+				},
+				text = { Text(stringResource(R.string.menu_ms_add_to_album)) },
+				onClick = {
+					showAlbumSelection = true
+					multiSelectionState.dismissMore()
+				},
+			)
+			if (anyUnpinned) {
+				DropdownMenuItem(
+					leadingIcon = {
+						Icon(
+							painter = painterResource(R.drawable.ic_pin),
+							contentDescription = null,
+						)
+					},
+					text = { Text(stringResource(R.string.menu_ms_pin)) },
+					onClick = {
+						handleUiEvent(AlbumDetailUiEvent.SetPinned(selectedIds, pinned = true))
+						multiSelectionState.dismissMore()
+						multiSelectionState.cancelSelection()
+					},
+				)
+			}
+			if (anyPinned) {
+				DropdownMenuItem(
+					leadingIcon = {
+						Icon(
+							painter = painterResource(R.drawable.ic_pin_off),
+							contentDescription = null,
+						)
+					},
+					text = { Text(stringResource(R.string.menu_ms_unpin)) },
+					onClick = {
+						handleUiEvent(AlbumDetailUiEvent.SetPinned(selectedIds, pinned = false))
+						multiSelectionState.dismissMore()
+						multiSelectionState.cancelSelection()
+					},
+				)
+			}
+		},
+		modifier = modifier,
+	)
 
-    AlbumPickerDialog(
-        visible = showAlbumSelection,
-        selectedItemIds = multiSelectionState.selectedItems.value.toList(),
-        onAlbumSelected = { multiSelectionState.cancelSelection() },
-        onDismissRequest = { showAlbumSelection = false }
-    )
+	AlbumPickerDialog(
+		visible = showAlbumSelection,
+		selectedItemIds = multiSelectionState.selectedItems.value.toList(),
+		onAlbumSelected = { multiSelectionState.cancelSelection() },
+		onDismissRequest = { showAlbumSelection = false },
+	)
 }
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun AlbumsDetailScreenPreview() {
-    AppTheme {
-        AlbumDetailContent(
-            uiState = AlbumDetailUiState(
-                "",
-                "Album Name",
-                listOf(
-                    PhotoTile("file1", PhotoType.JPEG, "uuid1"),
-                    PhotoTile("file2", PhotoType.JPEG, "uuid2"),
-                    PhotoTile("file3", PhotoType.JPEG, "uuid3"),
-                    PhotoTile("file4", PhotoType.JPEG, "uuid4"),
-                    PhotoTile("file5", PhotoType.JPEG, "uuid5"),
-                    PhotoTile("file6", PhotoType.JPEG, "uuid6"),
-                    PhotoTile("file7", PhotoType.JPEG, "uuid7"),
-                    PhotoTile("file8", PhotoType.JPEG, "uuid8"),
-                )
-            ),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		AlbumDetailContent(
+			uiState =
+				AlbumDetailUiState(
+					"",
+					"Album Name",
+					listOf(
+						PhotoTile("file1", PhotoType.JPEG, "uuid1"),
+						PhotoTile("file2", PhotoType.JPEG, "uuid2"),
+						PhotoTile("file3", PhotoType.JPEG, "uuid3"),
+						PhotoTile("file4", PhotoType.JPEG, "uuid4"),
+						PhotoTile("file5", PhotoType.JPEG, "uuid5"),
+						PhotoTile("file6", PhotoType.JPEG, "uuid6"),
+						PhotoTile("file7", PhotoType.JPEG, "uuid7"),
+						PhotoTile("file8", PhotoType.JPEG, "uuid8"),
+					),
+				),
+			handleUiEvent = {},
+		)
+	}
 }

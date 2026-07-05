@@ -45,7 +45,7 @@ import javax.inject.Inject
  *  │     "photos": [PhotoBackup],  │
  *  │     "albums": [AlbumBackup],  │
  *  │     "albumPhotoRefs":         │
- *  │        [AlbumPhotoRefBackup], │
+ *  │ [AlbumPhotoRefBackup], │
  *  │     "createdAt": Long,        │
  *  │     "backupVersion": Int      │
  *  │   }                           │
@@ -63,79 +63,82 @@ import javax.inject.Inject
  *  - File extension differs from V4: uses `.photok.*` instead of `.crypt.*`.
  *  - `backupVersion` must equal 3 for this format.
  */
-class RestoreBackupV3 @Inject constructor(
-    private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
-    private val photoRepository: PhotoRepository,
-    private val albumRepository: AlbumRepository,
-    private val io: IO,
-    private val vaultFileStorage: VaultFileStorage,
-) : RestoreBackupStrategy<BackupMetaData.V3> {
-    override suspend fun restore(
-        metaData: BackupMetaData.V3,
-        stream: ZipInputStream,
-        session: Session,
-    ): RestoreResult {
-        var errors = 0
+class RestoreBackupV3
+	@Inject
+	constructor(
+		private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
+		private val photoRepository: PhotoRepository,
+		private val albumRepository: AlbumRepository,
+		private val io: IO,
+		private val vaultFileStorage: VaultFileStorage,
+	) : RestoreBackupStrategy<BackupMetaData.V3> {
+		override suspend fun restore(
+			metaData: BackupMetaData.V3,
+			stream: ZipInputStream,
+			session: Session,
+		): RestoreResult {
+			var errors = 0
 
-        var ze = stream.nextEntry
+			var ze = stream.nextEntry
 
-        while (ze != null) {
-            if (ze.name == BackupMetaData.FILE_NAME) {
-                ze = stream.nextEntry
-                continue
-            }
+			while (ze != null) {
+				if (ze.name == BackupMetaData.FILE_NAME) {
+					ze = stream.nextEntry
+					continue
+				}
 
-            // Skip files that are not mentioned in the metadata
-            // These might be dead files from old versions of photok
-            if (metaData.photos.none { ze.name.contains(it.uuid) }) {
-                ze = stream.nextEntry
-                Timber.i("Skipping dead file in backup: ${ze.name}")
-                continue
-            }
+				// Skip files that are not mentioned in the metadata
+				// These might be dead files from old versions of photok
+				if (metaData.photos.none { ze.name.contains(it.uuid) }) {
+					ze = stream.nextEntry
+					Timber.i("Skipping dead file in backup: ${ze.name}")
+					continue
+				}
 
-            val encryptedZipInput =
-                legacyGcmCryptoEngine.createDecryptStream(stream, session)
-            val internalOutputStream = vaultFileStorage.openEncryptedOutput(
-                ze.name.replace(
-                    oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
-                    newValue = PHOTOK_FILE_EXTENSION,
-                )
-            )
+				val encryptedZipInput =
+					legacyGcmCryptoEngine.createDecryptStream(stream, session)
+				val internalOutputStream =
+					vaultFileStorage.openEncryptedOutput(
+						ze.name.replace(
+							oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
+							newValue = PHOTOK_FILE_EXTENSION,
+						),
+					)
 
-            if (encryptedZipInput == null || internalOutputStream == null) {
-                ze = stream.nextEntry
-                continue
-            }
+				if (encryptedZipInput == null || internalOutputStream == null) {
+					ze = stream.nextEntry
+					continue
+				}
 
+				io
+					.copy(encryptedZipInput, internalOutputStream)
+					.onFailure {
+						Timber.e(it, "Error restoring zip entry: ${ze.name}")
+						errors++
+					}
 
-            io.copy(encryptedZipInput, internalOutputStream)
-                .onFailure {
-                    Timber.e(it, "Error restoring zip entry: ${ze.name}")
-                    errors++
-                }
+				ze = stream.nextEntry
+			}
 
-            ze = stream.nextEntry
-        }
+			metaData.getPhotosInOriginalOrder().forEach { photoBackup ->
+				val newPhoto =
+					photoBackup
+						.toDomain()
+						.copy(importedAt = System.currentTimeMillis())
 
-        metaData.getPhotosInOriginalOrder().forEach { photoBackup ->
-            val newPhoto = photoBackup
-                .toDomain()
-                .copy(importedAt = System.currentTimeMillis())
+				photoRepository.insert(newPhoto)
+			}
 
-            photoRepository.insert(newPhoto)
-        }
+			metaData.albums.forEach { albumBackup ->
+				val album = albumBackup.toDomain()
+				albumRepository.createAlbum(album)
+			}
 
-        metaData.albums.forEach { albumBackup ->
-            val album = albumBackup.toDomain()
-            albumRepository.createAlbum(album)
-        }
+			metaData.albumPhotoRefs.forEach { albumPhotoRefBackup ->
+				val albumPhotoRef = albumPhotoRefBackup.toDomain()
+				albumRepository.link(albumPhotoRef)
+			}
 
-        metaData.albumPhotoRefs.forEach { albumPhotoRefBackup ->
-            val albumPhotoRef = albumPhotoRefBackup.toDomain()
-            albumRepository.link(albumPhotoRef)
-        }
-
-        return RestoreResult(errors)
-    }
-
-}
+			return RestoreResult(errors)
+		}
+	}

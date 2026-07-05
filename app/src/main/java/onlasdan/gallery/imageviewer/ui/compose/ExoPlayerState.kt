@@ -28,10 +28,10 @@ import androidx.media3.common.util.UnstableApi
 @UnstableApi
 @Stable
 class ExoPlayerState {
-    var position by mutableLongStateOf(0L)
-    var duration by mutableLongStateOf(0L)
-    var playbackState by mutableIntStateOf(0)
-    var isPlaying by mutableStateOf(false)
-    var isScrubbing by mutableStateOf(false)
-    var availableCommands by mutableStateOf(Player.Commands.Builder().build())
+	var position by mutableLongStateOf(0L)
+	var duration by mutableLongStateOf(0L)
+	var playbackState by mutableIntStateOf(0)
+	var isPlaying by mutableStateOf(false)
+	var isScrubbing by mutableStateOf(false)
+	var availableCommands by mutableStateOf(Player.Commands.Builder().build())
 }

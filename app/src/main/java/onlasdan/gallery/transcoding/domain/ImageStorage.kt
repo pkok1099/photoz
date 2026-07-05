@@ -20,9 +20,9 @@ import coil.request.ImageRequest
 import java.io.OutputStream
 
 interface ImageStorage {
-    suspend fun execAndWrite(
-        imageRequest: ImageRequest,
-        outputStream: OutputStream?,
-        compressionPercent: Int = 100,
-    ): Result<Unit>
+	suspend fun execAndWrite(
+		imageRequest: ImageRequest,
+		outputStream: OutputStream?,
+		compressionPercent: Int = 100,
+	): Result<Unit>
 }

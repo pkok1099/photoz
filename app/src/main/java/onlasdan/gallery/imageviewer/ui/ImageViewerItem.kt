@@ -20,7 +20,14 @@ import androidx.media3.common.MediaItem
 import onlasdan.gallery.model.database.entity.Photo
 
 sealed interface ImageViewerItem {
-    val photo: Photo
-    data class Image(override val photo: Photo) : ImageViewerItem
-    data class Video(override val photo: Photo, val mediaItem: MediaItem) : ImageViewerItem
+	val photo: Photo
+
+	data class Image(
+		override val photo: Photo,
+	) : ImageViewerItem
+
+	data class Video(
+		override val photo: Photo,
+		val mediaItem: MediaItem,
+	) : ImageViewerItem
 }

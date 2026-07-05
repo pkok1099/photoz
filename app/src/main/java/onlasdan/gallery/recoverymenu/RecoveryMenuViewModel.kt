@@ -23,19 +23,20 @@ import onlasdan.gallery.settings.ui.hideapp.usecase.ToggleMainComponentUseCase
 import javax.inject.Inject
 
 @HiltViewModel
-class RecoveryMenuViewModel @Inject constructor(
-    private val toggleMainComponentUseCase: ToggleMainComponentUseCase
-) : ViewModel() {
+class RecoveryMenuViewModel
+	@Inject
+	constructor(
+		private val toggleMainComponentUseCase: ToggleMainComponentUseCase,
+	) : ViewModel() {
+		val navigationEvent = SingleLiveEvent<RecoveryMenuNavigator.NavigationEvent>()
 
-    val navigationEvent = SingleLiveEvent<RecoveryMenuNavigator.NavigationEvent>()
+		fun openPhotoZ() {
+			navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.OpenPhotoZ
+		}
 
-    fun openPhotoZ() {
-        navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.OpenPhotoZ
-    }
+		fun resetHidePhotoSetting() {
+			toggleMainComponentUseCase()
 
-    fun resetHidePhotoSetting() {
-        toggleMainComponentUseCase()
-
-        navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.AfterResetHideApp
-    }
-}
+			navigationEvent.value = RecoveryMenuNavigator.NavigationEvent.AfterResetHideApp
+		}
+	}

@@ -42,31 +42,31 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class TrashFragment : Fragment() {
+	private val viewModel: TrashViewModel by viewModels()
 
-    private val viewModel: TrashViewModel by viewModels()
+	@EncryptedImageLoader
+	@Inject
+	lateinit var encryptedImageLoader: ImageLoader
 
-    @EncryptedImageLoader
-    @Inject
-    lateinit var encryptedImageLoader: ImageLoader
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            CompositionLocalProvider(
-                LocalEncryptedImageLoader provides encryptedImageLoader,
-                LocalFragment provides this@TrashFragment,
-                LocalConfig provides config,
-            ) {
-                AppTheme {
-                    TrashScreen(viewModel)
-                }
-            }
-        }
-    }
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				CompositionLocalProvider(
+					LocalEncryptedImageLoader provides encryptedImageLoader,
+					LocalFragment provides this@TrashFragment,
+					LocalConfig provides config,
+				) {
+					AppTheme {
+						TrashScreen(viewModel)
+					}
+				}
+			}
+		}
 }

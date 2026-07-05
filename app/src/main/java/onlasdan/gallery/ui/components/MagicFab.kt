@@ -41,50 +41,51 @@ import onlasdan.gallery.ui.theme.AppTheme
  */
 @Composable
 fun BoxScope.MagicFab(
-    onClick: () -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
+	onClick: () -> Unit,
+	label: String,
+	modifier: Modifier = Modifier,
 ) {
-    onlasdan.gallery.ui.components.MagicFab(
-        label = label,
-        onClick = onClick,
-        modifier = modifier
-            .align(Alignment.BottomEnd)
-            .padding(12.dp)
-    )
+	onlasdan.gallery.ui.components.MagicFab(
+		label = label,
+		onClick = onClick,
+		modifier =
+			modifier
+				.align(Alignment.BottomEnd)
+				.padding(12.dp),
+	)
 }
 
 @Composable
 private fun MagicFab(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+	label: String,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val color = MaterialTheme.colorScheme.contentColorFor(FloatingActionButtonDefaults.containerColor)
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        modifier = modifier,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_add),
-            contentDescription = null,
-            tint = color,
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = label,
-            color = color,
-        )
-    }
+	val color = MaterialTheme.colorScheme.contentColorFor(FloatingActionButtonDefaults.containerColor)
+	ExtendedFloatingActionButton(
+		onClick = onClick,
+		modifier = modifier,
+	) {
+		Icon(
+			painter = painterResource(R.drawable.ic_add),
+			contentDescription = null,
+			tint = color,
+		)
+		Spacer(modifier = Modifier.width(4.dp))
+		Text(
+			text = label,
+			color = color,
+		)
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun MagicFabPreview() {
-    AppTheme {
-        MagicFab(
-            label = stringResource(R.string.import_menu_fab_label),
-            onClick = {}
-        )
-    }
+	AppTheme {
+		MagicFab(
+			label = stringResource(R.string.import_menu_fab_label),
+			onClick = {},
+		)
+	}
 }

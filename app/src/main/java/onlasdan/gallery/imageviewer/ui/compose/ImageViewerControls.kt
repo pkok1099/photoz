@@ -81,495 +81,503 @@ import onlasdan.gallery.uicomponnets.Dialogs
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ImageViewerControls(
-    showControls: Boolean,
-    currentItem: ImageViewerItem?,
-    uiState: ImageViewerUiState,
-    handleUiEvent: (ImageViewerUiEvent) -> Unit,
-    navController: NavController,
-    modifier: Modifier = Modifier,
+	showControls: Boolean,
+	currentItem: ImageViewerItem?,
+	uiState: ImageViewerUiState,
+	handleUiEvent: (ImageViewerUiEvent) -> Unit,
+	navController: NavController,
+	modifier: Modifier = Modifier,
 ) {
-    var exportDirectoryUri by remember { mutableStateOf<Uri?>(null) }
-    val isPinned = currentItem?.photo?.uuid in uiState.pinnedPhotoIds
-    val showPinnedIndicator = uiState.albumUuid != null && isPinned
+	var exportDirectoryUri by remember { mutableStateOf<Uri?>(null) }
+	val isPinned = currentItem?.photo?.uuid in uiState.pinnedPhotoIds
+	val showPinnedIndicator = uiState.albumUuid != null && isPinned
 
-    val pickExportTargetLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { exportTarget ->
-            exportTarget ?: return@rememberLauncherForActivityResult
-            exportDirectoryUri = exportTarget
+	val pickExportTargetLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { exportTarget ->
+			exportTarget ?: return@rememberLauncherForActivityResult
+			exportDirectoryUri = exportTarget
 
-            handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(ImageViewerUiState.Dialog.ConfirmExport))
-        }
+			handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(ImageViewerUiState.Dialog.ConfirmExport))
+		}
 
-    CompositionLocalProvider(
-        LocalContentColor provides Color.White
-    ) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-        ) {
+	CompositionLocalProvider(
+		LocalContentColor provides Color.White,
+	) {
+		Box(
+			modifier =
+				modifier
+					.fillMaxSize(),
+		) {
+			AnimatedVisibility(
+				visible = showControls,
+				enter = fadeIn(),
+				exit = fadeOut(),
+			) {
+				TopAppBar(
+					colors =
+						TopAppBarDefaults.topAppBarColors(
+							containerColor = Color.Transparent,
+							navigationIconContentColor = LocalContentColor.current,
+							titleContentColor = LocalContentColor.current,
+							actionIconContentColor = LocalContentColor.current,
+							subtitleContentColor = LocalContentColor.current,
+						),
+					title = {
+						Row(
+							verticalAlignment = Alignment.CenterVertically,
+							modifier = Modifier.fillMaxWidth(),
+						) {
+							AnimatedVisibility(showPinnedIndicator) {
+								Icon(
+									painter = painterResource(R.drawable.ic_pin),
+									contentDescription = null,
+									modifier =
+										Modifier
+											.padding(end = 8.dp)
+											.size(18.dp),
+								)
+							}
 
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        navigationIconContentColor = LocalContentColor.current,
-                        titleContentColor = LocalContentColor.current,
-                        actionIconContentColor = LocalContentColor.current,
-                        subtitleContentColor = LocalContentColor.current,
-                    ),
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            AnimatedVisibility(showPinnedIndicator) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_pin),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .padding(end = 8.dp)
-                                        .size(18.dp),
-                                )
-                            }
+							AnimatedContent(currentItem?.photo?.fileName.orEmpty()) {
+								Text(
+									text = it,
+									maxLines = 1,
+									overflow = TextOverflow.Ellipsis,
+									modifier = Modifier.weight(1f),
+								)
+							}
+						}
+					},
+					navigationIcon = {
+						IconButton(
+							onClick = { navController.navigateUp() },
+						) {
+							Icon(
+								painter = painterResource(R.drawable.ic_back),
+								contentDescription = stringResource(R.string.common_cancel),
+							)
+						}
+					},
+					actions = {
+						// @since Item 3 — slideshow toggle. Play icon starts the
+						//   auto-advance; pause/stop icon stops it. The icon
+						//   swaps based on uiState.isSlideshowActive.
+						IconButton(
+							onClick = {
+								handleUiEvent(ImageViewerUiEvent.ToggleSlideshow)
+							},
+						) {
+							val icon =
+								if (uiState.isSlideshowActive) {
+									R.drawable.media3_icon_pause
+								} else {
+									R.drawable.ic_play_circle
+								}
+							val label =
+								if (uiState.isSlideshowActive) {
+									stringResource(R.string.view_photo_slideshow_stop)
+								} else {
+									stringResource(R.string.view_photo_slideshow_start)
+								}
+							Icon(
+								painter = painterResource(icon),
+								contentDescription = label,
+							)
+						}
 
-                            AnimatedContent(currentItem?.photo?.fileName.orEmpty()) {
-                                Text(
-                                    text = it,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = { navController.navigateUp() }
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_back),
-                                contentDescription = stringResource(R.string.common_cancel)
-                            )
-                        }
-                    },
-                    actions = {
-                        // @since Item 3 — slideshow toggle. Play icon starts the
-                        //   auto-advance; pause/stop icon stops it. The icon
-                        //   swaps based on uiState.isSlideshowActive.
-                        IconButton(
-                            onClick = {
-                                handleUiEvent(ImageViewerUiEvent.ToggleSlideshow)
-                            },
-                        ) {
-                            val icon = if (uiState.isSlideshowActive) {
-                                R.drawable.media3_icon_pause
-                            } else {
-                                R.drawable.ic_play_circle
-                            }
-                            val label = if (uiState.isSlideshowActive) {
-                                stringResource(R.string.view_photo_slideshow_stop)
-                            } else {
-                                stringResource(R.string.view_photo_slideshow_start)
-                            }
-                            Icon(
-                                painter = painterResource(icon),
-                                contentDescription = label,
-                            )
-                        }
+						IconButton(
+							onClick = {
+								handleUiEvent(
+									ImageViewerUiEvent.UpdateCurrentDialog(
+										ImageViewerUiState.Dialog.MoreMenu,
+									),
+								)
+							},
+						) {
+							Icon(
+								painter = painterResource(R.drawable.ic_more),
+								contentDescription = stringResource(R.string.common_more),
+							)
+						}
 
-                        IconButton(
-                            onClick = {
-                                handleUiEvent(
-                                    ImageViewerUiEvent.UpdateCurrentDialog(
-                                        ImageViewerUiState.Dialog.MoreMenu,
-                                    )
-                                )
-                            },
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_more),
-                                contentDescription = stringResource(R.string.common_more),
-                            )
-                        }
+						// Placed in actions for alignment
+						MoreMenu(
+							visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.MoreMenu,
+							onDismissRequest = {
+								handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
+							},
+							currentItem = currentItem,
+							uiState = uiState,
+							handleUiEvent = handleUiEvent,
+						)
+					},
+				)
+			}
 
-                        // Placed in actions for alignment
-                        MoreMenu(
-                            visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.MoreMenu,
-                            onDismissRequest = {
-                                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
-                            },
-                            currentItem = currentItem,
-                            uiState = uiState,
-                            handleUiEvent = handleUiEvent,
-                        )
-                    },
-                )
-            }
+			// Bottom
 
-            // Bottom
+			val activity = LocalActivity.current
 
-            val activity = LocalActivity.current
+			val configuration = LocalConfiguration.current
 
-            val configuration = LocalConfiguration.current
+			val showButtons by remember(configuration.orientation, showControls, currentItem) {
+				derivedStateOf {
+					when (currentItem) {
+						is ImageViewerItem.Image -> showControls
+						is ImageViewerItem.Video -> showControls && configuration.orientation != ORIENTATION_LANDSCAPE
+						null -> showControls
+					}
+				}
+			}
 
-            val showButtons by remember(configuration.orientation, showControls, currentItem) {
-                derivedStateOf {
-                    when (currentItem) {
-                        is ImageViewerItem.Image -> showControls
-                        is ImageViewerItem.Video -> showControls && configuration.orientation != ORIENTATION_LANDSCAPE
-                        null -> showControls
-                    }
-                }
-            }
+			AnimatedVisibility(
+				visible = showButtons,
+				enter = fadeIn(),
+				exit = fadeOut(),
+				modifier = Modifier.align(Alignment.BottomCenter),
+			) {
+				BottomAppBar(
+					containerColor = Color.Transparent,
+				) {
+					Row(
+						horizontalArrangement = Arrangement.SpaceEvenly,
+						modifier = Modifier.fillMaxWidth(),
+					) {
+						BottomActionItem(
+							text = stringResource(R.string.common_export),
+							icon = R.drawable.ic_export,
+							action = {
+								pickExportTargetLauncher.launchAndIgnoreTimer(
+									input = null,
+									activity = activity,
+								)
+							},
+						)
+						BottomActionItem(
+							text = stringResource(R.string.menu_ms_add_to_album),
+							icon = R.drawable.ic_add,
+							action = {
+								handleUiEvent(
+									ImageViewerUiEvent.UpdateCurrentDialog(
+										ImageViewerUiState.Dialog.AlbumPicker,
+									),
+								)
+							},
+						)
+						BottomActionItem(
+							text = stringResource(R.string.common_delete),
+							icon = R.drawable.ic_delete,
+							action = {
+								handleUiEvent(
+									ImageViewerUiEvent.UpdateCurrentDialog(
+										ImageViewerUiState.Dialog.ConfirmDelete,
+									),
+								)
+							},
+						)
+					}
+				}
+			}
+		}
 
-            AnimatedVisibility(
-                visible = showButtons,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                BottomAppBar(
-                    containerColor = Color.Transparent,
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+		ConfirmationDialog(
+			show = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.ConfirmExport,
+			onDismissRequest = {
+				handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
+			},
+			text =
+				stringResource(
+					if (LocalConfig.current?.deleteExportedFiles == true) {
+						R.string.export_and_delete_are_you_sure_this
+					} else {
+						R.string.export_are_you_sure_this
+					},
+				),
+			onConfirm = {
+				if (currentItem != null) {
+					exportDirectoryUri?.let {
+						handleUiEvent(
+							ImageViewerUiEvent.ConfirmExport(
+								item = currentItem,
+								target = it,
+							),
+						)
+					}
+				}
+			},
+		)
 
-                        BottomActionItem(
-                            text = stringResource(R.string.common_export),
-                            icon = R.drawable.ic_export,
-                            action = {
-                                pickExportTargetLauncher.launchAndIgnoreTimer(
-                                    input = null,
-                                    activity = activity,
-                                )
-                            },
-                        )
-                        BottomActionItem(
-                            text = stringResource(R.string.menu_ms_add_to_album),
-                            icon = R.drawable.ic_add,
-                            action = {
-                                handleUiEvent(
-                                    ImageViewerUiEvent.UpdateCurrentDialog(
-                                        ImageViewerUiState.Dialog.AlbumPicker
-                                    )
-                                )
-                            },
-                        )
-                        BottomActionItem(
-                            text = stringResource(R.string.common_delete),
-                            icon = R.drawable.ic_delete,
-                            action = {
-                                handleUiEvent(
-                                    ImageViewerUiEvent.UpdateCurrentDialog(
-                                        ImageViewerUiState.Dialog.ConfirmDelete
-                                    )
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-        }
+		ConfirmationDialog(
+			show = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.ConfirmDelete,
+			onDismissRequest = {
+				handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
+			},
+			text = stringResource(R.string.delete_are_you_sure_this),
+			onConfirm = {
+				if (currentItem != null) {
+					val itemCount = uiState.items.size
+					handleUiEvent(
+						ImageViewerUiEvent.ConfirmDelete(
+							item = currentItem,
+						),
+					)
 
-        ConfirmationDialog(
-            show = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.ConfirmExport,
-            onDismissRequest = {
-                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
-            },
-            text = stringResource(
-                if (LocalConfig.current?.deleteExportedFiles == true) {
-                    R.string.export_and_delete_are_you_sure_this
-                } else {
-                    R.string.export_are_you_sure_this
-                },
-            ),
-            onConfirm = {
-                if (currentItem != null) {
-                    exportDirectoryUri?.let {
-                        handleUiEvent(
-                            ImageViewerUiEvent.ConfirmExport(
-                                item = currentItem,
-                                target = it,
-                            )
-                        )
-                    }
-                }
-            }
-        )
+					if (itemCount <= 1) {
+						navController.navigateUp()
+					}
+				}
+			},
+		)
 
-        ConfirmationDialog(
-            show = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.ConfirmDelete,
-            onDismissRequest = {
-                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
-            },
-            text = stringResource(R.string.delete_are_you_sure_this),
-            onConfirm = {
-                if (currentItem != null) {
-                    val itemCount = uiState.items.size
-                    handleUiEvent(
-                        ImageViewerUiEvent.ConfirmDelete(
-                            item = currentItem,
-                        )
-                    )
-
-                    if (itemCount <= 1) {
-                        navController.navigateUp()
-                    }
-                }
-            }
-        )
-
-        AlbumPickerDialog(
-            visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.AlbumPicker,
-            selectedItemIds = if (currentItem == null) emptyList() else listOf(currentItem.photo.uuid),
-            onDismissRequest = {
-                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
-            },
-        )
-    }
+		AlbumPickerDialog(
+			visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.AlbumPicker,
+			selectedItemIds = if (currentItem == null) emptyList() else listOf(currentItem.photo.uuid),
+			onDismissRequest = {
+				handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
+			},
+		)
+	}
 }
 
-private val PlaybackSpeedOptions = setOf(
-    0.25f,
-    0.5f,
-    1f,
-    1.5f,
-    2f,
-)
+private val PlaybackSpeedOptions =
+	setOf(
+		0.25f,
+		0.5f,
+		1f,
+		1.5f,
+		2f,
+	)
 
 @Composable
 private fun MoreMenu(
-    visible: Boolean,
-    onDismissRequest: () -> Unit,
-    currentItem: ImageViewerItem?,
-    uiState: ImageViewerUiState,
-    handleUiEvent: (ImageViewerUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+	visible: Boolean,
+	onDismissRequest: () -> Unit,
+	currentItem: ImageViewerItem?,
+	uiState: ImageViewerUiState,
+	handleUiEvent: (ImageViewerUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
+	val context = LocalContext.current
 
-    RoundedDropdownMenu(
-        expanded = visible,
-        onDismissRequest = onDismissRequest,
-        modifier = modifier,
-    ) {
-        val isAlbumScoped = uiState.albumUuid != null
-        val isPinned = currentItem?.photo?.uuid in uiState.pinnedPhotoIds
-        val pinSuccessMessage = stringResource(R.string.viewer_pin_confirmation)
-        val unpinSuccessMessage = stringResource(R.string.viewer_unpin_confirmation)
+	RoundedDropdownMenu(
+		expanded = visible,
+		onDismissRequest = onDismissRequest,
+		modifier = modifier,
+	) {
+		val isAlbumScoped = uiState.albumUuid != null
+		val isPinned = currentItem?.photo?.uuid in uiState.pinnedPhotoIds
+		val pinSuccessMessage = stringResource(R.string.viewer_pin_confirmation)
+		val unpinSuccessMessage = stringResource(R.string.viewer_unpin_confirmation)
 
-        if (isAlbumScoped && currentItem != null) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = stringResource(
-                            if (isPinned) {
-                                R.string.menu_ms_unpin
-                            } else {
-                                R.string.menu_ms_pin
-                            }
-                        ),
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(
-                            if (isPinned) {
-                                R.drawable.ic_pin_off
-                            } else {
-                                R.drawable.ic_pin
-                            }
-                        ),
-                        contentDescription = null,
-                    )
-                },
-                onClick = {
-                    handleUiEvent(
-                        ImageViewerUiEvent.SetPinned(
-                            photoUuid = currentItem.photo.uuid,
-                            pinned = !isPinned,
-                        )
-                    )
-                    Dialogs.showShortToast(
-                        context,
-                        if (isPinned) unpinSuccessMessage else pinSuccessMessage
-                    )
+		if (isAlbumScoped && currentItem != null) {
+			DropdownMenuItem(
+				text = {
+					Text(
+						text =
+							stringResource(
+								if (isPinned) {
+									R.string.menu_ms_unpin
+								} else {
+									R.string.menu_ms_pin
+								},
+							),
+					)
+				},
+				leadingIcon = {
+					Icon(
+						painter =
+							painterResource(
+								if (isPinned) {
+									R.drawable.ic_pin_off
+								} else {
+									R.drawable.ic_pin
+								},
+							),
+						contentDescription = null,
+					)
+				},
+				onClick = {
+					handleUiEvent(
+						ImageViewerUiEvent.SetPinned(
+							photoUuid = currentItem.photo.uuid,
+							pinned = !isPinned,
+						),
+					)
+					Dialogs.showShortToast(
+						context,
+						if (isPinned) unpinSuccessMessage else pinSuccessMessage,
+					)
 
-                    onDismissRequest()
-                }
-            )
+					onDismissRequest()
+				},
+			)
 
-            HorizontalDivider()
-        }
+			HorizontalDivider()
+		}
 
-        if (currentItem is ImageViewerItem.Video) {
+		if (currentItem is ImageViewerItem.Video) {
+			val loopingEnabledText = stringResource(R.string.view_photo_loop_video_enabled)
+			val loopingDisabledText = stringResource(R.string.view_photo_loop_video_disabled)
 
+			DropdownMenuItem(
+				text = {
+					val text =
+						remember(uiState.loopVideos) {
+							if (uiState.loopVideos) {
+								loopingEnabledText
+							} else {
+								loopingDisabledText
+							}
+						}
 
-            val loopingEnabledText = stringResource(R.string.view_photo_loop_video_enabled)
-            val loopingDisabledText = stringResource(R.string.view_photo_loop_video_disabled)
+					Text(
+						text = text,
+					)
+				},
+				leadingIcon = {
+					val icon =
+						remember(uiState.loopVideos) {
+							if (uiState.loopVideos) {
+								R.drawable.media3_icon_repeat_all // Icon for all but we just do repeat one
+							} else {
+								R.drawable.ic_repeat_off
+							}
+						}
 
-            DropdownMenuItem(
-                text = {
-                    val text = remember(uiState.loopVideos) {
-                        if (uiState.loopVideos) {
-                            loopingEnabledText
-                        } else {
-                            loopingDisabledText
-                        }
-                    }
+					Icon(
+						painter = painterResource(icon),
+						contentDescription = null,
+					)
+				},
+				onClick = {
+					val newValue = !uiState.loopVideos
 
-                    Text(
-                        text = text,
-                    )
-                },
-                leadingIcon = {
-                    val icon = remember(uiState.loopVideos) {
-                        if (uiState.loopVideos) {
-                            R.drawable.media3_icon_repeat_all // Icon for all but we just do repeat one
-                        } else {
-                            R.drawable.ic_repeat_off
-                        }
-                    }
+					val message =
+						if (newValue) {
+							loopingEnabledText
+						} else {
+							loopingDisabledText
+						}
 
-                    Icon(
-                        painter = painterResource(icon),
-                        contentDescription = null,
-                    )
-                },
-                onClick = {
-                    val newValue = !uiState.loopVideos
+					Dialogs.showShortToast(context, message)
+					handleUiEvent(ImageViewerUiEvent.UpdateLoopVideos(newValue))
+					onDismissRequest()
+				},
+			)
 
-                    val message = if (newValue) {
-                        loopingEnabledText
-                    } else {
-                        loopingDisabledText
-                    }
+			var showPlaybackSpeed by remember { mutableStateOf(false) }
 
-                    Dialogs.showShortToast(context, message)
-                    handleUiEvent(ImageViewerUiEvent.UpdateLoopVideos(newValue))
-                    onDismissRequest()
-                }
-            )
+			val playbackSpeedText = stringResource(R.string.view_photo_video_playback_speed)
 
-            var showPlaybackSpeed by remember { mutableStateOf(false) }
+			DropdownMenuItem(
+				text = {
+					Text(
+						text = playbackSpeedText,
+					)
+				},
+				leadingIcon = {
+					Icon(
+						painter = painterResource(R.drawable.ic_slow_motion),
+						contentDescription = null,
+					)
+				},
+				onClick = { showPlaybackSpeed = true },
+			)
 
-            val playbackSpeedText = stringResource(R.string.view_photo_video_playback_speed)
+			RoundedDropdownMenu(
+				expanded = showPlaybackSpeed,
+				onDismissRequest = { showPlaybackSpeed = false },
+			) {
+				for (option in PlaybackSpeedOptions) {
+					DropdownMenuItem(
+						text = {
+							Text(
+								text = "${option}x",
+							)
+						},
+						trailingIcon = {
+							AnimatedVisibility(
+								visible = option == uiState.videoPlaybackSpeed,
+								enter = fadeIn(),
+								exit = fadeOut(),
+							) {
+								Icon(
+									modifier = Modifier.size(18.dp),
+									painter = painterResource(R.drawable.ic_check),
+									contentDescription = null,
+								)
+							}
+						},
+						onClick = {
+							handleUiEvent(ImageViewerUiEvent.UpdateVideoPlaybackSpeed(option))
+							Dialogs.showShortToast(context, "$playbackSpeedText ${option}x")
+							showPlaybackSpeed = false
+						},
+					)
+				}
+			}
 
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = playbackSpeedText,
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_slow_motion),
-                        contentDescription = null,
-                    )
-                },
-                onClick = { showPlaybackSpeed = true }
-            )
+			HorizontalDivider()
+		}
 
-            RoundedDropdownMenu(
-                expanded = showPlaybackSpeed,
-                onDismissRequest = { showPlaybackSpeed = false },
-            ) {
-                for (option in PlaybackSpeedOptions) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = "${option}x",
-                            )
-                        },
-                        trailingIcon = {
-                            AnimatedVisibility(
-                                visible = option == uiState.videoPlaybackSpeed,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
-                            ) {
-                                Icon(
-                                    modifier = Modifier.size(18.dp),
-                                    painter = painterResource(R.drawable.ic_check),
-                                    contentDescription = null,
-                                )
-                            }
-                        },
-                        onClick = {
-                            handleUiEvent(ImageViewerUiEvent.UpdateVideoPlaybackSpeed(option))
-                            Dialogs.showShortToast(context, "$playbackSpeedText ${option}x")
-                            showPlaybackSpeed = false
-                        }
-                    )
-                }
-            }
+		DropdownMenuItem(
+			text = {
+				Text(
+					text = stringResource(R.string.view_photo_detail_title),
+				)
+			},
+			leadingIcon = {
+				Icon(
+					painter = painterResource(R.drawable.ic_info),
+					contentDescription = null,
+				)
+			},
+			onClick = {
+				handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(ImageViewerUiState.Dialog.DetailsSheet))
+			},
+		)
+	}
 
-            HorizontalDivider()
-
-        }
-
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = stringResource(R.string.view_photo_detail_title),
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_info),
-                    contentDescription = null,
-                )
-            },
-            onClick = {
-                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(ImageViewerUiState.Dialog.DetailsSheet))
-            }
-        )
-    }
-
-    currentItem?.let {
-        ImageDetailsSheet(
-            visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.DetailsSheet,
-            onDismissRequest = {
-                handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
-            },
-            photo = it.photo
-        )
-    }
+	currentItem?.let {
+		ImageDetailsSheet(
+			visible = uiState.inputs.currentDialog == ImageViewerUiState.Dialog.DetailsSheet,
+			onDismissRequest = {
+				handleUiEvent(ImageViewerUiEvent.UpdateCurrentDialog(null))
+			},
+			photo = it.photo,
+		)
+	}
 }
 
 @Composable
 fun BottomActionItem(
-    text: String,
-    icon: Int,
-    action: () -> Unit,
-    modifier: Modifier = Modifier,
+	text: String,
+	icon: Int,
+	action: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = modifier
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = action)
-                .padding(10.dp)
-        ) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-            )
-            Text(
-                text = text,
-                maxLines = 1,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
+	Box(
+		modifier = modifier,
+		contentAlignment = Alignment.Center,
+	) {
+		Column(
+			horizontalAlignment = Alignment.CenterHorizontally,
+			modifier =
+				modifier
+					.clip(CircleShape)
+					.clickable(role = Role.Button, onClick = action)
+					.padding(10.dp),
+		) {
+			Icon(
+				painter = painterResource(icon),
+				contentDescription = null,
+			)
+			Text(
+				text = text,
+				maxLines = 1,
+				fontSize = 13.sp,
+				textAlign = TextAlign.Center,
+			)
+		}
+	}
 }

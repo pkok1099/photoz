@@ -20,20 +20,19 @@ import android.content.Context
 import android.graphics.ImageDecoder
 import coil.decode.DataSource
 import coil.decode.ImageSource
-import coil.drawable.MovieDrawable
 import coil.fetch.DrawableResult
 import coil.fetch.FetchResult
 import coil.fetch.Fetcher
 import coil.fetch.SourceResult
-import onlasdan.gallery.io.VaultFileStorage
-import onlasdan.gallery.model.database.entity.PhotoType
-import onlasdan.gallery.sync.work.SyncRestorer
-import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okio.BufferedSource
 import okio.buffer
 import okio.source
+import onlasdan.gallery.io.VaultFileStorage
+import onlasdan.gallery.model.database.entity.PhotoType
+import onlasdan.gallery.sync.work.SyncRestorer
+import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
 import timber.log.Timber
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -47,69 +46,72 @@ import kotlin.coroutines.suspendCoroutine
  * Used for displaying encrypted images.
  */
 class EncryptedImageFetcher(
-    private val vaultFileStorage: VaultFileStorage,
-    private val requestData: EncryptedImageRequestData,
-    private val context: Context,
-    private val syncRestorer: SyncRestorer? = null,
+	private val vaultFileStorage: VaultFileStorage,
+	private val requestData: EncryptedImageRequestData,
+	private val context: Context,
+	private val syncRestorer: SyncRestorer? = null,
 ) : Fetcher {
+	override suspend fun fetch(): FetchResult? =
+		withContext(Dispatchers.IO) {
+			// ─── On-demand cloud-sync restore (PR1) ─────────────────────────────────
+			if (syncRestorer != null && requestData.photoUuid != null) {
+				runCatching { syncRestorer.ensureLocalOriginal(requestData.photoUuid) }
+					.onFailure { e ->
+						Timber.w(e, "EncryptedImageFetcher: restore failed for %s", requestData.photoUuid)
+					}
+			}
 
-    override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
-        // ─── On-demand cloud-sync restore (PR1) ─────────────────────────────────
-        if (syncRestorer != null && requestData.photoUuid != null) {
-            runCatching { syncRestorer.ensureLocalOriginal(requestData.photoUuid) }
-                .onFailure { e ->
-                    Timber.w(e, "EncryptedImageFetcher: restore failed for %s", requestData.photoUuid)
-                }
-        }
+			val inputStream =
+				vaultFileStorage.openEncryptedInput(requestData.internalFileName)
+			inputStream ?: return@withContext null
 
-        val inputStream =
-            vaultFileStorage.openEncryptedInput(requestData.internalFileName)
-        inputStream ?: return@withContext null
+			val mayBeAnimatedImage =
+				when (requestData.mimeType) {
+					PhotoType.GIF.mimeType -> true
+					PhotoType.WEBP.mimeType -> true
+					else -> false
+				}
 
-        val mayBeAnimatedImage = when (requestData.mimeType) {
-            PhotoType.GIF.mimeType -> true
-            PhotoType.WEBP.mimeType -> true
-            else -> false
-        }
+			if (mayBeAnimatedImage && requestData.playAnimation) {
+				val drawable = decodeAnimatedImage(inputStream)
+				DrawableResult(
+					drawable = drawable,
+					isSampled = false,
+					dataSource = DataSource.MEMORY,
+				)
+			} else {
+				SourceResult(
+					source =
+						ImageSource(
+							source = inputStream.inMemoryBufferedSource(),
+							context = context,
+						),
+					mimeType = requestData.mimeType,
+					DataSource.MEMORY,
+				)
+			}
+		}
 
-        if (mayBeAnimatedImage && requestData.playAnimation) {
-            val drawable = decodeAnimatedImage(inputStream)
-            DrawableResult(
-                drawable = drawable,
-                isSampled = false,
-                dataSource = DataSource.MEMORY,
-            )
-        } else {
-            SourceResult(
-                source = ImageSource(
-                    source = inputStream.inMemoryBufferedSource(),
-                    context = context,
-                ),
-                mimeType = requestData.mimeType,
-                DataSource.MEMORY,
-            )
-        }
-    }
+	private suspend fun InputStream.inMemoryBufferedSource(): BufferedSource {
+		val rawBytes = this.use { it.readBytesSuspending() }
+		val byteStream = ByteArrayInputStream(rawBytes)
 
-    private suspend fun InputStream.inMemoryBufferedSource(): BufferedSource {
-        val rawBytes = this.use { it.readBytesSuspending() }
-        val byteStream = ByteArrayInputStream(rawBytes)
+		return byteStream.source().buffer()
+	}
 
-        return byteStream.source().buffer()
-    }
-
-    private suspend fun decodeAnimatedImage(inputStream: InputStream): android.graphics.drawable.Drawable {
-        val bytes = inputStream.use { it.readBytesSuspending() }
-        val source = ImageDecoder.createSource(bytes)
-        return ImageDecoder.decodeDrawable(source)
-    }
+	private suspend fun decodeAnimatedImage(inputStream: InputStream): android.graphics.drawable.Drawable {
+		val bytes = inputStream.use { it.readBytesSuspending() }
+		val source = ImageDecoder.createSource(bytes)
+		return ImageDecoder.decodeDrawable(source)
+	}
 }
 
-suspend fun InputStream.readBytesSuspending(): ByteArray = suspendCoroutine { continuation ->
-    try {
-        val bytes = readBytes()
-        continuation.resume(bytes)
-    } catch (e: Exception) {
-        continuation.resumeWithException(e)
-    }
-}
+suspend fun InputStream.readBytesSuspending(): ByteArray =
+	suspendCoroutine { continuation ->
+		try {
+			val bytes = readBytes()
+			continuation.resume(bytes)
+		} catch (e: Exception) {
+			continuation.resumeWithException(e)
+		}
+	}

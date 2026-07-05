@@ -17,5 +17,5 @@
 package onlasdan.gallery.backup.domain
 
 data class RestoreResult(
-    val errors: Int = 0,
+	val errors: Int = 0,
 )

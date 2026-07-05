@@ -19,21 +19,23 @@ package onlasdan.gallery.encryption.domain.models
 import onlasdan.gallery.encryption.domain.crypto.Bip39WordCount
 
 @JvmInline
-value class RecoveryPhrase(val words: List<String> = emptyList()) {
-    fun toMnemonicString(): String = words.joinToString("-")
+value class RecoveryPhrase(
+	val words: List<String> = emptyList(),
+) {
+	fun toMnemonicString(): String = words.joinToString("-")
 
-    fun validate(): Boolean {
-        if (words.any { it.isBlank()} ) {
-            return false
-        }
+	fun validate(): Boolean {
+		if (words.any { it.isBlank() }) {
+			return false
+		}
 
-        return words.size == Bip39WordCount.Twelve.words || words.size == Bip39WordCount.TwentyFour.words
-    }
+		return words.size == Bip39WordCount.Twelve.words || words.size == Bip39WordCount.TwentyFour.words
+	}
 
-    companion object {
-        fun from(string: String): RecoveryPhrase {
-            val words = string.split("-")
-            return RecoveryPhrase(words)
-        }
-    }
+	companion object {
+		fun from(string: String): RecoveryPhrase {
+			val words = string.split("-")
+			return RecoveryPhrase(words)
+		}
+	}
 }

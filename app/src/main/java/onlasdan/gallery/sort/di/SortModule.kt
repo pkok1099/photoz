@@ -21,22 +21,20 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.sort.data.SortRepositoryImpl
 import onlasdan.gallery.sort.domain.SortRepository
-import onlasdan.gallery.model.database.PhotoZDatabase
 
 @Module
 @InstallIn(SingletonComponent::class)
 class SortModule {
-
-    @Provides
-    fun provideSortDao(database: PhotoZDatabase) = database.getSortDao()
+	@Provides
+	fun provideSortDao(database: PhotoZDatabase) = database.getSortDao()
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 interface SortBindingModule {
-
-    @Binds
-    fun bindSortRepository(impl: SortRepositoryImpl): SortRepository
+	@Binds
+	fun bindSortRepository(impl: SortRepositoryImpl): SortRepository
 }

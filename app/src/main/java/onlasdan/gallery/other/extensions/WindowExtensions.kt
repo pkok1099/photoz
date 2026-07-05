@@ -26,11 +26,11 @@ import android.view.WindowManager
  * @since PR1: minSdk bumped to 35 — `Build.VERSION.SDK_INT >= R` guard removed (always true).
  */
 fun Window.addSystemUIVisibilityListener(visibilityListener: (Boolean) -> Unit) {
-    decorView.setOnApplyWindowInsetsListener { v, insets ->
-        val suppliedInsets = v.onApplyWindowInsets(insets)
-        visibilityListener(suppliedInsets.isVisible(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()))
-        suppliedInsets
-    }
+	decorView.setOnApplyWindowInsetsListener { v, insets ->
+		val suppliedInsets = v.onApplyWindowInsets(insets)
+		visibilityListener(suppliedInsets.isVisible(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()))
+		suppliedInsets
+	}
 }
 
 /**
@@ -39,6 +39,6 @@ fun Window.addSystemUIVisibilityListener(visibilityListener: (Boolean) -> Unit) 
  * @since PR1: minSdk bumped to 35 — `Build.VERSION.SDK_INT >= R` guard removed (always true).
  */
 fun WindowManager.getCompatScreenSize(): Pair<Int, Int> {
-    val bounds = this.currentWindowMetrics.bounds
-    return Pair(bounds.width(), bounds.height())
+	val bounds = this.currentWindowMetrics.bounds
+	return Pair(bounds.width(), bounds.height())
 }

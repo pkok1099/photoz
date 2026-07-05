@@ -44,137 +44,139 @@ import androidx.compose.ui.tooling.preview.Devices.NEXUS_5
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.other.openUrl
 import onlasdan.gallery.settings.ui.compose.LocalConfig
-import onlasdan.gallery.telemetry.domain.TelemetryEnabledByDefault
+import onlasdan.gallery.telemetry.domain.TELEMETRY_ENABLED_BY_DEFAULT
 import onlasdan.gallery.ui.theme.AppTheme
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun TelemetryOptInQuestionSheet() {
-    val config = LocalConfig.current
-    var visible by rememberSaveable { mutableStateOf(false) }
+	val config = LocalConfig.current
+	var visible by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        config ?: return@LaunchedEffect
+	LaunchedEffect(Unit) {
+		config ?: return@LaunchedEffect
 
-        if (
-            !TelemetryEnabledByDefault
-            && !config.telemetryAskedForOptIn
-            && !config.justFinishedSetup
-            && config.lastUsedUnlockMethod != VaultProtectionType.RecoveryPhrase
-        ) {
-            delay(300)
-            visible = true
-            config.telemetryAskedForOptIn = true
-        }
-    }
+		if (
+			!TELEMETRY_ENABLED_BY_DEFAULT &&
+			!config.telemetryAskedForOptIn &&
+			!config.justFinishedSetup &&
+			config.lastUsedUnlockMethod != VaultProtectionType.RecoveryPhrase
+		) {
+			delay(300)
+			visible = true
+			config.telemetryAskedForOptIn = true
+		}
+	}
 
-    if (visible) {
-        val viewModel: TelemetryViewModel = hiltViewModel()
+	if (visible) {
+		val viewModel: TelemetryViewModel = hiltViewModel()
 
-        SheetContent(
-            updateEnabled = {
-                viewModel.updateTelemetryEnabled(it)
-            },
-            onDismissRequest = { visible = false },
-        )
-    }
-
+		SheetContent(
+			updateEnabled = {
+				viewModel.updateTelemetryEnabled(it)
+			},
+			onDismissRequest = { visible = false },
+		)
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SheetContent(
-    updateEnabled: (Boolean) -> Unit,
-    onDismissRequest: () -> Unit,
+	updateEnabled: (Boolean) -> Unit,
+	onDismissRequest: () -> Unit,
 ) {
-    val state = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
-    )
+	val state =
+		rememberModalBottomSheetState(
+			skipPartiallyExpanded = true,
+		)
 
-    val scope = rememberCoroutineScope()
+	val scope = rememberCoroutineScope()
 
-    ModalBottomSheet(
-        sheetState = state,
-        onDismissRequest = onDismissRequest,
-        dragHandle = null,
-    ) {
+	ModalBottomSheet(
+		sheetState = state,
+		onDismissRequest = onDismissRequest,
+		dragHandle = null,
+	) {
+		Column(
+			verticalArrangement = Arrangement.spacedBy(12.dp),
+			modifier =
+				Modifier
+					.verticalScroll(rememberScrollState())
+					.padding(20.dp),
+		) {
+			Text(
+				text = stringResource(R.string.telemetry_sheet_title),
+				style = MaterialTheme.typography.titleLarge,
+			)
 
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.telemetry_sheet_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
+			Text(
+				text = stringResource(R.string.telemetry_sheet_paragraph_1),
+			)
 
-            Text(
-                text = stringResource(R.string.telemetry_sheet_paragraph_1)
-            )
+			Text(
+				text = stringResource(R.string.telemetry_sheet_paragraph_2),
+			)
 
-            Text(
-                text = stringResource(R.string.telemetry_sheet_paragraph_2)
-            )
+			Text(
+				text = stringResource(R.string.telemetry_sheet_paragraph_3),
+			)
 
-            Text(
-                text = stringResource(R.string.telemetry_sheet_paragraph_3)
-            )
+			val context = LocalContext.current
+			val ppUrl = stringResource(R.string.about_privacy_policy_url)
 
-            val context = LocalContext.current
-            val ppUrl = stringResource(R.string.about_privacy_policy_url)
+			TextButton(
+				onClick = {
+					context.openUrl(ppUrl)
+				},
+			) {
+				Text(stringResource(R.string.telemetry_learn_more))
+			}
 
-            TextButton(
-                onClick = {
-                    context.openUrl(ppUrl)
-                }
-            ) {
-                Text(stringResource(R.string.telemetry_learn_more))
-            }
+			Column(
+				horizontalAlignment = Alignment.CenterHorizontally,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				TextButton(
+					onClick = {
+						updateEnabled(false)
+						scope
+							.launch {
+								state.hide()
+							}.invokeOnCompletion { onDismissRequest() }
+					},
+				) {
+					Text(stringResource(R.string.telemetry_choice_no))
+				}
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TextButton(
-                    onClick = {
-                        updateEnabled(false)
-                        scope.launch {
-                            state.hide()
-                        }.invokeOnCompletion { onDismissRequest() }
-                    },
-                ) {
-                    Text(stringResource(R.string.telemetry_choice_no))
-                }
-
-                Button(
-                    onClick = {
-                        updateEnabled(true)
-                        scope.launch {
-                            state.hide()
-                        }.invokeOnCompletion { onDismissRequest() }
-                    }
-                ) {
-                    Text(stringResource(R.string.telemetry_choice_yes))
-                }
-            }
-        }
-    }
+				Button(
+					onClick = {
+						updateEnabled(true)
+						scope
+							.launch {
+								state.hide()
+							}.invokeOnCompletion { onDismissRequest() }
+					},
+				) {
+					Text(stringResource(R.string.telemetry_choice_yes))
+				}
+			}
+		}
+	}
 }
 
 @Preview(device = NEXUS_5)
 @Composable
 private fun Preview() {
-    AppTheme {
-        SheetContent(
-            updateEnabled = {},
-            onDismissRequest = {},
-        )
-    }
+	AppTheme {
+		SheetContent(
+			updateEnabled = {},
+			onDismissRequest = {},
+		)
+	}
 }

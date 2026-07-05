@@ -26,16 +26,22 @@ import onlasdan.gallery.sync.work.SyncRestorer
 import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
 import javax.inject.Inject
 
-class EncryptedImageFetcherFactory @Inject constructor(
-    private val vaultFileStorage: VaultFileStorage,
-    private val syncRestorer: SyncRestorer,
-    @ApplicationContext private val context: Context,
-) : Fetcher.Factory<EncryptedImageRequestData> {
-    override fun create(data: EncryptedImageRequestData, options: Options, imageLoader: ImageLoader): Fetcher =
-        EncryptedImageFetcher(
-            vaultFileStorage = vaultFileStorage,
-            requestData = data,
-            context = context,
-            syncRestorer = syncRestorer,
-        )
-}
+class EncryptedImageFetcherFactory
+	@Inject
+	constructor(
+		private val vaultFileStorage: VaultFileStorage,
+		private val syncRestorer: SyncRestorer,
+		@ApplicationContext private val context: Context,
+	) : Fetcher.Factory<EncryptedImageRequestData> {
+		override fun create(
+			data: EncryptedImageRequestData,
+			options: Options,
+			imageLoader: ImageLoader,
+		): Fetcher =
+			EncryptedImageFetcher(
+				vaultFileStorage = vaultFileStorage,
+				requestData = data,
+				context = context,
+				syncRestorer = syncRestorer,
+			)
+	}

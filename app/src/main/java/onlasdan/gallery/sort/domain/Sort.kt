@@ -23,49 +23,64 @@ import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.model.database.ref.AlbumPhotoCrossRefTable
 
 data class Sort(
-    val field: Field,
-    val order: Order,
+	val field: Field,
+	val order: Order,
 ) {
-    enum class Order(val value: Int, @DrawableRes val icon: Int, @StringRes val label: Int, val sql: String) {
-        Asc(0, R.drawable.ic_double_arrow_up, R.string.sorting_order_asc_label, "ASC"),
-        Desc(1, R.drawable.ic_double_arrow_down, R.string.sorting_order_desc_label, "DESC");
+	enum class Order(
+		val value: Int,
+		@DrawableRes val icon: Int,
+		@StringRes val label: Int,
+		val sql: String,
+	) {
+		Asc(0, R.drawable.ic_double_arrow_up, R.string.sorting_order_asc_label, "ASC"),
+		Desc(1, R.drawable.ic_double_arrow_down, R.string.sorting_order_desc_label, "DESC"),
+		;
 
-        companion object {
-            fun fromValue(value: Int) = when (value) {
-                Asc.value -> Asc
-                Desc.value -> Desc
-                else -> error("Invalid value $value")
-            }
-        }
-    }
+		companion object {
+			fun fromValue(value: Int) =
+				when (value) {
+					Asc.value -> Asc
+					Desc.value -> Desc
+					else -> error("Invalid value $value")
+				}
+		}
+	}
 
-    enum class Field(val value: Int, val columnName: String, @DrawableRes val icon: Int, @StringRes val label: Int) {
-        ImportDate(0, Photo.COL_IMPORTED_AT, R.drawable.ic_calendar_today, R.string.sorting_field_import_date_label),
-        FileName(1, Photo.COL_FILENAME, R.drawable.ic_abc, R.string.sorting_field_filename_label),
-        Size(2, Photo.COL_SIZE, R.drawable.ic_photo_size, R.string.sorting_field_size_label),
-        LinkedAt(3, AlbumPhotoCrossRefTable.COL_LINKED_AT, R.drawable.ic_calendar_today, R.string.sorting_field_added_to_album_label),
-        LastModified(4, Photo.COL_LAST_MODIFIED, R.drawable.ic_edit, R.string.sorting_field_last_modified),
-        /**
-         * Sprint 4 / M3 — Sort by photo type (JPEG, MP4, PDF, etc.).
-         *
-         * Groups photos by type in the gallery: all JPEGs together, then all
-         * MP4s, etc. Useful when the user has a mixed vault and wants to see
-         * files of the same kind clustered.
-         *
-         * @since v12 — Sprint 4 / M3 advanced sort
-         */
-        Type(5, "type", R.drawable.ic_image, R.string.sorting_field_type_label);
+	enum class Field(
+		val value: Int,
+		val columnName: String,
+		@DrawableRes val icon: Int,
+		@StringRes val label: Int,
+	) {
+		ImportDate(0, Photo.COL_IMPORTED_AT, R.drawable.ic_calendar_today, R.string.sorting_field_import_date_label),
+		FileName(1, Photo.COL_FILENAME, R.drawable.ic_abc, R.string.sorting_field_filename_label),
+		Size(2, Photo.COL_SIZE, R.drawable.ic_photo_size, R.string.sorting_field_size_label),
+		LinkedAt(3, AlbumPhotoCrossRefTable.COL_LINKED_AT, R.drawable.ic_calendar_today, R.string.sorting_field_added_to_album_label),
+		LastModified(4, Photo.COL_LAST_MODIFIED, R.drawable.ic_edit, R.string.sorting_field_last_modified),
 
-        companion object {
-            fun fromValue(value: Int) = when (value) {
-                ImportDate.value -> ImportDate
-                FileName.value -> FileName
-                Size.value -> Size
-                LinkedAt.value -> LinkedAt
-                LastModified.value -> LastModified
-                Type.value -> Type
-                else -> error("Invalid value $value")
-            }
-        }
-    }
+		/**
+		 * Sprint 4 / M3 — Sort by photo type (JPEG, MP4, PDF, etc.).
+		 *
+		 * Groups photos by type in the gallery: all JPEGs together, then all
+		 * MP4s, etc. Useful when the user has a mixed vault and wants to see
+		 * files of the same kind clustered.
+		 *
+		 * @since v12 — Sprint 4 / M3 advanced sort
+		 */
+		Type(5, "type", R.drawable.ic_image, R.string.sorting_field_type_label),
+		;
+
+		companion object {
+			fun fromValue(value: Int) =
+				when (value) {
+					ImportDate.value -> ImportDate
+					FileName.value -> FileName
+					Size.value -> Size
+					LinkedAt.value -> LinkedAt
+					LastModified.value -> LastModified
+					Type.value -> Type
+					else -> error("Invalid value $value")
+				}
+		}
+	}
 }

@@ -36,55 +36,65 @@ class UserCanceledBiometricsException : Exception()
  * - Display biometric prompt with title, subtitle, and cancel option
  * - Return unlocked cipher or error result
  */
-class UnlockBiometricCipherPrompt @Inject constructor() {
-    suspend operator fun invoke(
-        fragment: Fragment,
-        cipher: Cipher,
-        title: String,
-        subtitle: String,
-        negativeButtonText: String,
-    ): Result<Cipher> = suspendCoroutine { continuation ->
-        val biometricPrompt = BiometricPrompt(
-            fragment,
-            ContextCompat.getMainExecutor(fragment.requireContext()),
-            object : BiometricPrompt.AuthenticationCallback() {
+class UnlockBiometricCipherPrompt
+	@Inject
+	constructor() {
+		suspend operator fun invoke(
+			fragment: Fragment,
+			cipher: Cipher,
+			title: String,
+			subtitle: String,
+			negativeButtonText: String,
+		): Result<Cipher> =
+			suspendCoroutine { continuation ->
+				val biometricPrompt =
+					BiometricPrompt(
+						fragment,
+						ContextCompat.getMainExecutor(fragment.requireContext()),
+						object : BiometricPrompt.AuthenticationCallback() {
+							override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+								super.onAuthenticationSucceeded(result)
+								val cipher = result.cryptoObject?.cipher
 
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    super.onAuthenticationSucceeded(result)
-                    val cipher = result.cryptoObject?.cipher
+								if (cipher != null) {
+									continuation.resume(Result.success(cipher))
+								} else {
+									continuation.resume(Result.failure(IllegalStateException("Cipher is null")))
+								}
+							}
 
-                    if (cipher != null) {
-                        continuation.resume(Result.success(cipher))
-                    } else {
-                        continuation.resume(Result.failure(IllegalStateException("Cipher is null")))
-                    }
-                }
+							override fun onAuthenticationError(
+								errorCode: Int,
+								errString: CharSequence,
+							) {
+								super.onAuthenticationError(errorCode, errString)
+								val noErrorMessages =
+									setOf(
+										BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+										BiometricPrompt.ERROR_USER_CANCELED,
+									)
 
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    super.onAuthenticationError(errorCode, errString)
-                    val noErrorMessages = setOf(
-                        BiometricPrompt.ERROR_NEGATIVE_BUTTON,
-                        BiometricPrompt.ERROR_USER_CANCELED,
-                    )
+								val error =
+									if (noErrorMessages.contains(errorCode)) {
+										UserCanceledBiometricsException()
+									} else {
+										Exception(errString.toString())
+									}
 
-                    val error = if (noErrorMessages.contains(errorCode)) {
-                        UserCanceledBiometricsException()
-                    } else {
-                        Exception(errString.toString())
-                    }
+								continuation.resume(Result.failure(error))
+							}
+						},
+					)
 
-                    continuation.resume(Result.failure(error))
-                }
-            }
-        )
+				val promptInfo =
+					BiometricPrompt.PromptInfo
+						.Builder()
+						.setTitle(title)
+						.setSubtitle(subtitle)
+						.setNegativeButtonText(negativeButtonText)
+						.setConfirmationRequired(true)
+						.build()
 
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle(title)
-            .setSubtitle(subtitle)
-            .setNegativeButtonText(negativeButtonText)
-            .setConfirmationRequired(true)
-            .build()
-
-        biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
-    }
-}
+				biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
+			}
+	}

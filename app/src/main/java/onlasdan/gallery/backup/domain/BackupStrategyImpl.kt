@@ -26,47 +26,47 @@ import java.io.ByteArrayInputStream
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
-class BackupStrategyImpl @Inject constructor(
-    private val dumpDatabaseUseCase: DumpDatabaseUseCase,
-    private val io: IO,
-    private val gson: Gson,
-    @ApplicationContext private val context: Context,
-) : BackupStrategy {
+class BackupStrategyImpl
+	@Inject
+	constructor(
+		private val dumpDatabaseUseCase: DumpDatabaseUseCase,
+		private val io: IO,
+		private val gson: Gson,
+		@ApplicationContext private val context: Context,
+	) : BackupStrategy {
+		override suspend fun writePhotoToBackup(
+			photo: Photo,
+			zipOutputStream: ZipOutputStream,
+		): Result<Unit> {
+			context
+				.fileList()
+				.filter { it.contains(photo.uuid) }
+				.map { it to context.openFileInput(it) }
+				.forEach { (filename, inputStream) ->
+					inputStream ?: return Result.failure(IllegalStateException("Input stream missing for photo"))
 
-    override suspend fun writePhotoToBackup(
-        photo: Photo,
-        zipOutputStream: ZipOutputStream
-    ): Result<Unit> {
-        context.fileList()
-            .filter { it.contains(photo.uuid) }
-            .map { it to context.openFileInput(it) }
-            .forEach { (filename, inputStream) ->
-                inputStream ?: return Result.failure(IllegalStateException("Input stream missing for photo"))
+					io.zip
+						.writeZipEntry(filename, inputStream, zipOutputStream)
+						.onFailure {
+							return Result.failure(it)
+						}
+				}
 
-                io.zip.writeZipEntry(filename, inputStream, zipOutputStream)
-                    .onFailure {
-                        return Result.failure(it)
-                    }
-            }
+			return Result.success(Unit)
+		}
 
-        return Result.success(Unit)
-    }
+		override suspend fun createMetaFileInBackup(zipOutputStream: ZipOutputStream): Result<Unit> {
+			try {
+				val backupMetaData = dumpDatabaseUseCase(BackupMetaData.CURRENT_BACKUP_VERSION)
+				val metaBytes = gson.toJson(backupMetaData).toByteArray()
 
-    override suspend fun createMetaFileInBackup(zipOutputStream: ZipOutputStream): Result<Unit> {
-
-        try {
-            val backupMetaData = dumpDatabaseUseCase(BackupMetaData.CURRENT_BACKUP_VERSION)
-            val metaBytes = gson.toJson(backupMetaData).toByteArray()
-
-            return io.zip.writeZipEntry(
-                BackupMetaData.FILE_NAME,
-                ByteArrayInputStream(metaBytes),
-                zipOutputStream,
-            )
-        } catch (e: Exception) {
-            return Result.failure(e)
-        }
-
-
-    }
-}
+				return io.zip.writeZipEntry(
+					BackupMetaData.FILE_NAME,
+					ByteArrayInputStream(metaBytes),
+					zipOutputStream,
+				)
+			} catch (e: Exception) {
+				return Result.failure(e)
+			}
+		}
+	}

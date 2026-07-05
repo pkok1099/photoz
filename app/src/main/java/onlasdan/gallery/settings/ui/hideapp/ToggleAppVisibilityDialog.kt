@@ -33,43 +33,44 @@ import onlasdan.gallery.uicomponnets.bindings.BindableDialogFragment
  * @author PhotoZ
  */
 @AndroidEntryPoint
-class ToggleAppVisibilityDialog :
-    BindableDialogFragment<DialogToggleAppVisibilityBinding>(R.layout.dialog_toggle_app_visibility) {
+class ToggleAppVisibilityDialog : BindableDialogFragment<DialogToggleAppVisibilityBinding>(R.layout.dialog_toggle_app_visibility) {
+	val viewModel: ToggleAppVisibilityViewModel by viewModels()
 
-    val viewModel: ToggleAppVisibilityViewModel by viewModels()
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
+		useViewModel(viewModel)
+		setupLayout()
+	}
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        useViewModel(viewModel)
-        setupLayout()
-    }
+	private fun setupLayout() {
+		val layout =
+			if (viewModel.isMainComponentDisabled()) {
+				R.layout.dialog_fragment_show_app
+			} else {
+				R.layout.dialog_fragment_hide_app
+			}
+		childFragmentManager
+			.beginTransaction()
+			.replace(R.id.dialogHideAppFragmentContainer, Fragment(layout))
+			.commit()
+	}
 
-    private fun setupLayout() {
-        val layout =
-            if (viewModel.isMainComponentDisabled()) {
-                R.layout.dialog_fragment_show_app
-            } else {
-                R.layout.dialog_fragment_hide_app
-            }
-        childFragmentManager
-            .beginTransaction()
-            .replace(R.id.dialogHideAppFragmentContainer, Fragment(layout))
-            .commit()
-    }
+	/**
+	 * Ask for confirmation and run viewModel.toggleMainComponent.
+	 */
+	fun toggleAppVisibility() {
+		Dialogs.showConfirmDialog(requireContext(), viewModel.confirmText) { _, _ ->
+			viewModel.toggleMainComponent()
+			dismiss()
+		}
+	}
 
-    /**
-     * Ask for confirmation and run viewModel.toggleMainComponent.
-     */
-    fun toggleAppVisibility() {
-        Dialogs.showConfirmDialog(requireContext(), viewModel.confirmText) { _, _ ->
-            viewModel.toggleMainComponent()
-            dismiss()
-        }
-    }
-
-    override fun bind(binding: DialogToggleAppVisibilityBinding) {
-        super.bind(binding)
-        binding.context = this
-        binding.viewModel = viewModel
-    }
+	override fun bind(binding: DialogToggleAppVisibilityBinding) {
+		super.bind(binding)
+		binding.context = this
+		binding.viewModel = viewModel
+	}
 }

@@ -30,35 +30,34 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 
 @Composable
-fun DialogViewModelStoreOwner(
-    content: @Composable () -> Unit
-) {
-    val activity = LocalActivity.current as ComponentActivity
+fun DialogViewModelStoreOwner(content: @Composable () -> Unit) {
+	val activity = LocalActivity.current as ComponentActivity
 
-    val viewModelStore = remember { ViewModelStore() }
+	val viewModelStore = remember { ViewModelStore() }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModelStore.clear()
-        }
-    }
+	DisposableEffect(Unit) {
+		onDispose {
+			viewModelStore.clear()
+		}
+	}
 
-    val owner = remember(activity, viewModelStore) {
-        object : ViewModelStoreOwner,
-            HasDefaultViewModelProviderFactory {
+	val owner =
+		remember(activity, viewModelStore) {
+			object :
+				ViewModelStoreOwner,
+				HasDefaultViewModelProviderFactory {
+				override val viewModelStore: ViewModelStore = viewModelStore
 
-            override val viewModelStore: ViewModelStore = viewModelStore
+				override val defaultViewModelProviderFactory: ViewModelProvider.Factory =
+					activity.defaultViewModelProviderFactory
 
-            override val defaultViewModelProviderFactory: ViewModelProvider.Factory =
-                activity.defaultViewModelProviderFactory
+				override val defaultViewModelCreationExtras: CreationExtras =
+					activity.defaultViewModelCreationExtras
+			}
+		}
 
-            override val defaultViewModelCreationExtras: CreationExtras =
-                activity.defaultViewModelCreationExtras
-        }
-    }
-
-    CompositionLocalProvider(
-        LocalViewModelStoreOwner provides owner,
-        content = content
-    )
+	CompositionLocalProvider(
+		LocalViewModelStoreOwner provides owner,
+		content = content,
+	)
 }

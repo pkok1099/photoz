@@ -46,6 +46,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import onlasdan.gallery.imageviewer.ui.ImageViewerItem
 import onlasdan.gallery.imageviewer.ui.ImageViewerSystemBarsController
 import onlasdan.gallery.imageviewer.ui.ImageViewerUiEvent
@@ -55,292 +57,297 @@ import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.model.database.entity.PhotoType
 import onlasdan.gallery.ui.findWindow
 import onlasdan.gallery.ui.theme.AppTheme
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 
 @OptIn(UnstableApi::class)
 @Composable
 fun ImageViewerScreen(
-    navController: NavController,
-    photoUuid: String,
-    albumUuid: String?,
+	navController: NavController,
+	photoUuid: String,
+	albumUuid: String?,
 ) {
-    val window = findWindow()
+	val window = findWindow()
 
-    CompositionLocalProvider(
-        LocalContentColor provides Color.White
-    ) {
-        val viewModel: ImageViewerViewModel =
-            hiltViewModel<ImageViewerViewModel, ImageViewerViewModel.Factory>(
-                creationCallback = { factory ->
-                    factory.create(albumUuid)
-                }
-            )
+	CompositionLocalProvider(
+		LocalContentColor provides Color.White,
+	) {
+		val viewModel: ImageViewerViewModel =
+			hiltViewModel<ImageViewerViewModel, ImageViewerViewModel.Factory>(
+				creationCallback = { factory ->
+					factory.create(albumUuid)
+				},
+			)
 
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-        val handleUiEvent = viewModel::handleUiEvent
+		val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+		val handleUiEvent = viewModel::handleUiEvent
 
-        val context = LocalContext.current
+		val context = LocalContext.current
 
-        val player = remember {
-            ExoPlayer.Builder(context)
-                .setMediaSourceFactory(viewModel.mediaSourceFactory)
-                .build()
-        }
+		val player =
+			remember {
+				ExoPlayer
+					.Builder(context)
+					.setMediaSourceFactory(viewModel.mediaSourceFactory)
+					.build()
+			}
 
-        val exoPlayerState = remember {
-            ExoPlayerState()
-        }
+		val exoPlayerState =
+			remember {
+				ExoPlayerState()
+			}
 
-        LaunchedEffect(player, uiState.loopVideos, exoPlayerState.availableCommands) {
-            if (!exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_REPEAT_MODE)) {
-                return@LaunchedEffect
-            }
+		LaunchedEffect(player, uiState.loopVideos, exoPlayerState.availableCommands) {
+			if (!exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_REPEAT_MODE)) {
+				return@LaunchedEffect
+			}
 
-            player.repeatMode = if (uiState.loopVideos) {
-                ExoPlayer.REPEAT_MODE_ONE
-            } else {
-                ExoPlayer.REPEAT_MODE_OFF
-            }
-        }
+			player.repeatMode =
+				if (uiState.loopVideos) {
+					ExoPlayer.REPEAT_MODE_ONE
+				} else {
+					ExoPlayer.REPEAT_MODE_OFF
+				}
+		}
 
-        val pagerState = rememberPagerState { uiState.items.size }
-        var anchoredPhotoUuid by rememberSaveable(photoUuid) { mutableStateOf(photoUuid) }
-        var pagerInitialized by rememberSaveable(photoUuid) { mutableStateOf(false) }
+		val pagerState = rememberPagerState { uiState.items.size }
+		var anchoredPhotoUuid by rememberSaveable(photoUuid) { mutableStateOf(photoUuid) }
+		var pagerInitialized by rememberSaveable(photoUuid) { mutableStateOf(false) }
 
-        val currentItem by remember {
-            derivedStateOf {
-                uiState.items.find { it.photo.uuid == anchoredPhotoUuid }
-                    ?: uiState.items.getOrNull(pagerState.settledPage)
-            }
-        }
+		val currentItem by remember {
+			derivedStateOf {
+				uiState.items.find { it.photo.uuid == anchoredPhotoUuid }
+					?: uiState.items.getOrNull(pagerState.settledPage)
+			}
+		}
 
-        LaunchedEffect(pagerState.settledPage, uiState.items) {
-            val item = currentItem
-            if (item is ImageViewerItem.Video) {
-                // @since video-loading-indicator feature — kick off (or look
-                //   up) the on-demand download BEFORE handing off to ExoPlayer.
-                //   The viewer's shutter shows a determinate "Downloading
-                //   video…" progress bar while the download is in flight; once
-                //   it completes, ExoPlayer opens the local file normally.
-                viewModel.maybeStartVideoDownload(item.photo)
-                player.apply {
-                    setMediaItem(item.mediaItem)
-                    prepare()
-                    playWhenReady = true
-                }
-            } else {
-                player.pause()
-            }
-        }
+		LaunchedEffect(pagerState.settledPage, uiState.items) {
+			val item = currentItem
+			if (item is ImageViewerItem.Video) {
+				// @since video-loading-indicator feature — kick off (or look
+				//   up) the on-demand download BEFORE handing off to ExoPlayer.
+				//   The viewer's shutter shows a determinate "Downloading
+				//   video…" progress bar while the download is in flight; once
+				//   it completes, ExoPlayer opens the local file normally.
+				viewModel.maybeStartVideoDownload(item.photo)
+				player.apply {
+					setMediaItem(item.mediaItem)
+					prepare()
+					playWhenReady = true
+				}
+			} else {
+				player.pause()
+			}
+		}
 
-        LaunchedEffect(uiState.items, anchoredPhotoUuid) {
-            val targetIndex = uiState.items.indexOfFirst { it.photo.uuid == anchoredPhotoUuid }
-            if (targetIndex < 0) {
-                return@LaunchedEffect
-            }
+		LaunchedEffect(uiState.items, anchoredPhotoUuid) {
+			val targetIndex = uiState.items.indexOfFirst { it.photo.uuid == anchoredPhotoUuid }
+			if (targetIndex < 0) {
+				return@LaunchedEffect
+			}
 
-            if (!pagerInitialized || pagerState.currentPage != targetIndex) {
-                pagerState.scrollToPage(targetIndex)
-            }
+			if (!pagerInitialized || pagerState.currentPage != targetIndex) {
+				pagerState.scrollToPage(targetIndex)
+			}
 
-            pagerInitialized = true
-        }
+			pagerInitialized = true
+		}
 
-        LaunchedEffect(pagerState.settledPage, pagerInitialized) {
-            if (!pagerInitialized) {
-                return@LaunchedEffect
-            }
+		LaunchedEffect(pagerState.settledPage, pagerInitialized) {
+			if (!pagerInitialized) {
+				return@LaunchedEffect
+			}
 
-            uiState.items.getOrNull(pagerState.settledPage)?.photo?.uuid?.let {
-                anchoredPhotoUuid = it
-            }
-        }
+			uiState.items.getOrNull(pagerState.settledPage)?.photo?.uuid?.let {
+				anchoredPhotoUuid = it
+			}
+		}
 
+		DisposableEffect(player) {
+			val listener =
+				object : Player.Listener {
+					override fun onIsPlayingChanged(isPlaying: Boolean) {
+						exoPlayerState.isPlaying = isPlaying
+					}
 
+					override fun onPlaybackStateChanged(playbackState: Int) {
+						exoPlayerState.duration = player.duration.coerceAtLeast(0L)
+						exoPlayerState.playbackState = playbackState
 
+						if (playbackState == Player.STATE_ENDED) {
+							handleUiEvent(ImageViewerUiEvent.UpdateShowControls(true))
+						}
+					}
 
-        DisposableEffect(player) {
-            val listener = object : Player.Listener {
+					override fun onEvents(
+						player: Player,
+						events: Player.Events,
+					) {
+						if (!exoPlayerState.isScrubbing) {
+							exoPlayerState.position = player.currentPosition
+						}
+					}
 
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    exoPlayerState.isPlaying = isPlaying
-                }
+					override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+						super.onAvailableCommandsChanged(availableCommands)
+						exoPlayerState.availableCommands = availableCommands
+					}
+				}
 
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    exoPlayerState.duration = player.duration.coerceAtLeast(0L)
-                    exoPlayerState.playbackState = playbackState
+			player.addListener(listener)
 
-                    if (playbackState == Player.STATE_ENDED) {
-                        handleUiEvent(ImageViewerUiEvent.UpdateShowControls(true))
-                    }
-                }
+			onDispose {
+				player.removeListener(listener)
+				player.release()
+			}
+		}
 
-                override fun onEvents(player: Player, events: Player.Events) {
-                    if (!exoPlayerState.isScrubbing) {
-                        exoPlayerState.position = player.currentPosition
-                    }
-                }
+		// Update state.position while playing
+		LaunchedEffect(player, exoPlayerState.isScrubbing, exoPlayerState.isPlaying) {
+			val delay = 1000L / 60 // 60 FPS controls update
 
-                override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
-                    super.onAvailableCommandsChanged(availableCommands)
-                    exoPlayerState.availableCommands = availableCommands
-                }
-            }
+			while (isActive && !exoPlayerState.isScrubbing && exoPlayerState.isPlaying) {
+				exoPlayerState.position = player.currentPosition
+				delay(delay)
+			}
+		}
 
-            player.addListener(listener)
+		// Apply mute state to player
+		LaunchedEffect(player, uiState.muteVideoPlayer) {
+			if (uiState.muteVideoPlayer) {
+				player.mute()
+			} else {
+				player.unmute()
+			}
+		}
 
-            onDispose {
-                player.removeListener(listener)
-                player.release()
-            }
-        }
+		LaunchedEffect(player, uiState.videoPlaybackSpeed, exoPlayerState.availableCommands) {
+			if (!exoPlayerState.availableCommands.contains(COMMAND_SET_SPEED_AND_PITCH)) {
+				return@LaunchedEffect
+			}
 
-        // Update state.position while playing
-        LaunchedEffect(player, exoPlayerState.isScrubbing, exoPlayerState.isPlaying) {
-            val delay = 1000L / 60 // 60 FPS controls update
+			if (uiState.videoPlaybackSpeed > 0f) {
+				player.setPlaybackSpeed(uiState.videoPlaybackSpeed)
+			}
+		}
 
-            while (isActive && !exoPlayerState.isScrubbing && exoPlayerState.isPlaying) {
-                exoPlayerState.position = player.currentPosition
-                delay(delay)
-            }
-        }
+		// Auto hide controls after 5 seconds of playing
+		LaunchedEffect(exoPlayerState.isPlaying, uiState.inputs) {
+			if (exoPlayerState.isPlaying && uiState.inputs.showControls && uiState.inputs.currentDialog == null) {
+				delay(5000)
+				if (isActive) {
+					handleUiEvent(ImageViewerUiEvent.UpdateShowControls(false))
+				}
+			}
+		}
 
-        // Apply mute state to player
-        LaunchedEffect(player, uiState.muteVideoPlayer) {
-            if (uiState.muteVideoPlayer) {
-                player.mute()
-            } else {
-                player.unmute()
-            }
-        }
+		// ─── Item 3 — slideshow auto-advance ───────────────────────────────
+		// When the user toggles the slideshow ON, this LaunchedEffect fires
+		// and waits SLIDESHOW_INTERVAL_MS (5s) before advancing to the
+		// next photo. Re-launches whenever the current page changes (so
+		// each photo gets its own 5s window) or the slideshow flag flips.
+		// Stops cleanly at the last photo (no looping — keep it minimal).
+		LaunchedEffect(uiState.isSlideshowActive, pagerState.settledPage, uiState.items.size) {
+			if (!uiState.isSlideshowActive) return@LaunchedEffect
+			if (uiState.items.isEmpty()) return@LaunchedEffect
 
-        LaunchedEffect(player, uiState.videoPlaybackSpeed, exoPlayerState.availableCommands) {
-            if (!exoPlayerState.availableCommands.contains(COMMAND_SET_SPEED_AND_PITCH)) {
-                return@LaunchedEffect
-            }
+			delay(ImageViewerViewModel.SLIDESHOW_INTERVAL_MS)
+			if (!isActive) return@LaunchedEffect
 
-            if (uiState.videoPlaybackSpeed > 0f) {
-                player.setPlaybackSpeed(uiState.videoPlaybackSpeed)
-            }
-        }
+			val nextIndex = pagerState.settledPage + 1
+			if (nextIndex < uiState.items.size) {
+				pagerState.animateScrollToPage(nextIndex)
+			} else {
+				// Reached the last photo — stop the slideshow and bring
+				// the controls back so the user can navigate away.
+				handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+			}
+		}
 
-        // Auto hide controls after 5 seconds of playing
-        LaunchedEffect(exoPlayerState.isPlaying, uiState.inputs) {
-            if (exoPlayerState.isPlaying && uiState.inputs.showControls && uiState.inputs.currentDialog == null) {
-                delay(5000)
-                if (isActive) {
-                    handleUiEvent(ImageViewerUiEvent.UpdateShowControls(false))
-                }
-            }
-        }
+		// Keep screen on while playing
+		DisposableEffect(exoPlayerState.isPlaying) {
+			if (exoPlayerState.isPlaying) {
+				window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			} else {
+				window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			}
 
-        // ─── Item 3 — slideshow auto-advance ───────────────────────────────
-        // When the user toggles the slideshow ON, this LaunchedEffect fires
-        // and waits SLIDESHOW_INTERVAL_MS (5s) before advancing to the
-        // next photo. Re-launches whenever the current page changes (so
-        // each photo gets its own 5s window) or the slideshow flag flips.
-        // Stops cleanly at the last photo (no looping — keep it minimal).
-        LaunchedEffect(uiState.isSlideshowActive, pagerState.settledPage, uiState.items.size) {
-            if (!uiState.isSlideshowActive) return@LaunchedEffect
-            if (uiState.items.isEmpty()) return@LaunchedEffect
+			onDispose {
+				window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			}
+		}
 
-            delay(ImageViewerViewModel.SLIDESHOW_INTERVAL_MS)
-            if (!isActive) return@LaunchedEffect
+		HorizontalPager(
+			state = pagerState,
+			beyondViewportPageCount = 1,
+		) { pageIndex ->
+			val item = uiState.items[pageIndex]
 
-            val nextIndex = pagerState.settledPage + 1
-            if (nextIndex < uiState.items.size) {
-                pagerState.animateScrollToPage(nextIndex)
-            } else {
-                // Reached the last photo — stop the slideshow and bring
-                // the controls back so the user can navigate away.
-                handleUiEvent(ImageViewerUiEvent.StopSlideshow)
-            }
-        }
+			Box {
+				when (item) {
+					is ImageViewerItem.Image ->
+						ImageViewerImagePage(
+							item = item,
+							uiState = uiState,
+							handleUiEvent = handleUiEvent,
+						)
 
+					is ImageViewerItem.Video ->
+						ImageViewerVideoPage(
+							item = item,
+							isCurrentItem = item.photo.uuid == currentItem?.photo?.uuid,
+							exoPlayerState = exoPlayerState,
+							player = player,
+							uiState = uiState,
+							handleUiEvent = handleUiEvent,
+							// @since video-loading-indicator feature — pass the
+							//   per-UUID download state so the shutter can swap
+							//   the indeterminate spinner for a determinate bar
+							//   + "Downloading video…" label while the file is
+							//   being fetched from the cloud.
+							downloadState = uiState.videoDownloads[item.photo.uuid],
+						)
+				}
+			}
+		}
 
-        // Keep screen on while playing
-        DisposableEffect(exoPlayerState.isPlaying) {
-            if (exoPlayerState.isPlaying) {
-                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            } else {
-                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
+		ImageViewerControls(
+			showControls = uiState.inputs.showControls,
+			currentItem = currentItem,
+			handleUiEvent = handleUiEvent,
+			uiState = uiState,
+			navController = navController,
+		)
 
-            onDispose {
-                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            beyondViewportPageCount = 1,
-        ) { pageIndex ->
-            val item = uiState.items[pageIndex]
-
-            Box {
-                when (item) {
-                    is ImageViewerItem.Image -> ImageViewerImagePage(
-                        item = item,
-                        uiState = uiState,
-                        handleUiEvent = handleUiEvent,
-                    )
-
-                    is ImageViewerItem.Video -> ImageViewerVideoPage(
-                        item = item,
-                        isCurrentItem = item.photo.uuid == currentItem?.photo?.uuid,
-                        exoPlayerState = exoPlayerState,
-                        player = player,
-                        uiState = uiState,
-                        handleUiEvent = handleUiEvent,
-                        // @since video-loading-indicator feature — pass the
-                        //   per-UUID download state so the shutter can swap
-                        //   the indeterminate spinner for a determinate bar
-                        //   + "Downloading video…" label while the file is
-                        //   being fetched from the cloud.
-                        downloadState = uiState.videoDownloads[item.photo.uuid],
-                    )
-                }
-            }
-        }
-
-
-        ImageViewerControls(
-            showControls = uiState.inputs.showControls,
-            currentItem = currentItem,
-            handleUiEvent = handleUiEvent,
-            uiState = uiState,
-            navController = navController,
-        )
-
-        ImageViewerSystemBarsController(visible = uiState.inputs.showControls)
-    }
+		ImageViewerSystemBarsController(visible = uiState.inputs.showControls)
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun ControlsPreview() {
-    AppTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Blue)
-        ) {
-            ImageViewerControls(
-                showControls = true,
-                currentItem = ImageViewerItem.Image(
-                    photo = Photo(
-                        fileName = "Preview File aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                        importedAt = System.currentTimeMillis(),
-                        type = PhotoType.JPEG,
-                        size = 512L,
-                        lastModified = null,
-                    )
-                ),
-                uiState = ImageViewerUiState(),
-                handleUiEvent = {},
-                navController = rememberNavController(),
-            )
-        }
-    }
+	AppTheme {
+		Box(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.background(Color.Blue),
+		) {
+			ImageViewerControls(
+				showControls = true,
+				currentItem =
+					ImageViewerItem.Image(
+						photo =
+							Photo(
+								fileName = "Preview File aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								importedAt = System.currentTimeMillis(),
+								type = PhotoType.JPEG,
+								size = 512L,
+								lastModified = null,
+							),
+					),
+				uiState = ImageViewerUiState(),
+				handleUiEvent = {},
+				navController = rememberNavController(),
+			)
+		}
+	}
 }

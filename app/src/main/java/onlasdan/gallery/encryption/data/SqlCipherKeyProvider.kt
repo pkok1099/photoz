@@ -89,112 +89,117 @@ import javax.inject.Singleton
  * @since v16 — Sprint 3 / TODO #6 SQLCipher
  */
 @Singleton
-class SqlCipherKeyProvider @Inject constructor(
-    @ApplicationContext private val app: Context,
-) {
+class SqlCipherKeyProvider
+	@Inject
+	constructor(
+		@ApplicationContext private val app: Context,
+	) {
+		/**
+		 * Get the SQLCipher passphrase bytes, generating + persisting the
+		 * Keystore-backed key on first call.
+		 *
+		 * The returned [ByteArray] is the encoded form of the Keystore
+		 * `SecretKey` — 32 bytes for AES-256. SQLCipher accepts this directly
+		 * as a passphrase (it runs PBKDF2-HMAC-SHA512 internally to derive
+		 * the actual page-encryption key).
+		 *
+		 * IMPORTANT: do NOT zero the returned array — it's a copy of the
+		 * Keystore key material, but the original lives in Keystore. Zeroing
+		 * the copy doesn't destroy the key (Keystore retains it). The copy
+		 * will be GC'd normally.
+		 */
+		fun getOrCreatePassphrase(): ByteArray {
+			val key = getOrCreateKey()
+			return key.encoded
+				?: error(
+					"Keystore key for $ALIAS returned null encoded form — " +
+						"this should not happen for a software-backed AES key",
+				)
+		}
 
-    /**
-     * Get the SQLCipher passphrase bytes, generating + persisting the
-     * Keystore-backed key on first call.
-     *
-     * The returned [ByteArray] is the encoded form of the Keystore
-     * `SecretKey` — 32 bytes for AES-256. SQLCipher accepts this directly
-     * as a passphrase (it runs PBKDF2-HMAC-SHA512 internally to derive
-     * the actual page-encryption key).
-     *
-     * IMPORTANT: do NOT zero the returned array — it's a copy of the
-     * Keystore key material, but the original lives in Keystore. Zeroing
-     * the copy doesn't destroy the key (Keystore retains it). The copy
-     * will be GC'd normally.
-     */
-    fun getOrCreatePassphrase(): ByteArray {
-        val key = getOrCreateKey()
-        return key.encoded
-            ?: error("Keystore key for $ALIAS returned null encoded form — " +
-                "this should not happen for a software-backed AES key")
-    }
+		private fun getOrCreateKey(): SecretKey {
+			val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+			val existing = keyStore.getKey(ALIAS, null) as? SecretKey
+			if (existing != null) {
+				Timber.d("SqlCipherKeyProvider: reusing existing Keystore key (alias=$ALIAS)")
+				return existing
+			}
 
-    private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        val existing = keyStore.getKey(ALIAS, null) as? SecretKey
-        if (existing != null) {
-            Timber.d("SqlCipherKeyProvider: reusing existing Keystore key (alias=$ALIAS)")
-            return existing
-        }
+			Timber.d("SqlCipherKeyProvider: generating new Keystore key (alias=$ALIAS)")
+			val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+			val builder =
+				KeyGenParameterSpec
+					.Builder(
+						ALIAS,
+						KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+					).setKeySize(256)
+					.setBlockModes(KeyProperties.BLOCK_MODE_ECB)
+					.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+					.setRandomizedEncryptionRequired(false)
+					// No user auth required — DB must be openable from background workers
+					// without unlock (PhotoSyncWorker, SelfDestructWorker, etc.).
+					.setUserAuthenticationRequired(false)
 
-        Timber.d("SqlCipherKeyProvider: generating new Keystore key (alias=$ALIAS)")
-        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        val builder = KeyGenParameterSpec.Builder(
-            ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-        )
-            .setKeySize(256)
-            .setBlockModes(KeyProperties.BLOCK_MODE_ECB)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setRandomizedEncryptionRequired(false)
-            // No user auth required — DB must be openable from background workers
-            // without unlock (PhotoSyncWorker, SelfDestructWorker, etc.).
-            .setUserAuthenticationRequired(false)
+			// Try StrongBox first (separate secure element — most secure).
+			// Fall back to TEE (default hardware-backed keystore) automatically
+			// if StrongBox is unavailable. We attempt StrongBox in a try/catch
+			// because some devices advertise the API but fail at runtime.
+			try {
+				builder.setIsStrongBoxBacked(true)
+				keyGenerator.init(builder.build())
+				val key = keyGenerator.generateKey()
+				Timber.d("SqlCipherKeyProvider: StrongBox-backed key generated")
+				return key
+			} catch (e: Exception) {
+				Timber.w(e, "SqlCipherKeyProvider: StrongBox unavailable, falling back to TEE")
+				// Reset and retry without StrongBox.
+				val fallbackBuilder =
+					KeyGenParameterSpec
+						.Builder(
+							ALIAS,
+							KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+						).setKeySize(256)
+						.setBlockModes(KeyProperties.BLOCK_MODE_ECB)
+						.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+						.setRandomizedEncryptionRequired(false)
+						.setUserAuthenticationRequired(false)
+				keyGenerator.init(fallbackBuilder.build())
+				val key = keyGenerator.generateKey()
+				Timber.d("SqlCipherKeyProvider: TEE-backed key generated")
+				return key
+			}
+		}
 
-        // Try StrongBox first (separate secure element — most secure).
-        // Fall back to TEE (default hardware-backed keystore) automatically
-        // if StrongBox is unavailable. We attempt StrongBox in a try/catch
-        // because some devices advertise the API but fail at runtime.
-        try {
-            builder.setIsStrongBoxBacked(true)
-            keyGenerator.init(builder.build())
-            val key = keyGenerator.generateKey()
-            Timber.d("SqlCipherKeyProvider: StrongBox-backed key generated")
-            return key
-        } catch (e: Exception) {
-            Timber.w(e, "SqlCipherKeyProvider: StrongBox unavailable, falling back to TEE")
-            // Reset and retry without StrongBox.
-            val fallbackBuilder = KeyGenParameterSpec.Builder(
-                ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-            )
-                .setKeySize(256)
-                .setBlockModes(KeyProperties.BLOCK_MODE_ECB)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setRandomizedEncryptionRequired(false)
-                .setUserAuthenticationRequired(false)
-            keyGenerator.init(fallbackBuilder.build())
-            val key = keyGenerator.generateKey()
-            Timber.d("SqlCipherKeyProvider: TEE-backed key generated")
-            return key
-        }
-    }
+		/**
+		 * Best-effort: delete the Keystore key. Used by factory-reset flows.
+		 *
+		 * After calling this, the encrypted `photok.db` becomes permanently
+		 * unreadable (the key is gone from hardware). The DB file itself
+		 * should also be deleted.
+		 */
+		fun deleteKey() {
+			try {
+				val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+				if (keyStore.containsAlias(ALIAS)) {
+					keyStore.deleteEntry(ALIAS)
+					Timber.d("SqlCipherKeyProvider: deleted Keystore key (alias=$ALIAS)")
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "SqlCipherKeyProvider: failed to delete Keystore key (non-fatal)")
+			}
+		}
 
-    /**
-     * Best-effort: delete the Keystore key. Used by factory-reset flows.
-     *
-     * After calling this, the encrypted `photok.db` becomes permanently
-     * unreadable (the key is gone from hardware). The DB file itself
-     * should also be deleted.
-     */
-    fun deleteKey() {
-        try {
-            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            if (keyStore.containsAlias(ALIAS)) {
-                keyStore.deleteEntry(ALIAS)
-                Timber.d("SqlCipherKeyProvider: deleted Keystore key (alias=$ALIAS)")
-            }
-        } catch (e: Exception) {
-            Timber.w(e, "SqlCipherKeyProvider: failed to delete Keystore key (non-fatal)")
-        }
-    }
+		companion object {
+			private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 
-    companion object {
-        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-
-        /**
-         * Keystore alias for the SQLCipher DB key. Bumping the `vN` suffix
-         * forces a fresh key generation (used if we ever need to re-key
-         * the DB — e.g. after a cryptographic protocol change).
-         */
-        const val ALIAS = "photoz-sqlcipher-v1"
-    }
-}
+			/**
+			 * Keystore alias for the SQLCipher DB key. Bumping the `vN` suffix
+			 * forces a fresh key generation (used if we ever need to re-key
+			 * the DB — e.g. after a cryptographic protocol change).
+			 */
+			const val ALIAS = "photoz-sqlcipher-v1"
+		}
+	}
 
 /**
  * Random passphrase generator — used as a FALLBACK if the Keystore is
@@ -210,23 +215,25 @@ class SqlCipherKeyProvider @Inject constructor(
  * @since v16 — Sprint 3 / TODO #6 SQLCipher
  */
 @Singleton
-class FallbackSqlCipherKeyProvider @Inject constructor(
-    @ApplicationContext private val app: Context,
-) {
-    fun getOrCreatePassphrase(): ByteArray {
-        val prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val existing = prefs.getString(KEY_NAME, null)
-        if (existing != null) {
-            return existing.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        }
-        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val hex = bytes.joinToString("") { "%02x".format(it) }
-        prefs.edit().putString(KEY_NAME, hex).apply()
-        return bytes
-    }
+class FallbackSqlCipherKeyProvider
+	@Inject
+	constructor(
+		@ApplicationContext private val app: Context,
+	) {
+		fun getOrCreatePassphrase(): ByteArray {
+			val prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+			val existing = prefs.getString(KEY_NAME, null)
+			if (existing != null) {
+				return existing.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+			}
+			val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+			val hex = bytes.joinToString("") { "%02x".format(it) }
+			prefs.edit().putString(KEY_NAME, hex).apply()
+			return bytes
+		}
 
-    companion object {
-        private const val PREFS_NAME = "photoz_sqlcipher_fallback"
-        private const val KEY_NAME = "passphrase_hex"
-    }
-}
+		companion object {
+			private const val PREFS_NAME = "photoz_sqlcipher_fallback"
+			private const val KEY_NAME = "passphrase_hex"
+		}
+	}

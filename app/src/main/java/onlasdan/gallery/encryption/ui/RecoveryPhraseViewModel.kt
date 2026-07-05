@@ -26,6 +26,15 @@ import androidx.compose.ui.platform.Clipboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
 import onlasdan.gallery.encryption.domain.SessionRepository
@@ -36,192 +45,204 @@ import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
 import onlasdan.gallery.io.IO
 import onlasdan.gallery.uicomponnets.Dialogs
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import javax.inject.Inject
 
 data class RecoveryPhraseUiState(
-    val phrase: RecoveryPhrase? = null,
-    val inputs: Inputs = Inputs(),
+	val phrase: RecoveryPhrase? = null,
+	val inputs: Inputs = Inputs(),
 ) {
-    data class Inputs(
-        val wordCount: Bip39WordCount = Bip39WordCount.Twelve,
-        val loading: Boolean = false,
-        val phraseWasSaved: Boolean = false,
-        val qrSheetVisible: Boolean = false,
-    )
+	data class Inputs(
+		val wordCount: Bip39WordCount = Bip39WordCount.Twelve,
+		val loading: Boolean = false,
+		val phraseWasSaved: Boolean = false,
+		val qrSheetVisible: Boolean = false,
+	)
 }
 
 sealed interface RecoveryPhraseUiEvent {
-    data class UpdateWordCount(val wordCount: Bip39WordCount) : RecoveryPhraseUiEvent
-    data class Share(val context: Context, val phrase: RecoveryPhrase) : RecoveryPhraseUiEvent
-    data class SaveToFile(val context: Context, val uri: Uri, val phrase: RecoveryPhrase) :
-        RecoveryPhraseUiEvent
+	data class UpdateWordCount(
+		val wordCount: Bip39WordCount,
+	) : RecoveryPhraseUiEvent
 
-    data class CopyToClipboard(val clipboard: Clipboard, val phrase: RecoveryPhrase) :
-        RecoveryPhraseUiEvent
+	data class Share(
+		val context: Context,
+		val phrase: RecoveryPhrase,
+	) : RecoveryPhraseUiEvent
 
-    data object ShowQrCode : RecoveryPhraseUiEvent
-    data object DismissQrSheet : RecoveryPhraseUiEvent
-    data object MarkPhraseSaved : RecoveryPhraseUiEvent
-    data object CreateNewPhrase : RecoveryPhraseUiEvent
+	data class SaveToFile(
+		val context: Context,
+		val uri: Uri,
+		val phrase: RecoveryPhrase,
+	) : RecoveryPhraseUiEvent
+
+	data class CopyToClipboard(
+		val clipboard: Clipboard,
+		val phrase: RecoveryPhrase,
+	) : RecoveryPhraseUiEvent
+
+	data object ShowQrCode : RecoveryPhraseUiEvent
+
+	data object DismissQrSheet : RecoveryPhraseUiEvent
+
+	data object MarkPhraseSaved : RecoveryPhraseUiEvent
+
+	data object CreateNewPhrase : RecoveryPhraseUiEvent
 }
 
 sealed interface RecoveryPhraseNavEvent {
-    data object NavigateToSetup : RecoveryPhraseNavEvent
+	data object NavigateToSetup : RecoveryPhraseNavEvent
 }
 
 @HiltViewModel
-class RecoveryPhraseViewModel @Inject constructor(
-    private val resources: Resources,
-    private val io: IO,
-    private val sessionRepository: SessionRepository,
-    private val recoveryPhraseStore: RecoveryPhraseStore,
-    private val vaultService: VaultService,
-) : ViewModel() {
+class RecoveryPhraseViewModel
+	@Inject
+	constructor(
+		private val resources: Resources,
+		private val io: IO,
+		private val sessionRepository: SessionRepository,
+		private val recoveryPhraseStore: RecoveryPhraseStore,
+		private val vaultService: VaultService,
+	) : ViewModel() {
+		private val inputs = MutableStateFlow(RecoveryPhraseUiState.Inputs())
 
-    private val inputs = MutableStateFlow(RecoveryPhraseUiState.Inputs())
+		private val _navEvents = Channel<RecoveryPhraseNavEvent>(Channel.UNLIMITED)
+		val navEvents = _navEvents.receiveAsFlow()
 
-    private val _navEvents = Channel<RecoveryPhraseNavEvent>(Channel.UNLIMITED)
-    val navEvents = _navEvents.receiveAsFlow()
+		val uiState =
+			combine(
+				recoveryPhraseStore.observe(sessionRepository.require()),
+				inputs,
+			) { phrase, inputs ->
+				RecoveryPhraseUiState(
+					phrase = phrase,
+					inputs = inputs,
+				)
+			}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), RecoveryPhraseUiState())
 
-    val uiState = combine(
-        recoveryPhraseStore.observe(sessionRepository.require()),
-        inputs,
-    ) { phrase, inputs ->
-        RecoveryPhraseUiState(
-            phrase = phrase,
-            inputs = inputs,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), RecoveryPhraseUiState())
+		init {
+			viewModelScope.launch {
+				if (!vaultService.isSetup(VaultProtectionType.RecoveryPhrase)) {
+					vaultService.create(
+						CreateRequest.RecoveryPhrase(sessionRepository.require(), Bip39WordCount.Twelve),
+					)
+				}
+			}
+		}
 
-    init {
-        viewModelScope.launch {
-            if (!vaultService.isSetup(VaultProtectionType.RecoveryPhrase)) {
-                vaultService.create(
-                    CreateRequest.RecoveryPhrase(sessionRepository.require(), Bip39WordCount.Twelve)
-                )
-            }
-        }
-    }
+		fun handleUiEvent(event: RecoveryPhraseUiEvent) {
+			when (event) {
+				is RecoveryPhraseUiEvent.UpdateWordCount -> {
+					if (inputs.value.wordCount == event.wordCount) return
 
-    fun handleUiEvent(event: RecoveryPhraseUiEvent) {
-        when (event) {
-            is RecoveryPhraseUiEvent.UpdateWordCount -> {
-                if (inputs.value.wordCount == event.wordCount) return
+					recoveryPhraseStore.clear()
 
-                recoveryPhraseStore.clear()
+					inputs.update {
+						it.copy(
+							wordCount = event.wordCount,
+							loading = true,
+						)
+					}
 
-                inputs.update {
-                    it.copy(
-                        wordCount = event.wordCount,
-                        loading = true,
-                    )
-                }
+					viewModelScope.launch(Dispatchers.IO) {
+						vaultService.create(
+							CreateRequest.RecoveryPhrase(
+								sessionRepository.require(),
+								event.wordCount,
+							),
+						)
 
-                viewModelScope.launch(Dispatchers.IO) {
-                    vaultService.create(
-                        CreateRequest.RecoveryPhrase(
-                            sessionRepository.require(),
-                            event.wordCount,
-                        )
-                    )
+						inputs.update {
+							it.copy(
+								loading = false,
+							)
+						}
+					}
+				}
 
-                    inputs.update {
-                        it.copy(
-                            loading = false,
-                        )
-                    }
-                }
-            }
+				is RecoveryPhraseUiEvent.Share -> {
+					val text =
+						"""
+						PhotoZ ${resources.getString(R.string.recovery_phrase_label)}
 
-            is RecoveryPhraseUiEvent.Share -> {
-                val text = """
-                    PhotoZ ${resources.getString(R.string.recovery_phrase_label)}
+						${event.phrase.toMnemonicString()}
+						""".trimIndent()
 
-                    ${event.phrase.toMnemonicString()}
-                """.trimIndent()
+					val sendIntent: Intent =
+						Intent().apply {
+							action = Intent.ACTION_SEND
+							putExtra(Intent.EXTRA_TEXT, text)
+							type = "text/plain"
+						}
 
-                val sendIntent: Intent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_TEXT, text)
-                    type = "text/plain"
-                }
+					event.context.startActivity(Intent.createChooser(sendIntent, null))
 
-                event.context.startActivity(Intent.createChooser(sendIntent, null))
+					inputs.update {
+						it.copy(phraseWasSaved = true)
+					}
+				}
 
-                inputs.update {
-                    it.copy(phraseWasSaved = true)
-                }
-            }
+				is RecoveryPhraseUiEvent.SaveToFile ->
+					viewModelScope.launch(Dispatchers.IO) {
+						val phraseAsBytes = event.phrase.toMnemonicString().toByteArray()
+						val inputStream = ByteArrayInputStream(phraseAsBytes)
 
-            is RecoveryPhraseUiEvent.SaveToFile -> viewModelScope.launch(Dispatchers.IO) {
-                val phraseAsBytes = event.phrase.toMnemonicString().toByteArray()
-                val inputStream = ByteArrayInputStream(phraseAsBytes)
+						val outputStream = io.openFileOutput(event.uri)
+						outputStream ?: return@launch
 
-                val outputStream = io.openFileOutput(event.uri)
-                outputStream ?: return@launch
+						io.copy(inputStream, outputStream)
 
-                io.copy(inputStream, outputStream)
+						val fileName = io.getFileName(event.uri)
+						Dialogs.showLongToast(
+							event.context,
+							resources.getString(R.string.recovery_phrase_saved_to_file, fileName),
+						)
 
-                val fileName = io.getFileName(event.uri)
-                Dialogs.showLongToast(
-                    event.context,
-                    resources.getString(R.string.recovery_phrase_saved_to_file, fileName)
-                )
+						inputs.update {
+							it.copy(phraseWasSaved = true)
+						}
+					}
 
-                inputs.update {
-                    it.copy(phraseWasSaved = true)
-                }
-            }
+				is RecoveryPhraseUiEvent.CopyToClipboard -> {
+					viewModelScope.launch {
+						val clipData =
+							ClipData.newPlainText(
+								"photok-recovery-phrase",
+								event.phrase.toMnemonicString(),
+							)
+						event.clipboard.setClipEntry(ClipEntry(clipData))
 
-            is RecoveryPhraseUiEvent.CopyToClipboard -> {
-                viewModelScope.launch {
-                    val clipData = ClipData.newPlainText(
-                        "photok-recovery-phrase",
-                        event.phrase.toMnemonicString()
-                    )
-                    event.clipboard.setClipEntry(ClipEntry(clipData))
+						inputs.update {
+							it.copy(phraseWasSaved = true)
+						}
+					}
+				}
 
-                    inputs.update {
-                        it.copy(phraseWasSaved = true)
-                    }
-                }
-            }
+				RecoveryPhraseUiEvent.ShowQrCode -> {
+					inputs.update { it.copy(qrSheetVisible = true) }
+				}
 
-            RecoveryPhraseUiEvent.ShowQrCode -> {
-                inputs.update { it.copy(qrSheetVisible = true) }
-            }
+				RecoveryPhraseUiEvent.DismissQrSheet -> {
+					inputs.update { it.copy(qrSheetVisible = false) }
+				}
 
-            RecoveryPhraseUiEvent.DismissQrSheet -> {
-                inputs.update { it.copy(qrSheetVisible = false) }
-            }
+				RecoveryPhraseUiEvent.MarkPhraseSaved -> {
+					inputs.update { it.copy(phraseWasSaved = true) }
+				}
 
-            RecoveryPhraseUiEvent.MarkPhraseSaved -> {
-                inputs.update { it.copy(phraseWasSaved = true) }
-            }
+				RecoveryPhraseUiEvent.CreateNewPhrase -> {
+					val session = sessionRepository.get()
+					session ?: return // This event cannot be used if not logged in
 
-            RecoveryPhraseUiEvent.CreateNewPhrase -> {
-                val session = sessionRepository.get()
-                session ?: return // This event cannot be used if not logged in
+					viewModelScope.launch(Dispatchers.IO) {
+						inputs.update { it.copy(loading = true, phraseWasSaved = false) }
 
-                viewModelScope.launch(Dispatchers.IO) {
-                    inputs.update { it.copy(loading = true, phraseWasSaved = false) }
+						vaultService.reset(VaultProtectionType.RecoveryPhrase)
 
-                    vaultService.reset(VaultProtectionType.RecoveryPhrase)
-
-                    inputs.update { it.copy(loading = false) }
-                    _navEvents.trySend(RecoveryPhraseNavEvent.NavigateToSetup)
-                }
-            }
-        }
-    }
-}
+						inputs.update { it.copy(loading = false) }
+						_navEvents.trySend(RecoveryPhraseNavEvent.NavigateToSetup)
+					}
+				}
+			}
+		}
+	}

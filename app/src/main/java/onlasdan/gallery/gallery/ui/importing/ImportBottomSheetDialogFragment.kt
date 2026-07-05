@@ -22,14 +22,13 @@ import android.view.View
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.model.repositories.ImportSource
 import onlasdan.gallery.review.InAppReview
 import onlasdan.gallery.review.ReviewTrigger
 import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetDialogFragment
-import kotlinx.coroutines.launch
 import javax.inject.Inject
-
 
 /**
  * Process Fragment to import photos.
@@ -40,41 +39,43 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ImportBottomSheetDialogFragment(
-    uris: List<Uri>,
-    private val albumUUID: String? = "",
-    private val importSource: ImportSource,
-    /**
-     * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
-     * When non-null, the imported photos get this as their `albumPath` (see
-     * [ImportViewModel.targetAlbumName] for the full rationale). Null for
-     * the regular MediaStore import.
-     */
-    private val targetAlbumName: String? = null,
+	uris: List<Uri>,
+	private val albumUUID: String? = "",
+	private val importSource: ImportSource,
+	/**
+	 * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
+	 * When non-null, the imported photos get this as their `albumPath` (see
+	 * [ImportViewModel.targetAlbumName] for the full rationale). Null for
+	 * the regular MediaStore import.
+	 */
+	private val targetAlbumName: String? = null,
 ) : BaseProcessBottomSheetDialogFragment<Uri>(
-    uris,
-    R.string.import_importing,
-    true
-) {
+		uris,
+		R.string.import_importing,
+		true,
+	) {
+	override val viewModel: ImportViewModel by viewModels()
 
-    override val viewModel: ImportViewModel by viewModels()
+	@Inject
+	lateinit var inAppReview: InAppReview
 
-    @Inject
-    lateinit var inAppReview: InAppReview
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
+		lifecycleScope.launch {
+			viewModel.reviewTrigger.collect {
+				inAppReview.requestInAppReview(requireActivity(), ReviewTrigger.Import)
+			}
+		}
+	}
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        lifecycleScope.launch {
-            viewModel.reviewTrigger.collect {
-                inAppReview.requestInAppReview(requireActivity(), ReviewTrigger.Import)
-            }
-        }
-    }
-
-    override fun prepareViewModel(items: List<Uri>?) {
-        viewModel.albumUUID = albumUUID
-        viewModel.importSource = importSource
-        // Sprint 3 / M10 — propagate the Path Maker's chosen album.
-        viewModel.targetAlbumName = targetAlbumName
-        super.prepareViewModel(items?.reversed()) // Reverse list to keep order in system gallery
-    }
+	override fun prepareViewModel(items: List<Uri>?) {
+		viewModel.albumUUID = albumUUID
+		viewModel.importSource = importSource
+		// Sprint 3 / M10 — propagate the Path Maker's chosen album.
+		viewModel.targetAlbumName = targetAlbumName
+		super.prepareViewModel(items?.reversed()) // Reverse list to keep order in system gallery
+	}
 }

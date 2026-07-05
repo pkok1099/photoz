@@ -20,17 +20,17 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
-import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
-import onlasdan.gallery.encryption.domain.crypto.IV_SIZE
-import onlasdan.gallery.encryption.domain.models.Algorithm
-import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
-import onlasdan.gallery.encryption.domain.models.VaultSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
+import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
+import onlasdan.gallery.encryption.domain.crypto.IV_SIZE
+import onlasdan.gallery.encryption.domain.models.Algorithm
+import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
+import onlasdan.gallery.encryption.domain.models.VaultSession
 import timber.log.Timber
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -44,68 +44,76 @@ private const val KEY_IV = "rp_iv"
 private const val KEY_CIPHERTEXT = "rp_ciphertext"
 
 @Singleton
-class RecoveryPhraseStoreImpl @Inject constructor(
-    @ApplicationContext context: Context,
-): RecoveryPhraseStore {
+class RecoveryPhraseStoreImpl
+	@Inject
+	constructor(
+		@ApplicationContext context: Context,
+	) : RecoveryPhraseStore {
+		private val prefs: SharedPreferences =
+			context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
+		override fun store(
+			phrase: RecoveryPhrase,
+			session: VaultSession,
+		) {
+			try {
+				val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+				val cipher =
+					Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+						init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
+					}
+				val ciphertext = cipher.doFinal(phrase.toMnemonicString().toByteArray(Charsets.UTF_8))
+				prefs.edit {
+					putString(KEY_IV, Base64.encode(iv))
+					putString(KEY_CIPHERTEXT, Base64.encode(ciphertext))
+				}
+			} catch (e: Exception) {
+				Timber.e(e, "Failed to store recovery phrase")
+			}
+		}
 
-    override fun store(phrase: RecoveryPhrase, session: VaultSession) {
-        try {
-            val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-            val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
-            }
-            val ciphertext = cipher.doFinal(phrase.toMnemonicString().toByteArray(Charsets.UTF_8))
-            prefs.edit {
-                putString(KEY_IV, Base64.encode(iv))
-                putString(KEY_CIPHERTEXT, Base64.encode(ciphertext))
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to store recovery phrase")
-        }
-    }
+		private val scope = CoroutineScope(Dispatchers.IO)
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+		override fun observe(session: VaultSession): Flow<RecoveryPhrase?> =
+			callbackFlow {
+				send(load(session))
 
-    override fun observe(session: VaultSession): Flow<RecoveryPhrase?> = callbackFlow {
-        send(load(session))
+				val listener =
+					SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+						scope.launch { send(load(session)) }
+					}
 
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-            scope.launch { send(load(session)) }
-        }
+				prefs.registerOnSharedPreferenceChangeListener(listener)
 
-        prefs.registerOnSharedPreferenceChangeListener(listener)
+				awaitClose {
+					prefs.unregisterOnSharedPreferenceChangeListener(listener)
+				}
+			}
 
-        awaitClose {
-            prefs.unregisterOnSharedPreferenceChangeListener(listener)
-        }
-    }
+		private fun load(session: VaultSession): RecoveryPhrase? {
+			val ivStr = prefs.getString(KEY_IV, null) ?: return null
+			val ciphertextStr = prefs.getString(KEY_CIPHERTEXT, null) ?: return null
 
-    private fun load(session: VaultSession): RecoveryPhrase? {
-        val ivStr = prefs.getString(KEY_IV, null) ?: return null
-        val ciphertextStr = prefs.getString(KEY_CIPHERTEXT, null) ?: return null
+			return try {
+				val iv = Base64.decode(ivStr)
+				val ciphertext = Base64.decode(ciphertextStr)
+				val cipher =
+					Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+						init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
+					}
+				val plaintext = cipher.doFinal(ciphertext)
+				val string = String(plaintext, Charsets.UTF_8)
+				RecoveryPhrase.from(string)
+			} catch (e: Exception) {
+				Timber.e(e, "Failed to load recovery phrase")
+				null
+			}
+		}
 
-        return try {
-            val iv = Base64.decode(ivStr)
-            val ciphertext = Base64.decode(ciphertextStr)
-            val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
-            }
-            val plaintext = cipher.doFinal(ciphertext)
-            val string = String(plaintext, Charsets.UTF_8)
-            RecoveryPhrase.from(string)
-        } catch(e: Exception) {
-            Timber.e(e, "Failed to load recovery phrase")
-            null
-        }
-    }
-
-    override fun clear() {
-        prefs.edit {
-            remove(KEY_IV)
-            remove(KEY_CIPHERTEXT)
-        }
-    }
-}
+		override fun clear() {
+			prefs.edit {
+				remove(KEY_IV)
+				remove(KEY_CIPHERTEXT)
+			}
+		}
+	}

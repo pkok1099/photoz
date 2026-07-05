@@ -77,44 +77,48 @@ import java.io.File
  * @since QC fix — sync_log.txt unbounded growth
  */
 object SyncLogRotator {
-    /** Hard cap on `sync_log.txt` size. Triggers rotation when exceeded. */
-    private const val MAX_LOG_SIZE = 1_048_576L // 1 MB
+	/** Hard cap on `sync_log.txt` size. Triggers rotation when exceeded. */
+	private const val MAX_LOG_SIZE = 1_048_576L // 1 MB
 
-    /**
-     * When the cap is exceeded, keep this many bytes from the END of the
-     * file (most recent entries) and drop everything before. 512 KB is
-     * enough to retain the last several diag() calls + their stack traces
-     * — plenty for debugging whatever issue the user is currently hitting.
-     */
-    private const val TRUNCATE_TO = 524288 // 512 KB (keep last half)
+	/**
+	 * When the cap is exceeded, keep this many bytes from the END of the
+	 * file (most recent entries) and drop everything before. 512 KB is
+	 * enough to retain the last several diag() calls + their stack traces
+	 * — plenty for debugging whatever issue the user is currently hitting.
+	 */
+	private const val TRUNCATE_TO = 524288 // 512 KB (keep last half)
 
-    /**
-     * Append [text] to `sync_log.txt` in [context]'s `filesDir`, rotating
-     * first if the file exceeds [MAX_LOG_SIZE].
-     *
-     * Never throws — all I/O errors are swallowed. The caller's `diag()`
-     * helper is typically inside a `catch` block already, and a thrown
-     * exception from logging would mask the original error.
-     */
-    fun append(context: Context, text: String) {
-        try {
-            val logFile = File(context.filesDir, "sync_log.txt")
-            // Rotate if too large. We check the size on every append —
-            // diag() calls are not on a hot path (single-digit per upload /
-            // download / GC operation), so the stat() cost is negligible.
-            if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
-                val bytes = logFile.readBytes()
-                val truncated = bytes.copyOfRange(
-                    (bytes.size - TRUNCATE_TO).coerceAtLeast(0),
-                    bytes.size,
-                )
-                logFile.writeBytes(truncated)
-            }
-            logFile.appendText(text)
-        } catch (_: Exception) {
-            // Swallow — see class doc. Logging the failure to log would be
-            // recursive; logcat is the only viable channel and the caller
-            // has already emitted a Log.e there.
-        }
-    }
+	/**
+	 * Append [text] to `sync_log.txt` in [context]'s `filesDir`, rotating
+	 * first if the file exceeds [MAX_LOG_SIZE].
+	 *
+	 * Never throws — all I/O errors are swallowed. The caller's `diag()`
+	 * helper is typically inside a `catch` block already, and a thrown
+	 * exception from logging would mask the original error.
+	 */
+	fun append(
+		context: Context,
+		text: String,
+	) {
+		try {
+			val logFile = File(context.filesDir, "sync_log.txt")
+			// Rotate if too large. We check the size on every append —
+			// diag() calls are not on a hot path (single-digit per upload /
+			// download / GC operation), so the stat() cost is negligible.
+			if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
+				val bytes = logFile.readBytes()
+				val truncated =
+					bytes.copyOfRange(
+						(bytes.size - TRUNCATE_TO).coerceAtLeast(0),
+						bytes.size,
+					)
+				logFile.writeBytes(truncated)
+			}
+			logFile.appendText(text)
+		} catch (_: Exception) {
+			// Swallow — see class doc. Logging the failure to log would be
+			// recursive; logcat is the only viable channel and the caller
+			// has already emitted a Log.e there.
+		}
+	}
 }

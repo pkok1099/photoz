@@ -57,191 +57,201 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun SortingMenuIconButton(
-    sort: Sort,
-    config: SortConfig,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+	sort: Sort,
+	config: SortConfig,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val filterChangedColor = MaterialTheme.colorScheme.secondaryContainer
+	val filterChangedColor = MaterialTheme.colorScheme.secondaryContainer
 
-    val buttonContainerColor = remember(sort) {
-        if (sort != config.default) {
-            filterChangedColor.copy(alpha = 0.5f)
-        } else {
-            Color.Unspecified
-        }
-    }
+	val buttonContainerColor =
+		remember(sort) {
+			if (sort != config.default) {
+				filterChangedColor.copy(alpha = 0.5f)
+			} else {
+				Color.Unspecified
+			}
+		}
 
-    Crossfade(
-        targetState = buttonContainerColor,
-        modifier = modifier,
-    ) {
-        IconButton(
-            onClick = onClick,
-            colors = IconButtonDefaults.iconButtonColors(
-                containerColor = it,
-            ),
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_sort),
-                contentDescription = stringResource(R.string.sorting_sort),
-            )
-        }
-    }
+	Crossfade(
+		targetState = buttonContainerColor,
+		modifier = modifier,
+	) {
+		IconButton(
+			onClick = onClick,
+			colors =
+				IconButtonDefaults.iconButtonColors(
+					containerColor = it,
+				),
+		) {
+			Icon(
+				painter = painterResource(R.drawable.ic_sort),
+				contentDescription = stringResource(R.string.sorting_sort),
+			)
+		}
+	}
 }
 
 @Composable
 fun SortingMenu(
-    config: SortConfig,
-    expanded: Boolean,
-    onDismissRequest: () -> Unit,
-    sort: Sort,
-    onSortChanged: (Sort) -> Unit,
-    modifier: Modifier = Modifier,
+	config: SortConfig,
+	expanded: Boolean,
+	onDismissRequest: () -> Unit,
+	sort: Sort,
+	onSortChanged: (Sort) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val itemColors = MenuDefaults.itemColors(
-        trailingIconColor = MaterialTheme.colorScheme.primary,
-    )
+	val itemColors =
+		MenuDefaults.itemColors(
+			trailingIconColor = MaterialTheme.colorScheme.primary,
+		)
 
-    RoundedDropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismissRequest,
-        modifier = modifier.animateContentSize()
-    ) {
-        for (field in config.fields) {
-            val selected = remember(sort.field) {
-                sort.field == field
-            }
-            val fontWeight = remember(selected) {
-                if (selected) FontWeight.Bold else FontWeight.Normal
-            }
-            DropdownMenuItem(
-                colors = itemColors,
-                modifier = Modifier.semantics {
-                    this.selected = selected
-                },
-                text = {
-                    Text(
-                        text = stringResource(field.label),
-                        fontWeight = fontWeight,
-                    )
-                },
-                trailingIcon = {
-                    AnimatedVisibility(
-                        visible = selected,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        Icon(
-                            modifier = Modifier.size(18.dp),
-                            painter = painterResource(R.drawable.ic_check),
-                            contentDescription = null,
-                        )
-                    }
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(field.icon),
-                        contentDescription = null,
-                    )
-                },
-                onClick = { onSortChanged(sort.copy(field = field)) },
-            )
-        }
+	RoundedDropdownMenu(
+		expanded = expanded,
+		onDismissRequest = onDismissRequest,
+		modifier = modifier.animateContentSize(),
+	) {
+		for (field in config.fields) {
+			val selected =
+				remember(sort.field) {
+					sort.field == field
+				}
+			val fontWeight =
+				remember(selected) {
+					if (selected) FontWeight.Bold else FontWeight.Normal
+				}
+			DropdownMenuItem(
+				colors = itemColors,
+				modifier =
+					Modifier.semantics {
+						this.selected = selected
+					},
+				text = {
+					Text(
+						text = stringResource(field.label),
+						fontWeight = fontWeight,
+					)
+				},
+				trailingIcon = {
+					AnimatedVisibility(
+						visible = selected,
+						enter = fadeIn(),
+						exit = fadeOut(),
+					) {
+						Icon(
+							modifier = Modifier.size(18.dp),
+							painter = painterResource(R.drawable.ic_check),
+							contentDescription = null,
+						)
+					}
+				},
+				leadingIcon = {
+					Icon(
+						painter = painterResource(field.icon),
+						contentDescription = null,
+					)
+				},
+				onClick = { onSortChanged(sort.copy(field = field)) },
+			)
+		}
 
-        HorizontalDivider()
+		HorizontalDivider()
 
-        for (order in Sort.Order.entries) {
-            val selected = remember(sort.order) {
-                sort.order == order
-            }
+		for (order in Sort.Order.entries) {
+			val selected =
+				remember(sort.order) {
+					sort.order == order
+				}
 
-            val fontWeight = remember(selected) {
-                if (selected) FontWeight.Bold else FontWeight.Normal
-            }
+			val fontWeight =
+				remember(selected) {
+					if (selected) FontWeight.Bold else FontWeight.Normal
+				}
 
-            DropdownMenuItem(
-                colors = itemColors,
-                modifier = Modifier.semantics {
-                    this.selected = selected
-                },
-                text = {
-                    Text(
-                        text = stringResource(order.label),
-                        fontWeight = fontWeight,
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(order.icon),
-                        contentDescription = null,
-                    )
-                },
-                trailingIcon = {
-                    AnimatedVisibility(
-                        visible = selected,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        Icon(
-                            modifier = Modifier.size(18.dp),
-                            painter = painterResource(R.drawable.ic_check),
-                            contentDescription = null,
-                        )
-                    }
-                },
-                onClick = { onSortChanged(sort.copy(order = order)) },
-            )
-        }
+			DropdownMenuItem(
+				colors = itemColors,
+				modifier =
+					Modifier.semantics {
+						this.selected = selected
+					},
+				text = {
+					Text(
+						text = stringResource(order.label),
+						fontWeight = fontWeight,
+					)
+				},
+				leadingIcon = {
+					Icon(
+						painter = painterResource(order.icon),
+						contentDescription = null,
+					)
+				},
+				trailingIcon = {
+					AnimatedVisibility(
+						visible = selected,
+						enter = fadeIn(),
+						exit = fadeOut(),
+					) {
+						Icon(
+							modifier = Modifier.size(18.dp),
+							painter = painterResource(R.drawable.ic_check),
+							contentDescription = null,
+						)
+					}
+				},
+				onClick = { onSortChanged(sort.copy(order = order)) },
+			)
+		}
 
-        if (sort != config.default) {
-            DropdownMenuItem(
-                text = {
-                    TextButton(
-                        onClick = { onSortChanged(config.default) },
-                        contentPadding = PaddingValues(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(R.string.sorting_restore_default))
-                    }
-                },
-                onClick = { onSortChanged(config.default) },
-            )
-        }
-    }
+		if (sort != config.default) {
+			DropdownMenuItem(
+				text = {
+					TextButton(
+						onClick = { onSortChanged(config.default) },
+						contentPadding = PaddingValues(),
+						modifier =
+							Modifier
+								.fillMaxWidth(),
+					) {
+						Text(text = stringResource(R.string.sorting_restore_default))
+					}
+				},
+				onClick = { onSortChanged(config.default) },
+			)
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {},
-                    actions = {
-                        SortingMenuIconButton(
-                            sort = SortConfig.Gallery.default.copy(field = Sort.Field.Size),
-                            config = SortConfig.Gallery,
-                            onClick = {}
-                        )
+	AppTheme {
+		Scaffold(
+			topBar = {
+				TopAppBar(
+					title = {},
+					actions = {
+						SortingMenuIconButton(
+							sort = SortConfig.Gallery.default.copy(field = Sort.Field.Size),
+							config = SortConfig.Gallery,
+							onClick = {},
+						)
 
-                        SortingMenu(
-                            config = SortConfig.Gallery,
-                            expanded = true,
-                            onDismissRequest = {},
-                            sort = SortConfig.Gallery.default.copy(field = Sort.Field.Size),
-                            onSortChanged = {}
-                        )
-                    }
-                )
-            }
-        ) {
-            Box(
-                modifier = Modifier.padding(it)
-            )
-        }
-    }
+						SortingMenu(
+							config = SortConfig.Gallery,
+							expanded = true,
+							onDismissRequest = {},
+							sort = SortConfig.Gallery.default.copy(field = Sort.Field.Size),
+							onSortChanged = {},
+						)
+					},
+				)
+			},
+		) {
+			Box(
+				modifier = Modifier.padding(it),
+			)
+		}
+	}
 }

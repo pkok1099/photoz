@@ -23,6 +23,15 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.gallery.albums.detail.ui.AlbumDetailNavigator.NavigationEvent.ShowToast
 import onlasdan.gallery.gallery.albums.domain.AlbumRepository
@@ -35,173 +44,178 @@ import onlasdan.gallery.gallery.ui.navigation.PhotoAction.ExportPhotos
 import onlasdan.gallery.gallery.ui.navigation.PhotoAction.OpenPhoto
 import onlasdan.gallery.sort.domain.SortConfig
 import onlasdan.gallery.sort.domain.SortRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 const val ALBUM_DETAIL_UUID = "album_uuid"
 
 @HiltViewModel(assistedFactory = AlbumDetailViewModel.Factory::class)
-class AlbumDetailViewModel @AssistedInject constructor(
-    @Assisted(ALBUM_DETAIL_UUID) private val albumUUID: String,
-    private val albumsRepository: AlbumRepository,
-    private val sortRepository: SortRepository,
-    private val resources: Resources,
-) : ViewModel() {
+class AlbumDetailViewModel
+	@AssistedInject
+	constructor(
+		@Assisted(ALBUM_DETAIL_UUID) private val albumUUID: String,
+		private val albumsRepository: AlbumRepository,
+		private val sortRepository: SortRepository,
+		private val resources: Resources,
+	) : ViewModel() {
+		private val sortFlow = sortRepository.observeSortFor(albumUuid = albumUUID, default = SortConfig.Album.default)
 
-    private val sortFlow = sortRepository.observeSortFor(albumUuid = albumUUID, default = SortConfig.Album.default)
+		@OptIn(ExperimentalCoroutinesApi::class)
+		private val albumFlow =
+			sortFlow
+				.flatMapLatest { sort ->
+					albumsRepository.observeAlbumWithPhotos(albumUUID, sort)
+				}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), Album.Placeholder)
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val albumFlow = sortFlow.flatMapLatest { sort ->
-        albumsRepository.observeAlbumWithPhotos(albumUUID, sort)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), Album.Placeholder)
+		private val pinnedPhotoIdsFlow =
+			albumsRepository
+				.observePinnedPhotoUUIDs(albumUUID)
+				.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptySet())
 
-    private val pinnedPhotoIdsFlow = albumsRepository.observePinnedPhotoUUIDs(albumUUID)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptySet())
+		private val photoActionsChannel = Channel<PhotoAction>()
+		val photoActions = photoActionsChannel.receiveAsFlow()
 
-    private val photoActionsChannel = Channel<PhotoAction>()
-    val photoActions = photoActionsChannel.receiveAsFlow()
+		val uiState =
+			combine(
+				albumFlow,
+				sortFlow,
+				pinnedPhotoIdsFlow,
+			) { album, sort, pinnedIds ->
+				AlbumDetailUiState(
+					albumId = album.uuid,
+					albumName = album.name,
+					photos =
+						album.files.map {
+							PhotoTile(
+								it.internalThumbnailFileName,
+								it.type,
+								it.uuid,
+								pinned = it.uuid in pinnedIds,
+								// @since PR2 sync — surface per-photo sync state in album detail tiles
+								syncState = it.syncState,
+							)
+						},
+					sort = sort,
+					pinnedPhotoIds = pinnedIds,
+				)
+			}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), AlbumDetailUiState())
 
-    val uiState = combine(
-        albumFlow,
-        sortFlow,
-        pinnedPhotoIdsFlow,
-    ) { album, sort, pinnedIds ->
-        AlbumDetailUiState(
-            albumId = album.uuid,
-            albumName = album.name,
-            photos = album.files.map {
-                PhotoTile(
-                    it.internalThumbnailFileName,
-                    it.type,
-                    it.uuid,
-                    pinned = it.uuid in pinnedIds,
-                    // @since PR2 sync — surface per-photo sync state in album detail tiles
-                    syncState = it.syncState,
-                )
-            },
-            sort = sort,
-            pinnedPhotoIds = pinnedIds,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), AlbumDetailUiState())
+		private val navEventsChannel = Channel<AlbumDetailNavigator.NavigationEvent>()
+		val navEvents = navEventsChannel.receiveAsFlow()
 
+		fun handleUiEvent(event: AlbumDetailUiEvent) {
+			when (event) {
+				is AlbumDetailUiEvent.OnDelete -> {
+					val photos = albumFlow.value.files.filter { event.items.contains(it.uuid) }
+					photoActionsChannel.trySend(DeletePhotos(photos))
+				}
 
-    private val navEventsChannel = Channel<AlbumDetailNavigator.NavigationEvent>()
-    val navEvents = navEventsChannel.receiveAsFlow()
+				is AlbumDetailUiEvent.OnExport -> {
+					if (event.target != null) {
+						val photos = albumFlow.value.files.filter { event.items.contains(it.uuid) }
+						photoActionsChannel.trySend(ExportPhotos(photos, event.target))
+					}
+				}
 
-    fun handleUiEvent(event: AlbumDetailUiEvent) {
-        when (event) {
-            is AlbumDetailUiEvent.OnDelete -> {
-                val photos = albumFlow.value.files.filter { event.items.contains(it.uuid) }
-                photoActionsChannel.trySend(DeletePhotos(photos))
-            }
+				is AlbumDetailUiEvent.OpenPhoto -> {
+					photoActionsChannel.trySend(
+						OpenPhoto(
+							event.item.uuid,
+							albumFlow.value.uuid,
+						),
+					)
+				}
 
-            is AlbumDetailUiEvent.OnExport -> {
-                if (event.target != null) {
-                    val photos = albumFlow.value.files.filter { event.items.contains(it.uuid) }
-                    photoActionsChannel.trySend(ExportPhotos(photos, event.target))
-                }
-            }
+				AlbumDetailUiEvent.DeleteAlbum -> {
+					viewModelScope.launch {
+						albumsRepository
+							.deleteAlbum(albumFlow.value)
+							.onSuccess {
+								navEventsChannel.trySend(
+									ShowToast(
+										resources.getString(R.string.gallery_albums_deleted),
+									),
+								)
+								navEventsChannel.trySend(AlbumDetailNavigator.NavigationEvent.Close)
+							}.onFailure {
+								navEventsChannel.trySend(
+									ShowToast(
+										resources.getString(R.string.common_error),
+									),
+								)
+							}
+					}
+				}
 
-            is AlbumDetailUiEvent.OpenPhoto -> {
-                photoActionsChannel.trySend(
-                    OpenPhoto(
-                        event.item.uuid,
-                        albumFlow.value.uuid
-                    )
-                )
-            }
+				is AlbumDetailUiEvent.RemoveFromAlbum -> {
+					viewModelScope.launch {
+						albumsRepository.unlink(event.items, albumFlow.value.uuid)
+						navEventsChannel.trySend(
+							ShowToast(
+								resources.getString(R.string.common_ok),
+							),
+						)
+					}
+				}
 
-            AlbumDetailUiEvent.DeleteAlbum -> {
-                viewModelScope.launch {
-                    albumsRepository.deleteAlbum(albumFlow.value)
-                        .onSuccess {
-                            navEventsChannel.trySend(
-                                ShowToast(
-                                    resources.getString(R.string.gallery_albums_deleted)
-                                )
-                            )
-                            navEventsChannel.trySend(AlbumDetailNavigator.NavigationEvent.Close)
-                        }
-                        .onFailure {
-                            navEventsChannel.trySend(
-                                ShowToast(
-                                    resources.getString(R.string.common_error)
-                                )
-                            )
-                        }
-                }
-            }
+				is AlbumDetailUiEvent.RenameAlbum -> renameAlbum(event.newName)
+				is AlbumDetailUiEvent.OnImportChoice -> onImportChoice(event.choice)
+				is AlbumDetailUiEvent.SortChanged ->
+					viewModelScope.launch {
+						sortRepository.updateSortFor(albumUuid = albumUUID, sort = event.sort)
+					}
+				is AlbumDetailUiEvent.SetPinned ->
+					viewModelScope.launch {
+						albumsRepository.setPinned(event.items, albumFlow.value.uuid, event.pinned)
+					}
+			}
+		}
 
-            is AlbumDetailUiEvent.RemoveFromAlbum -> {
-                viewModelScope.launch {
-                    albumsRepository.unlink(event.items, albumFlow.value.uuid)
-                    navEventsChannel.trySend(
-                        ShowToast(
-                            resources.getString(R.string.common_ok)
-                        )
-                    )
-                }
-            }
+		private fun onImportChoice(choice: ImportChoice) {
+			val navEvent =
+				when (choice) {
+					is ImportChoice.AddNewFiles ->
+						AlbumDetailNavigator.NavigationEvent.StartImport(
+							fileUris = choice.fileUris,
+							albumUuid = albumFlow.value.uuid,
+						)
 
-            is AlbumDetailUiEvent.RenameAlbum -> renameAlbum(event.newName)
-            is AlbumDetailUiEvent.OnImportChoice -> onImportChoice(event.choice)
-            is AlbumDetailUiEvent.SortChanged -> viewModelScope.launch {
-                sortRepository.updateSortFor(albumUuid = albumUUID, sort = event.sort)
-            }
-            is AlbumDetailUiEvent.SetPinned -> viewModelScope.launch {
-                albumsRepository.setPinned(event.items, albumFlow.value.uuid, event.pinned)
-            }
-        }
-    }
+					is ImportChoice.RestoreBackup ->
+						AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
+							choice.backupUri,
+						)
 
-    private fun onImportChoice(choice: ImportChoice) {
-        val navEvent = when (choice) {
-            is ImportChoice.AddNewFiles -> AlbumDetailNavigator.NavigationEvent.StartImport(
-                fileUris = choice.fileUris,
-                albumUuid = albumFlow.value.uuid,
-            )
+					// Sprint 3 / M10 — Photo Picker import from an album detail screen.
+					// The user picked a target album via Path Maker dialog (which may
+					// be THIS album or a different one). We route to StartImport with
+					// the current album's UUID as the link target — the user's Path
+					// Maker choice is also passed via targetAlbumName so the photo's
+					// albumPath metadata is set correctly. If the user picked a
+					// different album in Path Maker, the photo's albumPath will say
+					// that album but the cross-ref will link to THIS album — that's
+					// a v1 inconsistency; v2 will respect the Path Maker choice for
+					// the cross-ref too.
+					is ImportChoice.AddFromPhotoPicker ->
+						AlbumDetailNavigator.NavigationEvent.StartImport(
+							fileUris = choice.fileUris,
+							albumUuid = albumFlow.value.uuid,
+						)
+				}
 
-            is ImportChoice.RestoreBackup -> AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
-                choice.backupUri,
-            )
+			navEventsChannel.trySend(navEvent)
+		}
 
-            // Sprint 3 / M10 — Photo Picker import from an album detail screen.
-            // The user picked a target album via Path Maker dialog (which may
-            // be THIS album or a different one). We route to StartImport with
-            // the current album's UUID as the link target — the user's Path
-            // Maker choice is also passed via targetAlbumName so the photo's
-            // albumPath metadata is set correctly. If the user picked a
-            // different album in Path Maker, the photo's albumPath will say
-            // that album but the cross-ref will link to THIS album — that's
-            // a v1 inconsistency; v2 will respect the Path Maker choice for
-            // the cross-ref too.
-            is ImportChoice.AddFromPhotoPicker -> AlbumDetailNavigator.NavigationEvent.StartImport(
-                fileUris = choice.fileUris,
-                albumUuid = albumFlow.value.uuid,
-            )
-        }
+		private fun renameAlbum(newName: String) {
+			viewModelScope.launch(Dispatchers.IO) {
+				albumsRepository.rename(
+					albumUUID = albumFlow.value.uuid,
+					newName = newName,
+				)
+			}
+		}
 
-        navEventsChannel.trySend(navEvent)
-    }
-
-    private fun renameAlbum(newName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            albumsRepository.rename(
-                albumUUID = albumFlow.value.uuid,
-                newName = newName,
-            )
-        }
-    }
-
-    @AssistedFactory
-    interface Factory {
-        fun create(@Assisted(ALBUM_DETAIL_UUID) albumUUID: String): AlbumDetailViewModel
-    }
-}
+		@AssistedFactory
+		interface Factory {
+			fun create(
+				@Assisted(ALBUM_DETAIL_UUID) albumUUID: String,
+			): AlbumDetailViewModel
+		}
+	}

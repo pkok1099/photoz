@@ -17,5 +17,5 @@
 package onlasdan.gallery.other
 
 object IntentParams {
-    const val PHOTO_UUID = "photoUuid"
+	const val PHOTO_UUID = "photoUuid"
 }

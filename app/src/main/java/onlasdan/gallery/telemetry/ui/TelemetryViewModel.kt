@@ -19,26 +19,29 @@ package onlasdan.gallery.telemetry.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import onlasdan.gallery.settings.data.Config
-import onlasdan.gallery.telemetry.domain.TelemetryEnabledByDefault
-import onlasdan.gallery.telemetry.domain.TelemetryService
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import onlasdan.gallery.settings.data.Config
+import onlasdan.gallery.telemetry.domain.TELEMETRY_ENABLED_BY_DEFAULT
+import onlasdan.gallery.telemetry.domain.TelemetryService
 import javax.inject.Inject
 
 @HiltViewModel
-class TelemetryViewModel @Inject constructor(
-    private val config: Config,
-    private val telemetryService: TelemetryService,
-) : ViewModel() {
+class TelemetryViewModel
+	@Inject
+	constructor(
+		private val config: Config,
+		private val telemetryService: TelemetryService,
+	) : ViewModel() {
+		val enabled =
+			config.valuesFlow
+				.map {
+					it[Config.TELEMETRY_ENABLED] as? Boolean ?: TELEMETRY_ENABLED_BY_DEFAULT
+				}.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), TELEMETRY_ENABLED_BY_DEFAULT)
 
-    val enabled = config.valuesFlow.map {
-        it[Config.TELEMETRY_ENABLED] as? Boolean ?: TelemetryEnabledByDefault
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), TelemetryEnabledByDefault)
-
-    fun updateTelemetryEnabled(enabled: Boolean) {
-        config.telemetryEnabled = enabled
-        telemetryService.setup()
-    }
-}
+		fun updateTelemetryEnabled(enabled: Boolean) {
+			config.telemetryEnabled = enabled
+			telemetryService.setup()
+		}
+	}

@@ -31,14 +31,15 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class UnlockBackupViewModel @Inject constructor(
-    app: Application,
-) : ObservableViewModel(app) {
-
-    @Bindable
-    var password: String = String.empty
-        set(value) {
-            field = value
-            notifyChange(BR.password, value)
-        }
-}
+class UnlockBackupViewModel
+	@Inject
+	constructor(
+		app: Application,
+	) : ObservableViewModel(app) {
+		@Bindable
+		var password: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.password, value)
+			}
+	}

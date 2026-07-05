@@ -22,6 +22,8 @@ import android.view.WindowManager
 import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
 import onlasdan.gallery.R
 import onlasdan.gallery.databinding.DialogBottomSheetProcessBinding
@@ -29,8 +31,6 @@ import onlasdan.gallery.other.extensions.hide
 import onlasdan.gallery.other.extensions.show
 import onlasdan.gallery.other.extensions.vanish
 import onlasdan.gallery.uicomponnets.bindings.BindableBottomSheetDialogFragment
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Abstract base for all process dialogs.
@@ -45,114 +45,120 @@ import kotlinx.coroutines.launch
  * @author PhotoZ
  */
 abstract class BaseProcessBottomSheetDialogFragment<T>(
-    private val itemSource: List<T>?,
-    @StringRes private val processingLabelTextResource: Int,
-    val canAbort: Boolean
+	private val itemSource: List<T>?,
+	@StringRes private val processingLabelTextResource: Int,
+	val canAbort: Boolean,
 ) : BindableBottomSheetDialogFragment<DialogBottomSheetProcessBinding>(
-    R.layout.dialog_bottom_sheet_process
-) {
+		R.layout.dialog_bottom_sheet_process,
+	) {
+	/**
+	 * Abstract [BaseProcessViewModel].
+	 * Needs to be set in the child, handles processing.
+	 */
+	abstract val viewModel: BaseProcessViewModel<T>
 
-    /**
-     * Abstract [BaseProcessViewModel].
-     * Needs to be set in the child, handles processing.
-     */
-    abstract val viewModel: BaseProcessViewModel<T>
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+		viewModel.processState = ProcessState.INITIALIZE
 
-        viewModel.processState = ProcessState.INITIALIZE
+		activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+		viewModel.addOnPropertyChange<ProcessState>(BR.processState) {
+			val label: String =
+				when (it) {
+					ProcessState.INITIALIZE -> {
+						isCancelable = false
+						setStatusIcon(null)
+						binding.processCloseButton.hide()
+						binding.processAbortButton.show()
+						binding.processItemsProgressIndicatorLayout.hide()
+						binding.processPercentLayout.hide()
+						binding.processFailuresWarnMessage.vanish()
+						getString(R.string.process_initialize)
+					}
+					ProcessState.PROCESSING -> {
+						isCancelable = false
+						binding.processItemsProgressIndicatorLayout.show()
+						binding.processPercentLayout.show()
+						binding.processProcessingIndicator.show()
+						getString(processingLabelTextResource)
+					}
+					ProcessState.FINISHED -> {
+						onProcessingDone()
+						setStatusIcon(R.drawable.ic_check, android.R.color.holo_green_dark)
+						// auto dismiss
+						lifecycleScope.launch {
+							delay(1500)
+							runCatching { dismiss() } // May throw if already dismissed by user
+						}
+						getString(R.string.process_finished)
+					}
+					ProcessState.ABORTED -> {
+						onProcessingDone()
+						setStatusIcon(R.drawable.ic_close, android.R.color.holo_red_dark)
+						getString(R.string.process_aborted)
+					}
+				}
+			binding.processLabel.text = label
+		}
 
-        viewModel.addOnPropertyChange<ProcessState>(BR.processState) {
-            val label: String = when (it) {
-                ProcessState.INITIALIZE -> {
-                    isCancelable = false
-                    setStatusIcon(null)
-                    binding.processCloseButton.hide()
-                    binding.processAbortButton.show()
-                    binding.processItemsProgressIndicatorLayout.hide()
-                    binding.processPercentLayout.hide()
-                    binding.processFailuresWarnMessage.vanish()
-                    getString(R.string.process_initialize)
-                }
-                ProcessState.PROCESSING -> {
-                    isCancelable = false
-                    binding.processItemsProgressIndicatorLayout.show()
-                    binding.processPercentLayout.show()
-                    binding.processProcessingIndicator.show()
-                    getString(processingLabelTextResource)
-                }
-                ProcessState.FINISHED -> {
-                    onProcessingDone()
-                    setStatusIcon(R.drawable.ic_check, android.R.color.holo_green_dark)
-                    // auto dismiss
-                    lifecycleScope.launch {
-                        delay(1500)
-                        runCatching { dismiss() } // May throw if already dismissed by user
-                    }
-                    getString(R.string.process_finished)
-                }
-                ProcessState.ABORTED -> {
-                    onProcessingDone()
-                    setStatusIcon(R.drawable.ic_close, android.R.color.holo_red_dark)
-                    getString(R.string.process_aborted)
-                }
-            }
-            binding.processLabel.text = label
-        }
+		prepareViewModel(itemSource)
+		viewModel.runProcessing()
+	}
 
-        prepareViewModel(itemSource)
-        viewModel.runProcessing()
-    }
+	open fun onProcessingDone() {
+		activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-    open fun onProcessingDone() {
-        activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+		isCancelable = true
+		binding.processCloseButton.show()
+		binding.processAbortButton.hide()
+		binding.processProcessingIndicator.hide()
+		if (viewModel.failuresOccurred) {
+			binding.processFailuresWarnMessage.show()
+		}
+	}
 
-        isCancelable = true
-        binding.processCloseButton.show()
-        binding.processAbortButton.hide()
-        binding.processProcessingIndicator.hide()
-        if (viewModel.failuresOccurred) {
-            binding.processFailuresWarnMessage.show()
-        }
-    }
+	/**
+	 * Called before viewModel starts processing.
+	 * Assign data and variables in implementations.
+	 */
+	open fun prepareViewModel(items: List<T>?) {
+		if (items != null) {
+			viewModel.items = items
+			viewModel.elementsToProcess = items.size
+		}
+	}
 
-    /**
-     * Called before viewModel starts processing.
-     * Assign data and variables in implementations.
-     */
-    open fun prepareViewModel(items: List<T>?) {
-        if (items != null) {
-            viewModel.items = items
-            viewModel.elementsToProcess = items.size
-        }
-    }
+	private fun setStatusIcon(
+		drawable: Int?,
+		color: Int = 0,
+	) {
+		if (drawable == null) {
+			binding.processStatusImageView.setImageDrawable(null)
+			return
+		}
 
-    private fun setStatusIcon(drawable: Int?, color: Int = 0) {
-        if (drawable == null) {
-            binding.processStatusImageView.setImageDrawable(null)
-            return
-        }
+		binding.processStatusImageView.setImageDrawable(
+			ContextCompat.getDrawable(
+				requireContext(),
+				drawable,
+			),
+		)
+		binding.processStatusImageView.setColorFilter(
+			ContextCompat.getColor(
+				requireContext(),
+				color,
+			),
+		)
+	}
 
-        binding.processStatusImageView.setImageDrawable(
-            ContextCompat.getDrawable(
-                requireContext(),
-                drawable
-            )
-        )
-        binding.processStatusImageView.setColorFilter(
-            ContextCompat.getColor(
-                requireContext(),
-                color
-            )
-        )
-    }
-
-    override fun bind(binding: DialogBottomSheetProcessBinding) {
-        super.bind(binding)
-        binding.context = this
-        binding.viewModel = viewModel
-    }
+	override fun bind(binding: DialogBottomSheetProcessBinding) {
+		super.bind(binding)
+		binding.context = this
+		binding.viewModel = viewModel
+	}
 }

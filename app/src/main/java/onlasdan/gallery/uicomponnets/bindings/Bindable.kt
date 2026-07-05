@@ -25,17 +25,14 @@ import androidx.databinding.ViewDataBinding
  * @author PhotoZ
  */
 interface Bindable<BindingType : ViewDataBinding> {
+	/**
+	 * Binding instance. Contains all Views and Variables in a layout.
+	 */
+	var binding: BindingType
 
-
-    /**
-     * Binding instance. Contains all Views and Variables in a layout.
-     */
-    var binding: BindingType
-
-    /**
-     * Used to insert bindings.
-     * @sample onlasdan.gallery.main.components.bindings.BindableActivity.bind
-     */
-    fun bind(binding: BindingType)
-
+	/**
+	 * Used to insert bindings.
+	 * @sample onlasdan.gallery.main.components.bindings.BindableActivity.bind
+	 */
+	fun bind(binding: BindingType)
 }

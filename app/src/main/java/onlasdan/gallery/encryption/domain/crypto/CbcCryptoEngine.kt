@@ -52,104 +52,112 @@ import javax.inject.Inject
  * `EncryptionBindingModule` and the existing unit tests). The class itself
  * is now an "engine" in the abstract sense, not strictly CBC.
  */
-class CbcCryptoEngine @Inject constructor(): CryptoEngine {
+class CbcCryptoEngine
+	@Inject
+	constructor() : CryptoEngine {
+		override fun createEncryptStream(
+			output: OutputStream,
+			session: Session,
+			useGcm: Boolean,
+		): OutputStream? {
+			require(session is VaultSession)
 
-    override fun createEncryptStream(
-        output: OutputStream,
-        session: Session,
-        useGcm: Boolean,
-    ): OutputStream? {
-        require(session is VaultSession)
+			try {
+				if (useGcm) {
+					// ─── TODO #2: Chunked GCM (version 0x04) for ALL new files ──
+					// Replaces single-stream GCM (0x03) with per-chunk encryption:
+					// - Per-chunk auth tag (tamper detection per 1MB)
+					// - Random access decryption (seek to chunk N)
+					// - Progressive streaming (ExoPlayer starts after first chunk)
+					//
+					// The returned OutputStream is NOT a CipherOutputStream (chunked
+					// encryption doesn't work with a single Cipher instance). Callers
+					// that type-check for CipherOutputStream will get null — but
+					// VaultFileStorage.openEncryptedOutput just needs OutputStream.
+					return ChunkedGcmOutputStream(output, session.vmk)
+				} else {
+					// ─── Legacy CBC path (videos, backwards compat) ──────────────
+					// Format: [0x02][IV(16)][CBC ciphertext]
+					val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-        try {
-            if (useGcm) {
-                // ─── TODO #2: Chunked GCM (version 0x04) for ALL new files ──
-                // Replaces single-stream GCM (0x03) with per-chunk encryption:
-                // - Per-chunk auth tag (tamper detection per 1MB)
-                // - Random access decryption (seek to chunk N)
-                // - Progressive streaming (ExoPlayer starts after first chunk)
-                //
-                // The returned OutputStream is NOT a CipherOutputStream (chunked
-                // encryption doesn't work with a single Cipher instance). Callers
-                // that type-check for CipherOutputStream will get null — but
-                // VaultFileStorage.openEncryptedOutput just needs OutputStream.
-                return ChunkedGcmOutputStream(output, session.vmk)
-            } else {
-                // ─── Legacy CBC path (videos, backwards compat) ──────────────
-                // Format: [0x02][IV(16)][CBC ciphertext]
-                val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+					val cipher =
+						Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+							init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
+						}
 
-                val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                    init(Cipher.ENCRYPT_MODE, session.vmk, IvParameterSpec(iv))
-                }
+					output.write(byteArrayOf(EncryptionVersionByte.Two.value))
+					output.write(iv)
 
-                output.write(byteArrayOf(EncryptionVersionByte.Two.value))
-                output.write(iv)
+					return CipherOutputStream(output, cipher)
+				}
+			} catch (e: Exception) {
+				Timber.e("Error creating CipherOutputStream: $e")
+				return null
+			}
+		}
 
-                return CipherOutputStream(output, cipher)
-            }
-        } catch (e: Exception) {
-            Timber.e("Error creating CipherOutputStream: $e")
-            return null
-        }
-    }
+		override fun createDecryptStream(
+			input: InputStream,
+			session: Session,
+		): InputStream? {
+			require(session is VaultSession)
 
-    override fun createDecryptStream(input: InputStream, session: Session): InputStream? {
-        require(session is VaultSession)
+			try {
+				val versionByte = input.read().toByte()
+				val version = EncryptionVersionByte.fromValue(versionByte)
 
-        try {
-            val versionByte = input.read().toByte()
-            val version = EncryptionVersionByte.fromValue(versionByte)
+				return when (version) {
+					EncryptionVersionByte.One -> {
+						// Legacy v1: [0x01][SALT(16)][IV(16)][CBC ciphertext]
+						val salt = ByteArray(SALT_SIZE)
+						input.read(salt, 0, salt.size)
+						val iv = ByteArray(IV_SIZE)
+						input.read(iv, 0, iv.size)
 
-            return when (version) {
-                EncryptionVersionByte.One -> {
-                    // Legacy v1: [0x01][SALT(16)][IV(16)][CBC ciphertext]
-                    val salt = ByteArray(SALT_SIZE)
-                    input.read(salt, 0, salt.size)
-                    val iv = ByteArray(IV_SIZE)
-                    input.read(iv, 0, iv.size)
+						val cipher =
+							Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+								init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
+							}
+						CipherInputStream(input, cipher)
+					}
+					EncryptionVersionByte.Two -> {
+						// v2: [0x02][IV(16)][CBC ciphertext]
+						val iv = ByteArray(IV_SIZE)
+						input.read(iv, 0, iv.size)
 
-                    val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                        init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
-                    }
-                    CipherInputStream(input, cipher)
-                }
-                EncryptionVersionByte.Two -> {
-                    // v2: [0x02][IV(16)][CBC ciphertext]
-                    val iv = ByteArray(IV_SIZE)
-                    input.read(iv, 0, iv.size)
+						val cipher =
+							Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+								init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
+							}
+						CipherInputStream(input, cipher)
+					}
+					EncryptionVersionByte.Three -> {
+						// v3 (Sprint 1 / P6): [0x03][IV(12)][GCM ciphertext + 16-byte tag]
+						// The JCE provider reads the trailing 16-byte tag from the
+						// stream and verifies it on doFinal() (triggered by close()
+						// on CipherInputStream). If the tag doesn't match, the
+						// AEADBadTagException is thrown on read/close — callers
+						// should catch and treat as corruption.
+						val iv = ByteArray(GCM_IV_SIZE)
+						input.read(iv, 0, iv.size)
 
-                    val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-                        init(Cipher.DECRYPT_MODE, session.vmk, IvParameterSpec(iv))
-                    }
-                    CipherInputStream(input, cipher)
-                }
-                EncryptionVersionByte.Three -> {
-                    // v3 (Sprint 1 / P6): [0x03][IV(12)][GCM ciphertext + 16-byte tag]
-                    // The JCE provider reads the trailing 16-byte tag from the
-                    // stream and verifies it on doFinal() (triggered by close()
-                    // on CipherInputStream). If the tag doesn't match, the
-                    // AEADBadTagException is thrown on read/close — callers
-                    // should catch and treat as corruption.
-                    val iv = ByteArray(GCM_IV_SIZE)
-                    input.read(iv, 0, iv.size)
-
-                    val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-                        init(Cipher.DECRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
-                    }
-                    CipherInputStream(input, cipher)
-                }
-                EncryptionVersionByte.Four -> {
-                    // v4 (TODO #2): [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
-                    // Each chunk: [nonce(12)][ciphertext][tag(16)] — independently decryptable.
-                    // The version byte has already been read; ChunkedGcmInputStream
-                    // reads the rest of the header + chunks.
-                    ChunkedGcmInputStream(input, session.vmk)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e("Error creating CipherInputStream: $e")
-            return null
-        }
-    }
-}
+						val cipher =
+							Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+								init(Cipher.DECRYPT_MODE, session.vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, iv))
+							}
+						CipherInputStream(input, cipher)
+					}
+					EncryptionVersionByte.Four -> {
+						// v4 (TODO #2): [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
+						// Each chunk: [nonce(12)][ciphertext][tag(16)] — independently decryptable.
+						// The version byte has already been read; ChunkedGcmInputStream
+						// reads the rest of the header + chunks.
+						ChunkedGcmInputStream(input, session.vmk)
+					}
+				}
+			} catch (e: Exception) {
+				Timber.e("Error creating CipherInputStream: $e")
+				return null
+			}
+		}
+	}

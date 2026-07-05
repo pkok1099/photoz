@@ -27,8 +27,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
@@ -42,7 +40,6 @@ import onlasdan.gallery.R
 import onlasdan.gallery.gallery.ui.navigation.NavigateToGallery
 import onlasdan.gallery.other.extensions.finishOnBackWhileStarted
 import onlasdan.gallery.ui.theme.AppTheme
-import onlasdan.gallery.uicomponnets.Dialogs
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -63,119 +60,122 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class SetupFragment : Fragment() {
+	private val viewModel: SetupViewModel by viewModels()
 
-    private val viewModel: SetupViewModel by viewModels()
+	@Inject
+	lateinit var navigateToGallery: NavigateToGallery
 
-    @Inject
-    lateinit var navigateToGallery: NavigateToGallery
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					val setupState by viewModel.setupState.collectAsStateWithLifecycle()
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    val setupState by viewModel.setupState.collectAsStateWithLifecycle()
+					// Debug auto-fill (P7 strong policy compliant).
+					if (BuildConfig.DEBUG) {
+						LaunchedEffect(Unit) {
+							viewModel.password = "Debug123!pass"
+							viewModel.confirmPassword = "Debug123!pass"
+						}
+					}
 
-                    // Debug auto-fill (P7 strong policy compliant).
-                    if (BuildConfig.DEBUG) {
-                        LaunchedEffect(Unit) {
-                            viewModel.password = "Debug123!pass"
-                            viewModel.confirmPassword = "Debug123!pass"
-                        }
-                    }
+					when (setupState) {
+						SetupState.SETUP -> {
+							SetupScreen(
+								loading = false,
+								onSetup = { password ->
+									viewModel.password = password
+									viewModel.confirmPassword = password
+									viewModel.onSetupClicked()
+								},
+							)
+						}
+						SetupState.LOADING -> {
+							SetupScreen(
+								loading = true,
+								onSetup = {},
+							)
+						}
+						SetupState.SHOW_RECOVERY_PHRASE -> {
+							// Inline recovery phrase display — same Composable
+							// as the standalone RecoveryPhraseSetupFragment,
+							// rendered in-place without fragment navigation.
+							showRecoveryPhraseInline()
+						}
+						SetupState.FINISHED -> {
+							// Will be navigated away by LaunchedEffect below.
+							SetupScreen(loading = true, onSetup = {})
+						}
+					}
 
-                    when (setupState) {
-                        SetupState.SETUP -> {
-                            SetupScreen(
-                                loading = false,
-                                onSetup = { password ->
-                                    viewModel.password = password
-                                    viewModel.confirmPassword = password
-                                    viewModel.onSetupClicked()
-                                },
-                            )
-                        }
-                        SetupState.LOADING -> {
-                            SetupScreen(
-                                loading = true,
-                                onSetup = {},
-                            )
-                        }
-                        SetupState.SHOW_RECOVERY_PHRASE -> {
-                            // Inline recovery phrase display — same Composable
-                            // as the standalone RecoveryPhraseSetupFragment,
-                            // rendered in-place without fragment navigation.
-                            showRecoveryPhraseInline()
-                        }
-                        SetupState.FINISHED -> {
-                            // Will be navigated away by LaunchedEffect below.
-                            SetupScreen(loading = true, onSetup = {})
-                        }
-                    }
+					// Handle FINISHED state → navigate to gallery.
+					LaunchedEffect(setupState) {
+						if (setupState == SetupState.FINISHED) {
+							navigateToGalleryOrPop()
+						}
+					}
+				}
+			}
+		}
 
-                    // Handle FINISHED state → navigate to gallery.
-                    LaunchedEffect(setupState) {
-                        if (setupState == SetupState.FINISHED) {
-                            navigateToGalleryOrPop()
-                        }
-                    }
-                }
-            }
-        }
-    }
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
+		finishOnBackWhileStarted()
+	}
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        finishOnBackWhileStarted()
-    }
+	/**
+	 * Render RecoveryPhraseSetupScreen inline with the POST_NOTIFICATIONS
+	 * permission launcher wired to the onContinue callback.
+	 *
+	 * Same logic as the old XML fragment's showRecoveryPhraseInline() —
+	 * just without the FrameLayout/ComposeView manipulation.
+	 */
+	@androidx.compose.runtime.Composable
+	private fun showRecoveryPhraseInline() {
+		val notificationPermissionLauncher =
+			rememberLauncherForActivityResult(
+				ActivityResultContracts.RequestPermission(),
+			) { granted ->
+				Timber.i("POST_NOTIFICATIONS permission granted=$granted (register branch, inline)")
+				navigateToGalleryOrPop()
+			}
 
-    /**
-     * Render RecoveryPhraseSetupScreen inline with the POST_NOTIFICATIONS
-     * permission launcher wired to the onContinue callback.
-     *
-     * Same logic as the old XML fragment's showRecoveryPhraseInline() —
-     * just without the FrameLayout/ComposeView manipulation.
-     */
-    @androidx.compose.runtime.Composable
-    private fun showRecoveryPhraseInline() {
-        val notificationPermissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            Timber.i("POST_NOTIFICATIONS permission granted=$granted (register branch, inline)")
-            navigateToGalleryOrPop()
-        }
+		RecoveryPhraseSetupScreen(
+			onContinue = {
+				val needsRequest =
+					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+						ContextCompat.checkSelfPermission(
+							requireContext(),
+							Manifest.permission.POST_NOTIFICATIONS,
+						) != PackageManager.PERMISSION_GRANTED
+					} else {
+						false
+					}
+				if (needsRequest) {
+					notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+				} else {
+					navigateToGalleryOrPop()
+				}
+			},
+		)
+	}
 
-        RecoveryPhraseSetupScreen(
-            onContinue = {
-                val needsRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    ContextCompat.checkSelfPermission(
-                        requireContext(),
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) != PackageManager.PERMISSION_GRANTED
-                } else {
-                    false
-                }
-                if (needsRequest) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    navigateToGalleryOrPop()
-                }
-            }
-        )
-    }
-
-    /**
-     * Navigate to the gallery (or pop back to Settings if that's where we came from).
-     */
-    private fun navigateToGalleryOrPop() {
-        val navController = findNavController()
-        if (navController.previousBackStackEntry?.destination?.id == R.id.settingsFragment) {
-            navController.popBackStack()
-        } else {
-            navigateToGallery(navController)
-        }
-    }
+	/**
+	 * Navigate to the gallery (or pop back to Settings if that's where we came from).
+	 */
+	private fun navigateToGalleryOrPop() {
+		val navController = findNavController()
+		if (navController.previousBackStackEntry?.destination?.id == R.id.settingsFragment) {
+			navController.popBackStack()
+		} else {
+			navigateToGallery(navController)
+		}
+	}
 }

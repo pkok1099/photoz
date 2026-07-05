@@ -47,50 +47,48 @@ private const val LICENSE_REPORT_FILE = "open_source_licenses.html"
  * @author PhotoZ
  */
 class OssLicensesFragment : Fragment() {
-
-    @OptIn(ExperimentalMaterial3Api::class)
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(
-                                title = {
-                                    Text(
-                                        text = stringResource(R.string.about_third_party)
-                                    )
-                                },
-                                navigationIcon = {
-                                    IconButton(
-                                        onClick = {
-                                            findNavController().navigateUp()
-                                        }
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_back),
-                                            contentDescription = stringResource(R.string.process_close),
-                                        )
-                                    }
-                                }
-                            )
-                        }
-                    ) { contentPadding ->
-                        AndroidView(
-                            factory = { context ->
-                                WebView(context).apply {
-                                    loadUrl("file:///android_asset/$LICENSE_REPORT_FILE")
-                                }
-                            },
-                            modifier = Modifier.padding(contentPadding)
-                        )
-                    }
-                }
-            }
-        }
-    }
+	@OptIn(ExperimentalMaterial3Api::class)
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					Scaffold(
+						topBar = {
+							TopAppBar(
+								title = {
+									Text(
+										text = stringResource(R.string.about_third_party),
+									)
+								},
+								navigationIcon = {
+									IconButton(
+										onClick = {
+											findNavController().navigateUp()
+										},
+									) {
+										Icon(
+											painter = painterResource(R.drawable.ic_back),
+											contentDescription = stringResource(R.string.process_close),
+										)
+									}
+								},
+							)
+						},
+					) { contentPadding ->
+						AndroidView(
+							factory = { context ->
+								WebView(context).apply {
+									loadUrl("file:///android_asset/$LICENSE_REPORT_FILE")
+								}
+							},
+							modifier = Modifier.padding(contentPadding),
+						)
+					}
+				}
+			}
+		}
 }

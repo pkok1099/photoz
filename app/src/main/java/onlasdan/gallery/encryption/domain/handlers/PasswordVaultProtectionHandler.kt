@@ -40,232 +40,249 @@ import kotlin.io.encoding.Base64
 private const val KEK_SIZE = 256
 private const val KEK_ITERATIONS = 100_000
 
-class PasswordVaultProtectionHandler @Inject constructor(
-    private val keyGen: KeyGen,
-    private val config: Config,
-) : VaultProtectionHandler<UnlockRequest.Password, CreateRequest.Password> {
+class PasswordVaultProtectionHandler
+	@Inject
+	constructor(
+		private val keyGen: KeyGen,
+		private val config: Config,
+	) : VaultProtectionHandler<UnlockRequest.Password, CreateRequest.Password> {
+		override suspend fun unlock(
+			request: UnlockRequest.Password,
+			protection: VaultProtection,
+		): SecretKey {
+			val params = protection.params
 
-    override suspend fun unlock(
-        request: UnlockRequest.Password,
-        protection: VaultProtection
-    ): SecretKey {
-        val params = protection.params
+			requireNotNull(params.salt)
+			requireNotNull(params.iv)
+			requireNotNull(params.kdf)
+			requireNotNull(params.kdfIterations)
+			requireNotNull(params.keySize)
+			requireNotNull(params.algorithm)
 
-        requireNotNull(params.salt)
-        requireNotNull(params.iv)
-        requireNotNull(params.kdf)
-        requireNotNull(params.kdfIterations)
-        requireNotNull(params.keySize)
-        requireNotNull(params.algorithm)
+			// TODO #3 — For Argon2id, the `iv` field contains a 4-byte memory cost
+			// prefix followed by the 16-byte AES wrapping IV. For PBKDF2, the `iv`
+			// field is just the 16-byte IV (no prefix).
+			val ivBytes = Base64.decode(params.iv)
+			val (aesIv, argon2MemoryKB) =
+				when (params.kdf) {
+					Kdf.Argon2id -> {
+						require(ivBytes.size >= 4 + IV_SIZE) {
+							"Argon2id iv field too short: ${ivBytes.size} bytes (need ${4 + IV_SIZE})"
+						}
+						val memory =
+							((ivBytes[0].toInt() and 0xFF) shl 24) or
+								((ivBytes[1].toInt() and 0xFF) shl 16) or
+								((ivBytes[2].toInt() and 0xFF) shl 8) or
+								(ivBytes[3].toInt() and 0xFF)
+						val iv = ivBytes.copyOfRange(4, 4 + IV_SIZE)
+						iv to memory
+					}
+					Kdf.PBKDF2WithHmacSHA256 -> {
+						ivBytes to onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+					}
+				}
 
-        // TODO #3 — For Argon2id, the `iv` field contains a 4-byte memory cost
-        // prefix followed by the 16-byte AES wrapping IV. For PBKDF2, the `iv`
-        // field is just the 16-byte IV (no prefix).
-        val ivBytes = Base64.decode(params.iv)
-        val (aesIv, argon2MemoryKB) = when (params.kdf) {
-            Kdf.Argon2id -> {
-                require(ivBytes.size >= 4 + IV_SIZE) {
-                    "Argon2id iv field too short: ${ivBytes.size} bytes (need ${4 + IV_SIZE})"
-                }
-                val memory = ((ivBytes[0].toInt() and 0xFF) shl 24) or
-                    ((ivBytes[1].toInt() and 0xFF) shl 16) or
-                    ((ivBytes[2].toInt() and 0xFF) shl 8) or
-                    (ivBytes[3].toInt() and 0xFF)
-                val iv = ivBytes.copyOfRange(4, 4 + IV_SIZE)
-                iv to memory
-            }
-            Kdf.PBKDF2WithHmacSHA256 -> {
-                ivBytes to onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
-            }
-        }
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = request.password,
+					salt = Base64.decode(params.salt),
+					kdf = params.kdf,
+					kdfIterations = params.kdfIterations,
+					keySize = params.keySize,
+					argon2MemoryKB = argon2MemoryKB,
+				)
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = request.password,
-            salt = Base64.decode(params.salt),
-            kdf = params.kdf,
-            kdfIterations = params.kdfIterations,
-            keySize = params.keySize,
-            argon2MemoryKB = argon2MemoryKB,
-        )
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(aesIv))
+				}
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(aesIv))
-        }
+			val vmkBytes = cipher.doFinal(protection.wrappedVMK)
+			return SecretKeySpec(vmkBytes, "AES")
+		}
 
-        val vmkBytes = cipher.doFinal(protection.wrappedVMK)
-        return SecretKeySpec(vmkBytes, "AES")
-    }
+		override suspend fun create(request: CreateRequest.Password): VaultProtection {
+			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-    override suspend fun create(request: CreateRequest.Password): VaultProtection {
+			// TODO #3 — New vaults use Argon2id (memory-hard KDF, 2025 standard).
+			// Old vaults stay PBKDF2 (backwards compatible — unlock dispatches by kdf type).
+			val kdf = Kdf.Argon2id
+			val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
+			val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
 
-        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+			// For Argon2id, the `iv` field stores the AES wrapping IV (still needed).
+			// The memory cost is encoded in the `iv` field as well — we prepend
+			// a 4-byte big-endian int before the IV bytes, Base64-encoded together.
+			// This reuses the existing column without schema changes.
+			val ivWithMemory = ByteArray(4 + IV_SIZE)
+			ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
+			ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
+			ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
+			ivWithMemory[3] = argon2MemoryKB.toByte()
+			System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
 
-        // TODO #3 — New vaults use Argon2id (memory-hard KDF, 2025 standard).
-        // Old vaults stay PBKDF2 (backwards compatible — unlock dispatches by kdf type).
-        val kdf = Kdf.Argon2id
-        val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
-        val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+			val params =
+				VaultProtectionParams(
+					salt = Base64.encode(salt),
+					iv = Base64.encode(ivWithMemory),
+					kdf = kdf,
+					kdfIterations = kdfIterations,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = KEK_SIZE,
+				)
 
-        // For Argon2id, the `iv` field stores the AES wrapping IV (still needed).
-        // The memory cost is encoded in the `iv` field as well — we prepend
-        // a 4-byte big-endian int before the IV bytes, Base64-encoded together.
-        // This reuses the existing column without schema changes.
-        val ivWithMemory = ByteArray(4 + IV_SIZE)
-        ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
-        ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
-        ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
-        ivWithMemory[3] = argon2MemoryKB.toByte()
-        System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
+			val vmk = keyGen.generateVaultMasterKey()
 
-        val params = VaultProtectionParams(
-            salt = Base64.encode(salt),
-            iv = Base64.encode(ivWithMemory),
-            kdf = kdf,
-            kdfIterations = kdfIterations,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = KEK_SIZE,
-        )
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = request.password,
+					salt = salt,
+					kdf = kdf,
+					kdfIterations = kdfIterations,
+					keySize = params.keySize,
+					argon2MemoryKB = argon2MemoryKB,
+				)
 
-        val vmk = keyGen.generateVaultMasterKey()
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+				}
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = request.password,
-            salt = salt,
-            kdf = kdf,
-            kdfIterations = kdfIterations,
-            keySize = params.keySize,
-            argon2MemoryKB = argon2MemoryKB,
-        )
+			val wrappedVmk = cipher.doFinal(vmk.encoded)
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
-        }
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = request.protectionType,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        val wrappedVmk = cipher.doFinal(vmk.encoded)
+		/**
+		 * Wrap an EXISTING VMK (from a recovered session) with the given password.
+		 * Used after login-branch unlock to persist a local Password protection
+		 * so [VaultService.canUnlock] returns true on subsequent app opens.
+		 *
+		 * Unlike [create] which generates a new VMK, this wraps the provided [vmk].
+		 *
+		 * @since data-loss fix — login branch must persist local Password protection
+		 */
+		fun wrapExistingVmk(
+			password: String,
+			vmk: javax.crypto.SecretKey,
+		): VaultProtection {
+			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+			// TODO #3 — use Argon2id for new wrappings
+			val kdf = Kdf.Argon2id
+			val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
+			val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
 
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = request.protectionType,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
+			val ivWithMemory = ByteArray(4 + IV_SIZE)
+			ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
+			ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
+			ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
+			ivWithMemory[3] = argon2MemoryKB.toByte()
+			System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
 
-    /**
-     * Wrap an EXISTING VMK (from a recovered session) with the given password.
-     * Used after login-branch unlock to persist a local Password protection
-     * so [VaultService.canUnlock] returns true on subsequent app opens.
-     *
-     * Unlike [create] which generates a new VMK, this wraps the provided [vmk].
-     *
-     * @since data-loss fix — login branch must persist local Password protection
-     */
-    fun wrapExistingVmk(password: String, vmk: javax.crypto.SecretKey): VaultProtection {
-        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-        // TODO #3 — use Argon2id for new wrappings
-        val kdf = Kdf.Argon2id
-        val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
-        val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB
+			val params =
+				VaultProtectionParams(
+					salt = Base64.encode(salt),
+					iv = Base64.encode(ivWithMemory),
+					kdf = kdf,
+					kdfIterations = kdfIterations,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = KEK_SIZE,
+				)
 
-        val ivWithMemory = ByteArray(4 + IV_SIZE)
-        ivWithMemory[0] = (argon2MemoryKB ushr 24).toByte()
-        ivWithMemory[1] = (argon2MemoryKB ushr 16).toByte()
-        ivWithMemory[2] = (argon2MemoryKB ushr 8).toByte()
-        ivWithMemory[3] = argon2MemoryKB.toByte()
-        System.arraycopy(iv, 0, ivWithMemory, 4, IV_SIZE)
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = password,
+					salt = salt,
+					kdf = kdf,
+					kdfIterations = kdfIterations,
+					keySize = params.keySize,
+					argon2MemoryKB = argon2MemoryKB,
+				)
 
-        val params = VaultProtectionParams(
-            salt = Base64.encode(salt),
-            iv = Base64.encode(ivWithMemory),
-            kdf = kdf,
-            kdfIterations = kdfIterations,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = KEK_SIZE,
-        )
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+				}
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = password,
-            salt = salt,
-            kdf = kdf,
-            kdfIterations = kdfIterations,
-            keySize = params.keySize,
-            argon2MemoryKB = argon2MemoryKB,
-        )
+			val wrappedVmk = cipher.doFinal(vmk.encoded)
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
-        }
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = VaultProtectionType.Password,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        val wrappedVmk = cipher.doFinal(vmk.encoded)
+		override suspend fun canMigrate(): Boolean {
+			// 1.x.x users have no legacyUserSalt — migrate() handles that case by generating a fresh
+			// VMK. Returning true when only legacyPasswordHash is present covers both 1.x.x and 2.x.x.
+			return config.legacyPasswordHash.orEmpty().isNotEmpty()
+		}
 
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = VaultProtectionType.Password,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
+		override suspend fun migrate(request: UnlockRequest.Password): VaultProtection {
+			require(BCrypt.checkpw(request.password, config.legacyPasswordHash))
 
-    override suspend fun canMigrate(): Boolean {
-        // 1.x.x users have no legacyUserSalt — migrate() handles that case by generating a fresh
-        // VMK. Returning true when only legacyPasswordHash is present covers both 1.x.x and 2.x.x.
-        return config.legacyPasswordHash.orEmpty().isNotEmpty()
-    }
+			val vmk =
+				if (config.legacyUserSalt.isNullOrEmpty()) {
+					// Migrating from 1.x.x
+					keyGen.generateVaultMasterKey()
+				} else {
+					// Migrating from 2.x.x
+					val vmkSalt = Base64.decode(config.legacyUserSalt!!)
 
-    override suspend fun migrate(request: UnlockRequest.Password): VaultProtection {
-        require(BCrypt.checkpw(request.password, config.legacyPasswordHash))
+					keyGen.derivePasswordKeyEncryptionKey(
+						password = request.password,
+						salt = vmkSalt,
+						kdf = Kdf.PBKDF2WithHmacSHA256,
+						kdfIterations = KEK_ITERATIONS,
+						keySize = KEK_SIZE,
+					)
+				}
 
-        val vmk = if (config.legacyUserSalt.isNullOrEmpty()) {
-            // Migrating from 1.x.x
-            keyGen.generateVaultMasterKey()
-        } else {
-            // Migrating from 2.x.x
-            val vmkSalt = Base64.decode(config.legacyUserSalt!!)
+			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-            keyGen.derivePasswordKeyEncryptionKey(
-                password = request.password,
-                salt = vmkSalt,
-                kdf = Kdf.PBKDF2WithHmacSHA256,
-                kdfIterations = KEK_ITERATIONS,
-                keySize = KEK_SIZE,
-            )
-        }
+			val params =
+				VaultProtectionParams(
+					salt = Base64.encode(salt),
+					iv = Base64.encode(iv),
+					kdf = Kdf.PBKDF2WithHmacSHA256,
+					kdfIterations = KEK_ITERATIONS,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = KEK_SIZE,
+				)
 
-        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = request.password,
+					salt = salt,
+					kdf = params.kdf!!,
+					kdfIterations = params.kdfIterations!!,
+					keySize = params.keySize,
+				)
 
-        val params = VaultProtectionParams(
-            salt = Base64.encode(salt),
-            iv = Base64.encode(iv),
-            kdf = Kdf.PBKDF2WithHmacSHA256,
-            kdfIterations = KEK_ITERATIONS,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = KEK_SIZE,
-        )
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+				}
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = request.password,
-            salt = salt,
-            kdf = params.kdf!!,
-            kdfIterations = params.kdfIterations!!,
-            keySize = params.keySize,
-        )
+			val wrappedVmk = cipher.doFinal(vmk.encoded)
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
-        }
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = request.protectionType,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        val wrappedVmk = cipher.doFinal(vmk.encoded)
-
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = request.protectionType,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
-
-    override suspend fun reset() {}
-}
+		override suspend fun reset() {}
+	}

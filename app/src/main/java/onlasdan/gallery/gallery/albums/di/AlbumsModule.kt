@@ -26,6 +26,6 @@ import onlasdan.gallery.gallery.albums.domain.AlbumRepository
 @Module
 @InstallIn(SingletonComponent::class)
 interface AlbumsModule {
-    @Binds
-    fun bindAlbumsRepository(impl: AlbumRepositoryImpl): AlbumRepository
+	@Binds
+	fun bindAlbumsRepository(impl: AlbumRepositoryImpl): AlbumRepository
 }

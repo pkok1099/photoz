@@ -17,7 +17,7 @@
 package onlasdan.gallery.encryption.domain.models
 
 enum class VaultProtectionType {
-    Password,
-    Biometric,
-    RecoveryPhrase,
+	Password,
+	Biometric,
+	RecoveryPhrase,
 }

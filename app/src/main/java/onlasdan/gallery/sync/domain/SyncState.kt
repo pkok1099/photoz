@@ -16,14 +16,16 @@
 
 package onlasdan.gallery.sync.domain
 
-enum class SyncState(val storageKey: String) {
-    LOCAL_ONLY("LOCAL_ONLY"),
-    UPLOAD_PENDING("UPLOAD_PENDING"),
-    UPLOADED("UPLOADED"),
-    UPLOAD_FAILED("UPLOAD_FAILED");
+enum class SyncState(
+	val storageKey: String,
+) {
+	LOCAL_ONLY("LOCAL_ONLY"),
+	UPLOAD_PENDING("UPLOAD_PENDING"),
+	UPLOADED("UPLOADED"),
+	UPLOAD_FAILED("UPLOAD_FAILED"),
+	;
 
-    companion object {
-        fun fromStorageKey(key: String?): SyncState =
-            entries.firstOrNull { it.storageKey == key } ?: LOCAL_ONLY
-    }
+	companion object {
+		fun fromStorageKey(key: String?): SyncState = entries.firstOrNull { it.storageKey == key } ?: LOCAL_ONLY
+	}
 }

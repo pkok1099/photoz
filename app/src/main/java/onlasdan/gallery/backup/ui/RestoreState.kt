@@ -23,10 +23,10 @@ package onlasdan.gallery.backup.ui
  * @author PhotoZ
  */
 enum class RestoreState {
-    INITIALIZE,
-    FILE_VALID,
-    FILE_INVALID,
-    RESTORING,
-    FINISHED,
-    FINISHED_WITH_ERRORS,
+	INITIALIZE,
+	FILE_VALID,
+	FILE_INVALID,
+	RESTORING,
+	FINISHED,
+	FINISHED_WITH_ERRORS,
 }

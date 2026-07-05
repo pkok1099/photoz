@@ -26,47 +26,56 @@ import onlasdan.gallery.model.repositories.ImportSource
 import onlasdan.gallery.other.extensions.show
 import javax.inject.Inject
 
-class GalleryNavigator @Inject constructor() {
+class GalleryNavigator
+	@Inject
+	constructor() {
+		fun navigate(
+			event: GalleryNavigationEvent,
+			fragment: Fragment,
+		) {
+			when (event) {
+				is GalleryNavigationEvent.ShowToast -> showToast(event, fragment)
+				is GalleryNavigationEvent.StartImport ->
+					startImport(
+						fileUris = event.fileUris,
+						fragmentManager = fragment.childFragmentManager,
+						importSource = event.importSource,
+						targetAlbumName = event.targetAlbumName,
+					)
+				is GalleryNavigationEvent.StartRestoreBackup -> startRestoreBackup(event.backupUri, fragment.childFragmentManager)
+			}
+		}
 
-    fun navigate(
-        event: GalleryNavigationEvent,
-        fragment: Fragment,
-    ) {
-        when (event) {
-            is GalleryNavigationEvent.ShowToast -> showToast(event, fragment)
-            is GalleryNavigationEvent.StartImport -> startImport(
-                fileUris = event.fileUris,
-                fragmentManager = fragment.childFragmentManager,
-                importSource = event.importSource,
-                targetAlbumName = event.targetAlbumName,
-            )
-            is GalleryNavigationEvent.StartRestoreBackup -> startRestoreBackup(event.backupUri, fragment.childFragmentManager)
-        }
-    }
+		private fun startRestoreBackup(
+			backupUri: Uri,
+			fragmentManager: FragmentManager,
+		) {
+			RestoreBackupDialogFragment
+				.newInstance(
+					uri = backupUri,
+				).show(fragmentManager)
+		}
 
-    private fun startRestoreBackup(backupUri: Uri, fragmentManager: FragmentManager) {
-        RestoreBackupDialogFragment.newInstance(
-            uri = backupUri
-        ).show(fragmentManager)
-    }
+		private fun startImport(
+			fileUris: List<Uri>,
+			fragmentManager: FragmentManager,
+			importSource: ImportSource,
+			targetAlbumName: String? = null,
+		) {
+			ImportBottomSheetDialogFragment(
+				uris = fileUris,
+				albumUUID = null,
+				importSource = importSource,
+				targetAlbumName = targetAlbumName,
+			).show(fragmentManager)
+		}
 
-    private fun startImport(
-        fileUris: List<Uri>,
-        fragmentManager: FragmentManager,
-        importSource: ImportSource,
-        targetAlbumName: String? = null,
-    ) {
-        ImportBottomSheetDialogFragment(
-            uris = fileUris,
-            albumUUID = null,
-            importSource = importSource,
-            targetAlbumName = targetAlbumName,
-        ).show(fragmentManager)
-    }
-
-    private fun showToast(event: GalleryNavigationEvent.ShowToast, fragment: Fragment) {
-        fragment.context?.let { context ->
-            Toast.makeText(context, event.text, Toast.LENGTH_LONG).show()
-        }
-    }
-}
+		private fun showToast(
+			event: GalleryNavigationEvent.ShowToast,
+			fragment: Fragment,
+		) {
+			fragment.context?.let { context ->
+				Toast.makeText(context, event.text, Toast.LENGTH_LONG).show()
+			}
+		}
+	}

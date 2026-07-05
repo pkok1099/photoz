@@ -59,67 +59,71 @@ import javax.inject.Inject
  *  - File extension matches V3: `.photok.*`.
  *  - `backupVersion` must equal 2 for this format.
  */
-class RestoreBackupV2 @Inject constructor(
-    private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
-    private val photoRepository: PhotoRepository,
-    private val io: IO,
-    private val vaultFileStorage: VaultFileStorage,
-) : RestoreBackupStrategy<BackupMetaData.V2> {
+class RestoreBackupV2
+	@Inject
+	constructor(
+		private val legacyGcmCryptoEngine: LegacyGcmCryptoEngine,
+		private val photoRepository: PhotoRepository,
+		private val io: IO,
+		private val vaultFileStorage: VaultFileStorage,
+	) : RestoreBackupStrategy<BackupMetaData.V2> {
+		override suspend fun restore(
+			metaData: BackupMetaData.V2,
+			stream: ZipInputStream,
+			session: Session,
+		): RestoreResult {
+			var errors = 0
 
-    override suspend fun restore(
-        metaData: BackupMetaData.V2,
-        stream: ZipInputStream,
-        session: Session,
-    ): RestoreResult {
-        var errors = 0
+			var ze = stream.nextEntry
 
-        var ze = stream.nextEntry
+			while (ze != null) {
+				if (ze.name == BackupMetaData.FILE_NAME) {
+					ze = stream.nextEntry
+					continue
+				}
 
-        while (ze != null) {
-            if (ze.name == BackupMetaData.FILE_NAME) {
-                ze = stream.nextEntry
-                continue
-            }
+				// Skip files that are not mentioned in the metadata
+				// These might be dead files from old versions of photok
+				if (metaData.photos.none { ze.name.contains(it.uuid) }) {
+					ze = stream.nextEntry
+					Timber.i("Skipping dead file in backup: ${ze.name}")
+					continue
+				}
 
-            // Skip files that are not mentioned in the metadata
-            // These might be dead files from old versions of photok
-            if (metaData.photos.none { ze.name.contains(it.uuid) }) {
-                ze = stream.nextEntry
-                Timber.i("Skipping dead file in backup: ${ze.name}")
-                continue
-            }
+				val encryptedZipInput =
+					legacyGcmCryptoEngine.createDecryptStream(stream, session)
+				val internalOutputStream =
+					vaultFileStorage.openEncryptedOutput(
+						ze.name.replace(
+							oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
+							newValue = PHOTOK_FILE_EXTENSION,
+						),
+					)
 
-            val encryptedZipInput =
-                legacyGcmCryptoEngine.createDecryptStream(stream, session)
-            val internalOutputStream = vaultFileStorage.openEncryptedOutput(
-                ze.name.replace(
-                    oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
-                    newValue = PHOTOK_FILE_EXTENSION,
-                )
-            )
+				if (encryptedZipInput == null || internalOutputStream == null) {
+					ze = stream.nextEntry
+					continue
+				}
 
-            if (encryptedZipInput == null || internalOutputStream == null) {
-                ze = stream.nextEntry
-                continue
-            }
+				io
+					.copy(encryptedZipInput, internalOutputStream)
+					.onFailure {
+						Timber.e(it, "Error restoring zip entry: ${ze.name}")
+						errors++
+					}
 
-            io.copy(encryptedZipInput, internalOutputStream)
-                .onFailure {
-                    Timber.e(it, "Error restoring zip entry: ${ze.name}")
-                    errors++
-                }
+				ze = stream.nextEntry
+			}
 
-            ze = stream.nextEntry
-        }
+			metaData.getPhotosInOriginalOrder().forEach { photoBackup ->
+				val newPhoto =
+					photoBackup
+						.toDomain()
+						.copy(importedAt = System.currentTimeMillis())
 
-        metaData.getPhotosInOriginalOrder().forEach { photoBackup ->
-            val newPhoto = photoBackup
-                .toDomain()
-                .copy(importedAt = System.currentTimeMillis())
+				photoRepository.insert(newPhoto)
+			}
 
-            photoRepository.insert(newPhoto)
-        }
-
-        return RestoreResult(errors)
-    }
-}
+			return RestoreResult(errors)
+		}
+	}

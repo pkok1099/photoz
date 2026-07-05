@@ -42,54 +42,57 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class GalleryFragment : Fragment() {
+	private val viewModel: GalleryViewModel by viewModels()
 
-    private val viewModel: GalleryViewModel by viewModels()
+	@Inject
+	lateinit var navigator: GalleryNavigator
 
-    @Inject
-    lateinit var navigator: GalleryNavigator
+	@Inject
+	lateinit var photoActionsNavigator: PhotoActionsNavigator
 
-    @Inject
-    lateinit var photoActionsNavigator: PhotoActionsNavigator
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
+	@EncryptedImageLoader
+	@Inject
+	lateinit var encryptedImageLoader: ImageLoader
 
-    @EncryptedImageLoader
-    @Inject
-    lateinit var encryptedImageLoader: ImageLoader
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				CompositionLocalProvider(
+					LocalEncryptedImageLoader provides encryptedImageLoader,
+					LocalConfig provides config,
+					LocalFragment provides this@GalleryFragment,
+				) {
+					GalleryScreen(viewModel)
+				}
+			}
+		}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            CompositionLocalProvider(
-                LocalEncryptedImageLoader provides encryptedImageLoader,
-                LocalConfig provides config,
-                LocalFragment provides this@GalleryFragment,
-            ) {
-                GalleryScreen(viewModel)
-            }
-        }
-    }
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
+		finishOnBackWhileStarted(
+			enabled = config.galleryStartPage == StartPage.AllFiles,
+		)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        finishOnBackWhileStarted(
-            enabled = config.galleryStartPage == StartPage.AllFiles,
-        )
+		launchLifecycleAwareJob {
+			viewModel.eventsFlow.collect { event ->
+				navigator.navigate(event, this)
+			}
+		}
 
-        launchLifecycleAwareJob {
-            viewModel.eventsFlow.collect { event ->
-                navigator.navigate(event, this)
-            }
-        }
-
-        launchLifecycleAwareJob {
-            viewModel.photoActions.collect { action ->
-                photoActionsNavigator.navigate(action, findNavController(), this)
-            }
-        }
-    }
+		launchLifecycleAwareJob {
+			viewModel.photoActions.collect { action ->
+				photoActionsNavigator.navigate(action, findNavController(), this)
+			}
+		}
+	}
 }

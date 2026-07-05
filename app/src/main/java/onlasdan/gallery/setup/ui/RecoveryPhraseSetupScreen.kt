@@ -70,215 +70,220 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RecoveryPhraseSetupScreen(
-    onContinue: () -> Unit,
-) {
-    val viewModel: RecoveryPhraseViewModel = hiltViewModel()
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+fun RecoveryPhraseSetupScreen(onContinue: () -> Unit) {
+	val viewModel: RecoveryPhraseViewModel = hiltViewModel()
+	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Content(
-        uiState = uiState,
-        handleUiEvent = viewModel::handleUiEvent,
-        onContinue = onContinue,
-    )
+	Content(
+		uiState = uiState,
+		handleUiEvent = viewModel::handleUiEvent,
+		onContinue = onContinue,
+	)
 }
 
 @Composable
 private fun Content(
-    uiState: RecoveryPhraseUiState,
-    handleUiEvent: (RecoveryPhraseUiEvent) -> Unit,
-    onContinue: () -> Unit,
-    modifier: Modifier = Modifier,
+	uiState: RecoveryPhraseUiState,
+	handleUiEvent: (RecoveryPhraseUiEvent) -> Unit,
+	onContinue: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val activity = LocalActivity.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
 
-    val selectFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
-        it ?: return@rememberLauncherForActivityResult
-        uiState.phrase ?: return@rememberLauncherForActivityResult
-        if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
+	val selectFileLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {
+			it ?: return@rememberLauncherForActivityResult
+			uiState.phrase ?: return@rememberLauncherForActivityResult
+			if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
 
-        handleUiEvent(RecoveryPhraseUiEvent.SaveToFile(context, it, uiState.phrase))
-    }
+			handleUiEvent(RecoveryPhraseUiEvent.SaveToFile(context, it, uiState.phrase))
+		}
 
-    val clipboard = LocalClipboard.current
+	val clipboard = LocalClipboard.current
 
-    val phrase = uiState.phrase
-    if (uiState.inputs.qrSheetVisible && phrase != null) {
-        RecoveryPhraseQrSheet(
-            phrase = phrase,
-            onDismiss = { handleUiEvent(RecoveryPhraseUiEvent.DismissQrSheet) },
-            onSaved = { handleUiEvent(RecoveryPhraseUiEvent.MarkPhraseSaved) },
-        )
-    }
+	val phrase = uiState.phrase
+	if (uiState.inputs.qrSheetVisible && phrase != null) {
+		RecoveryPhraseQrSheet(
+			phrase = phrase,
+			onDismiss = { handleUiEvent(RecoveryPhraseUiEvent.DismissQrSheet) },
+			onSaved = { handleUiEvent(RecoveryPhraseUiEvent.MarkPhraseSaved) },
+		)
+	}
 
-    BackHandler {
-        if (!uiState.inputs.phraseWasSaved) {
-            Toast.makeText(context, R.string.recovery_phrase_save_warning, Toast.LENGTH_SHORT).show()
-        } else {
-            activity?.finish()
-        }
-    }
+	BackHandler {
+		if (!uiState.inputs.phraseWasSaved) {
+			Toast.makeText(context, R.string.recovery_phrase_save_warning, Toast.LENGTH_SHORT).show()
+		} else {
+			activity?.finish()
+		}
+	}
 
-    Scaffold(
-        bottomBar = {
-            Column() {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    IconButton(
-                        onClick = {
-                            selectFileLauncher.launch("photok-recovery-phrase.txt")
-                        },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_download),
-                            contentDescription = null,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            val phrase = uiState.phrase ?: return@IconButton
-                            handleUiEvent(RecoveryPhraseUiEvent.Share(context, phrase))
-                        },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_share),
-                            contentDescription = null,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            uiState.phrase ?: return@IconButton
-                            handleUiEvent(RecoveryPhraseUiEvent.ShowQrCode)
-                        },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_qr_code),
-                            contentDescription = null,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            val phrase = uiState.phrase ?: return@IconButton
-                            handleUiEvent(RecoveryPhraseUiEvent.CopyToClipboard(clipboard, phrase))
-                        },
-                        ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_content_copy),
-                            contentDescription = null,
-                        )
-                    }
-                }
+	Scaffold(
+		bottomBar = {
+			Column {
+				Row(
+					horizontalArrangement = Arrangement.SpaceEvenly,
+					modifier = Modifier.fillMaxWidth(),
+				) {
+					IconButton(
+						onClick = {
+							selectFileLauncher.launch("photok-recovery-phrase.txt")
+						},
+					) {
+						Icon(
+							painter = painterResource(R.drawable.ic_download),
+							contentDescription = null,
+						)
+					}
+					IconButton(
+						onClick = {
+							val phrase = uiState.phrase ?: return@IconButton
+							handleUiEvent(RecoveryPhraseUiEvent.Share(context, phrase))
+						},
+					) {
+						Icon(
+							painter = painterResource(R.drawable.ic_share),
+							contentDescription = null,
+						)
+					}
+					IconButton(
+						onClick = {
+							uiState.phrase ?: return@IconButton
+							handleUiEvent(RecoveryPhraseUiEvent.ShowQrCode)
+						},
+					) {
+						Icon(
+							painter = painterResource(R.drawable.ic_qr_code),
+							contentDescription = null,
+						)
+					}
+					IconButton(
+						onClick = {
+							val phrase = uiState.phrase ?: return@IconButton
+							handleUiEvent(RecoveryPhraseUiEvent.CopyToClipboard(clipboard, phrase))
+						},
+					) {
+						Icon(
+							painter = painterResource(R.drawable.ic_content_copy),
+							contentDescription = null,
+						)
+					}
+				}
 
-                Button(
-                    onClick = onContinue,
-                    enabled = uiState.inputs.phraseWasSaved,
-                    modifier = modifier
-                        .navigationBarsPadding()
-                        .padding(horizontal = 20.dp)
-                        .fillMaxWidth()
-                ) {
-                    Text(
-                        text = stringResource(R.string.recovery_phrase_confirm),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
-    ) { contentPadding ->
-        val hapticFeedback = LocalHapticFeedback.current
+				Button(
+					onClick = onContinue,
+					enabled = uiState.inputs.phraseWasSaved,
+					modifier =
+						modifier
+							.navigationBarsPadding()
+							.padding(horizontal = 20.dp)
+							.fillMaxWidth(),
+				) {
+					Text(
+						text = stringResource(R.string.recovery_phrase_confirm),
+						textAlign = TextAlign.Center,
+					)
+				}
+			}
+		},
+	) { contentPadding ->
+		val hapticFeedback = LocalHapticFeedback.current
 
-        CenteredScrollableColumn(
-            modifier = Modifier
-                .padding(contentPadding)
-                .fillMaxSize()
-        ) {
-            Text(
-                text = stringResource(R.string.recovery_phrase_title),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-            )
+		CenteredScrollableColumn(
+			modifier =
+				Modifier
+					.padding(contentPadding)
+					.fillMaxSize(),
+		) {
+			Text(
+				text = stringResource(R.string.recovery_phrase_title),
+				style = MaterialTheme.typography.headlineSmall,
+				textAlign = TextAlign.Center,
+			)
 
-            Spacer(Modifier.height(8.dp))
+			Spacer(Modifier.height(8.dp))
 
-            Text(
-                text = stringResource(R.string.recovery_phrase_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+			Text(
+				text = stringResource(R.string.recovery_phrase_description),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				textAlign = TextAlign.Center,
+			)
 
-            RecoveryPhraseFlowRow(
-                phrase = uiState.phrase,
-                animated = true,
-            )
+			RecoveryPhraseFlowRow(
+				phrase = uiState.phrase,
+				animated = true,
+			)
 
-            Text(
-                text = stringResource(R.string.recovery_phrase_select_word_count)
-            )
+			Text(
+				text = stringResource(R.string.recovery_phrase_select_word_count),
+			)
 
-            SingleChoiceSegmentedButtonRow {
-                SegmentedButton(
-                    selected = uiState.inputs.wordCount == Bip39WordCount.Twelve,
-                    onClick = {
-                        handleUiEvent(RecoveryPhraseUiEvent.UpdateWordCount(Bip39WordCount.Twelve))
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                    },
-                    shape = RoundedCornerShape(24.dp, 6.dp, 6.dp, 24.dp),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        activeBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    ),
-                ) {
-                    Text(Bip39WordCount.Twelve.words.toString())
-                }
-                Spacer(Modifier.width(6.dp))
-                SegmentedButton(
-                    selected = uiState.inputs.wordCount == Bip39WordCount.TwentyFour,
-                    onClick = {
-                        handleUiEvent(RecoveryPhraseUiEvent.UpdateWordCount(Bip39WordCount.TwentyFour))
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                    },
-                    shape = RoundedCornerShape(6.dp, 24.dp, 24.dp, 6.dp),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        activeBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    ),
-                ) {
-                    Text(Bip39WordCount.TwentyFour.words.toString())
-                }
-            }
-        }
-    }
+			SingleChoiceSegmentedButtonRow {
+				SegmentedButton(
+					selected = uiState.inputs.wordCount == Bip39WordCount.Twelve,
+					onClick = {
+						handleUiEvent(RecoveryPhraseUiEvent.UpdateWordCount(Bip39WordCount.Twelve))
+						hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+					},
+					shape = RoundedCornerShape(24.dp, 6.dp, 6.dp, 24.dp),
+					colors =
+						SegmentedButtonDefaults.colors(
+							activeContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+							activeBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+						),
+				) {
+					Text(Bip39WordCount.Twelve.words.toString())
+				}
+				Spacer(Modifier.width(6.dp))
+				SegmentedButton(
+					selected = uiState.inputs.wordCount == Bip39WordCount.TwentyFour,
+					onClick = {
+						handleUiEvent(RecoveryPhraseUiEvent.UpdateWordCount(Bip39WordCount.TwentyFour))
+						hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+					},
+					shape = RoundedCornerShape(6.dp, 24.dp, 24.dp, 6.dp),
+					colors =
+						SegmentedButtonDefaults.colors(
+							activeContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+							activeBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+						),
+				) {
+					Text(Bip39WordCount.TwentyFour.words.toString())
+				}
+			}
+		}
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme {
-        Content(
-            uiState = RecoveryPhraseUiState(
-                phrase = RecoveryPhrase(
-                    listOf(
-                        "this",
-                        "can",
-                        "be",
-                        "any",
-                        "words",
-                        "generated",
-                        "by",
-                        "photok",
-                        "and",
-                        "its",
-                        "always",
-                        "twelve"
-                    ),
-                ),
-            ),
-            handleUiEvent = {},
-            onContinue = {},
-        )
-    }
+	AppTheme {
+		Content(
+			uiState =
+				RecoveryPhraseUiState(
+					phrase =
+						RecoveryPhrase(
+							listOf(
+								"this",
+								"can",
+								"be",
+								"any",
+								"words",
+								"generated",
+								"by",
+								"photok",
+								"and",
+								"its",
+								"always",
+								"twelve",
+							),
+						),
+				),
+			handleUiEvent = {},
+			onContinue = {},
+		)
+	}
 }

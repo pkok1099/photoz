@@ -17,48 +17,49 @@
 package onlasdan.gallery.sort.data
 
 import androidx.room.withTransaction
-import onlasdan.gallery.model.database.PhotoZDatabase
-import onlasdan.gallery.sort.data.db.SortDao
-import onlasdan.gallery.sort.domain.Sort
-import onlasdan.gallery.sort.domain.SortRepository
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import onlasdan.gallery.model.database.PhotoZDatabase
+import onlasdan.gallery.sort.data.db.SortDao
+import onlasdan.gallery.sort.domain.Sort
+import onlasdan.gallery.sort.domain.SortRepository
 import javax.inject.Inject
 
-class SortRepositoryImpl @Inject constructor(
-    private val sortDao: SortDao,
-    private val database: PhotoZDatabase,
-) : SortRepository {
+class SortRepositoryImpl
+	@Inject
+	constructor(
+		private val sortDao: SortDao,
+		private val database: PhotoZDatabase,
+	) : SortRepository {
+		override fun observeSortFor(
+			albumUuid: String?,
+			default: Sort,
+		): Flow<Sort> = sortDao.observeSort(album = albumUuid).map { it?.toDomain() ?: default }
 
-    override fun observeSortFor(albumUuid: String?, default: Sort): Flow<Sort> {
-        return sortDao.observeSort(album = albumUuid).map { it?.toDomain() ?: default }
-    }
+		override suspend fun getSortForAlbum(albumUuid: String?): Sort? =
+			withContext(IO) {
+				sortDao.getSortForAlbum(albumUuid)?.toDomain()
+			}
 
-    override suspend fun getSortForAlbum(albumUuid: String?): Sort? = withContext(IO) {
-        sortDao.getSortForAlbum(albumUuid)?.toDomain()
-    }
+		override fun observeSortsForAlbums(): Flow<Map<String, Sort>> =
+			sortDao.observeSortsForAlbums().map { sorts ->
+				buildMap {
+					for (sort in sorts) {
+						sort.albumUuid ?: continue
+						put(sort.albumUuid, sort.toDomain())
+					}
+				}
+			}
 
-    override fun observeSortsForAlbums(): Flow<Map<String, Sort>> {
-        return sortDao.observeSortsForAlbums().map { sorts ->
-            buildMap {
-                for (sort in sorts) {
-                    sort.albumUuid ?: continue
-                    put(sort.albumUuid, sort.toDomain())
-                }
-            }
-        }
-    }
-
-    override suspend fun updateSortFor(
-        albumUuid: String?,
-        sort: Sort
-    ) = withContext(IO) {
-        database.withTransaction {
-            sortDao.deleteSortFor(albumUuid)
-            sortDao.updateSortFor(sort.toData(albumUuid))
-        }
-    }
-
-}
+		override suspend fun updateSortFor(
+			albumUuid: String?,
+			sort: Sort,
+		) = withContext(IO) {
+			database.withTransaction {
+				sortDao.deleteSortFor(albumUuid)
+				sortDao.updateSortFor(sort.toData(albumUuid))
+			}
+		}
+	}

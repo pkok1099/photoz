@@ -21,4 +21,4 @@ import androidx.compose.runtime.compositionLocalOf
 import onlasdan.gallery.settings.data.Config
 
 val LocalConfig: ProvidableCompositionLocal<Config?> =
-    compositionLocalOf { null }
+	compositionLocalOf { null }

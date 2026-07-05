@@ -36,27 +36,28 @@ import onlasdan.gallery.ui.LocalFragment
  */
 @AndroidEntryPoint
 class AboutFragment : Fragment() {
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                CompositionLocalProvider(
-                    LocalFragment provides this@AboutFragment
-                ) {
-                    AboutScreen(
-                        handleUiEvent = {
-                            when (it) {
-                                AboutUiEvent.Close -> findNavController().navigateUp()
-                                AboutUiEvent.OpenThirdParty -> findNavController().navigate(R.id.action_aboutFragment_to_ossLicensesFragment)
-                            }
-                        }
-                    )
-                }
-            }
-        }
-    }
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? =
+		ComposeView(requireContext()).apply {
+			setContent {
+				CompositionLocalProvider(
+					LocalFragment provides this@AboutFragment,
+				) {
+					AboutScreen(
+						handleUiEvent = {
+							when (it) {
+								AboutUiEvent.Close -> findNavController().navigateUp()
+								AboutUiEvent.OpenThirdParty ->
+									findNavController().navigate(
+										R.id.action_aboutFragment_to_ossLicensesFragment,
+									)
+							}
+						},
+					)
+				}
+			}
+		}
 }

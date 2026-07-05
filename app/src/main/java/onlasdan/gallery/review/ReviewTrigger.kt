@@ -21,23 +21,24 @@ import onlasdan.gallery.BuildConfig
 import kotlin.time.Duration.Companion.days
 
 enum class ReviewTrigger {
-    Import {
-        override fun meetsRequirements(context: Context): Boolean {
-            if (BuildConfig.DEBUG) return true
+	Import {
+		override fun meetsRequirements(context: Context): Boolean {
+			if (BuildConfig.DEBUG) return true
 
-            val installTime = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
-            }.getOrDefault(Long.MAX_VALUE)
+			val installTime =
+				runCatching {
+					context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+				}.getOrDefault(Long.MAX_VALUE)
 
-            return System.currentTimeMillis() - installTime >= 3.days.inWholeMilliseconds
-        }
-    },
-    BackupRestored {
-        override fun meetsRequirements(context: Context) = true
-    },
-    RecoveryPhraseUsed {
-        override fun meetsRequirements(context: Context) = true
-    };
+			return System.currentTimeMillis() - installTime >= 3.days.inWholeMilliseconds
+		}
+	},
+	BackupRestored {
+		override fun meetsRequirements(context: Context) = true
+	},
+	RecoveryPhraseUsed {
+		override fun meetsRequirements(context: Context) = true
+	}, ;
 
-    abstract fun meetsRequirements(context: Context): Boolean
+	abstract fun meetsRequirements(context: Context): Boolean
 }

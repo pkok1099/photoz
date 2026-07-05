@@ -48,120 +48,123 @@ import onlasdan.gallery.uicomponnets.Dialogs
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumPickerDialog(
-    visible: Boolean,
-    selectedItemIds: List<String>,
-    onDismissRequest: () -> Unit,
-    onAlbumSelected: () -> Unit = {},
+	visible: Boolean,
+	selectedItemIds: List<String>,
+	onDismissRequest: () -> Unit,
+	onAlbumSelected: () -> Unit = {},
 ) {
-    if (visible) {
-        val viewModel: AlbumPickerViewModel = hiltViewModel()
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	if (visible) {
+		val viewModel: AlbumPickerViewModel = hiltViewModel()
+		val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-        ModalBottomSheet(onDismissRequest = onDismissRequest) {
-            AlbumPickerContent(
-                selectedItemIds = selectedItemIds,
-                uiState = uiState,
-                handleUiEvent = viewModel::handleUiEvent,
-                onDismissRequest = onDismissRequest,
-                onAlbumSelected = onAlbumSelected,
-            )
-        }
-    }
+		ModalBottomSheet(onDismissRequest = onDismissRequest) {
+			AlbumPickerContent(
+				selectedItemIds = selectedItemIds,
+				uiState = uiState,
+				handleUiEvent = viewModel::handleUiEvent,
+				onDismissRequest = onDismissRequest,
+				onAlbumSelected = onAlbumSelected,
+			)
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AlbumPickerContent(
-    selectedItemIds: List<String>,
-    uiState: AlbumPickerUiState,
-    handleUiEvent: (AlbumPickerUiEvent) -> Unit,
-    onDismissRequest: () -> Unit,
-    onAlbumSelected: () -> Unit,
+	selectedItemIds: List<String>,
+	uiState: AlbumPickerUiState,
+	handleUiEvent: (AlbumPickerUiEvent) -> Unit,
+	onDismissRequest: () -> Unit,
+	onAlbumSelected: () -> Unit,
 ) {
-    var showCreateDialog by remember { mutableStateOf(false) }
+	var showCreateDialog by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        TopAppBar(
-            title = {
-                Text(
-                    stringResource(R.string.gallery_albums_select_title),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent,
-            ),
-            actions = {
-                IconButton(
-                    onClick = { showCreateDialog = true }
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_add),
-                        contentDescription = stringResource(R.string.magic_fab_new_album_label),
-                    )
-                }
-            }
-        )
+	Column(
+		modifier = Modifier.fillMaxSize(),
+		horizontalAlignment = Alignment.CenterHorizontally,
+	) {
+		TopAppBar(
+			title = {
+				Text(
+					stringResource(R.string.gallery_albums_select_title),
+					style = MaterialTheme.typography.headlineSmall,
+				)
+			},
+			colors =
+				TopAppBarDefaults.topAppBarColors(
+					containerColor = Color.Transparent,
+				),
+			actions = {
+				IconButton(
+					onClick = { showCreateDialog = true },
+				) {
+					Icon(
+						painter = painterResource(R.drawable.ic_add),
+						contentDescription = stringResource(R.string.magic_fab_new_album_label),
+					)
+				}
+			},
+		)
 
-        val context = LocalContext.current
-        val addedMessage = stringResource(R.string.gallery_albums_photos_added, selectedItemIds.size)
+		val context = LocalContext.current
+		val addedMessage = stringResource(R.string.gallery_albums_photos_added, selectedItemIds.size)
 
-        AlbumsGrid(
-            albums = uiState.albums,
-            onAlbumClicked = { uuid ->
-                handleUiEvent(AlbumPickerUiEvent.OnAlbumSelected(selectedItemIds, uuid))
-                Dialogs.showLongToast(context, addedMessage)
-                onAlbumSelected()
-                onDismissRequest()
-            },
-        )
-    }
+		AlbumsGrid(
+			albums = uiState.albums,
+			onAlbumClicked = { uuid ->
+				handleUiEvent(AlbumPickerUiEvent.OnAlbumSelected(selectedItemIds, uuid))
+				Dialogs.showLongToast(context, addedMessage)
+				onAlbumSelected()
+				onDismissRequest()
+			},
+		)
+	}
 
-    CreateAlbumDialog(
-        show = showCreateDialog,
-        onDismissRequest = { showCreateDialog = false },
-    )
+	CreateAlbumDialog(
+		show = showCreateDialog,
+		onDismissRequest = { showCreateDialog = false },
+	)
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun AlbumPickerPreview() {
-    AlbumPickerContent(
-        uiState = AlbumPickerUiState(
-            albums = listOf(
-                AlbumItem(
-                    id = "1",
-                    name = "Album 1",
-                    itemCount = 10,
-                ),
-                AlbumItem(
-                    id = "2",
-                    name = "Album 2",
-                    itemCount = 20,
-                ),
-                AlbumItem(
-                    id = "3",
-                    name = "Album 3",
-                    itemCount = 30,
-                ),
-                AlbumItem(
-                    id = "4",
-                    name = "Album 4",
-                    itemCount = 40
-                ),
-                AlbumItem(
-                    id = "5",
-                    name = "Album 5",
-                    itemCount = 50
-                ),
-            ),
-        ),
-        selectedItemIds = emptyList(),
-        handleUiEvent = {},
-        onDismissRequest = {},
-        onAlbumSelected = {},
-    )
+	AlbumPickerContent(
+		uiState =
+			AlbumPickerUiState(
+				albums =
+					listOf(
+						AlbumItem(
+							id = "1",
+							name = "Album 1",
+							itemCount = 10,
+						),
+						AlbumItem(
+							id = "2",
+							name = "Album 2",
+							itemCount = 20,
+						),
+						AlbumItem(
+							id = "3",
+							name = "Album 3",
+							itemCount = 30,
+						),
+						AlbumItem(
+							id = "4",
+							name = "Album 4",
+							itemCount = 40,
+						),
+						AlbumItem(
+							id = "5",
+							name = "Album 5",
+							itemCount = 50,
+						),
+					),
+			),
+		selectedItemIds = emptyList(),
+		handleUiEvent = {},
+		onDismissRequest = {},
+		onAlbumSelected = {},
+	)
 }

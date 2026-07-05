@@ -23,17 +23,21 @@ import androidx.annotation.StringRes
 import androidx.core.app.NotificationManagerCompat
 import onlasdan.gallery.R
 
-enum class NotificationChannels(val id: String, @StringRes val displayName: Int) {
-    BACKGROUND_TASKS("BackgroundTasks", R.string.notification_channel_background_tasks)
+enum class NotificationChannels(
+	val id: String,
+	@StringRes val displayName: Int,
+) {
+	BACKGROUND_TASKS("BackgroundTasks", R.string.notification_channel_background_tasks),
 }
 
 fun NotificationManagerCompat.createAllNotificationChannels(context: Context) {
-    NotificationChannels.entries.forEach { channel ->
-        val notificationChannel = NotificationChannel(
-            channel.id,
-            context.getString(channel.displayName),
-            NotificationManager.IMPORTANCE_LOW
-        )
-         createNotificationChannel(notificationChannel)
-    }
+	NotificationChannels.entries.forEach { channel ->
+		val notificationChannel =
+			NotificationChannel(
+				channel.id,
+				context.getString(channel.displayName),
+				NotificationManager.IMPORTANCE_LOW,
+			)
+		createNotificationChannel(notificationChannel)
+	}
 }

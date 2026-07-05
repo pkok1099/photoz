@@ -19,11 +19,9 @@ package onlasdan.gallery.backup.ui
 import android.net.Uri
 import androidx.fragment.app.viewModels
 import dagger.hilt.android.AndroidEntryPoint
-import onlasdan.gallery.R
 import onlasdan.gallery.backup.domain.BackupStrategy
 import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetDialogFragment
-
 
 /**
  * Process fragment for backing up photos.
@@ -34,18 +32,18 @@ import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetD
  */
 @AndroidEntryPoint
 class BackupBottomSheetDialogFragment(
-    private val uri: Uri,
-    private val strategy: BackupStrategy.Name
+	private val uri: Uri,
+	private val strategy: BackupStrategy.Name,
 ) : BaseProcessBottomSheetDialogFragment<Photo>(
-    itemSource = null,
-    processingLabelTextResource = strategy.title,
-    canAbort = true,
-) {
-    override val viewModel: BackupViewModel by viewModels()
+		itemSource = null,
+		processingLabelTextResource = strategy.title,
+		canAbort = true,
+	) {
+	override val viewModel: BackupViewModel by viewModels()
 
-    override fun prepareViewModel(items: List<Photo>?) {
-        super.prepareViewModel(items)
-        viewModel.uri = uri
-        viewModel.strategyName = strategy
-    }
+	override fun prepareViewModel(items: List<Photo>?) {
+		super.prepareViewModel(items)
+		viewModel.uri = uri
+		viewModel.strategyName = strategy
+	}
 }

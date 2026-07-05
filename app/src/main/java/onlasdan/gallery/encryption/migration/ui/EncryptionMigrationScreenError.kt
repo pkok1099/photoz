@@ -51,147 +51,153 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import okio.IOException
 import onlasdan.gallery.R
 import onlasdan.gallery.ui.components.AppName
 import onlasdan.gallery.ui.theme.AppTheme
-import okio.IOException
 
 @Composable
 fun EncryptionMigrationScreenError(
-    uiState: LegacyEncryptionMigrationUiState.Error,
-    handleUiEvent: (LegacyEncryptionMigrationUiEvent) -> Unit
+	uiState: LegacyEncryptionMigrationUiState.Error,
+	handleUiEvent: (LegacyEncryptionMigrationUiEvent) -> Unit,
 ) {
-    val context = LocalContext.current
-    val activity = LocalActivity.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
 
-    var showExtractConfirmationDialog by remember { mutableStateOf(false) }
+	var showExtractConfirmationDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.errorContainer,
-    ) { contentPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
+	Scaffold(
+		containerColor = MaterialTheme.colorScheme.errorContainer,
+	) { contentPadding ->
+		Box(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(contentPadding),
+		) {
+			Column(
+				modifier =
+					Modifier
+						.verticalScroll(rememberScrollState())
+						.padding(horizontal = 20.dp)
+						.align(Alignment.Center),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.spacedBy(24.dp),
+			) {
+				AppName()
 
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
+				Text(
+					text = stringResource(R.string.migration_error_title),
+					fontSize = 22.sp,
+					textAlign = TextAlign.Center,
+					fontWeight = FontWeight.Bold,
+				)
 
-                AppName()
+				Column(
+					horizontalAlignment = Alignment.CenterHorizontally,
+					verticalArrangement = Arrangement.spacedBy(12.dp),
+				) {
+					Icon(
+						modifier =
+							Modifier
+								.padding(vertical = 24.dp)
+								.size(IconSize),
+						painter = painterResource(R.drawable.ic_smile_sad),
+						contentDescription = null,
+						tint = MaterialTheme.colorScheme.error,
+					)
 
-                Text(
-                    text = stringResource(R.string.migration_error_title),
-                    fontSize = 22.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Bold,
-                )
+					Button(
+						colors =
+							ButtonDefaults.buttonColors(
+								containerColor = MaterialTheme.colorScheme.error,
+								contentColor = MaterialTheme.colorScheme.onError,
+							),
+						onClick = {
+							handleUiEvent(
+								LegacyEncryptionMigrationUiEvent.StartMigration(context),
+							)
+						},
+					) {
+						Row(
+							verticalAlignment = Alignment.CenterVertically,
+							horizontalArrangement = Arrangement.spacedBy(8.dp),
+						) {
+							Icon(
+								painterResource(R.drawable.ic_refresh),
+								contentDescription = null,
+							)
+							Text(stringResource(R.string.common_try_again))
+						}
+					}
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        modifier = Modifier
-                            .padding(vertical = 24.dp)
-                            .size(IconSize),
-                        painter = painterResource(R.drawable.ic_smile_sad),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+					Spacer(Modifier.height(24.dp))
 
-                    Button(
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                        ),
-                        onClick = {
-                            handleUiEvent(
-                                LegacyEncryptionMigrationUiEvent.StartMigration(context)
-                            )
-                        }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_refresh),
-                                contentDescription = null,
-                            )
-                            Text(stringResource(R.string.common_try_again))
-                        }
-                    }
+					Text(
+						maxLines = 5,
+						overflow = TextOverflow.Ellipsis,
+						text =
+							uiState.error.cause?.message
+								?: uiState.error.message
+								?: stringResource(R.string.common_error),
+						color = MaterialTheme.colorScheme.error,
+						textAlign = TextAlign.Center,
+					)
+				}
+			}
 
-                    Spacer(Modifier.height(24.dp))
-
-                    Text(
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis,
-                        text = uiState.error.cause?.message
-                            ?: uiState.error.message
-                            ?: stringResource(R.string.common_error),
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-
-
-            Row(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .align(Alignment.BottomCenter),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    onClick = {
-                        handleUiEvent(
-                            LegacyEncryptionMigrationUiEvent.SendErrorReport(
-                                context,
-                                uiState.error
-                            )
-                        )
-                    },
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_email),
-                            contentDescription = null,
-                        )
-                        Text(stringResource(R.string.migration_error_button))
-                    }
-                }
-            }
-        }
-    }
+			Row(
+				modifier =
+					Modifier
+						.padding(20.dp)
+						.align(Alignment.BottomCenter),
+				verticalAlignment = Alignment.CenterVertically,
+			) {
+				TextButton(
+					colors =
+						ButtonDefaults.textButtonColors(
+							contentColor = MaterialTheme.colorScheme.error,
+						),
+					onClick = {
+						handleUiEvent(
+							LegacyEncryptionMigrationUiEvent.SendErrorReport(
+								context,
+								uiState.error,
+							),
+						)
+					},
+				) {
+					Row(
+						verticalAlignment = Alignment.CenterVertically,
+						horizontalArrangement = Arrangement.spacedBy(8.dp),
+					) {
+						Icon(
+							painterResource(R.drawable.ic_email),
+							contentDescription = null,
+						)
+						Text(stringResource(R.string.migration_error_button))
+					}
+				}
+			}
+		}
+	}
 }
-
 
 @PreviewLightDark
 @Composable
 private fun PreviewError() {
-    AppTheme {
-        EncryptionMigrationScreenError(
-            uiState = LegacyEncryptionMigrationUiState.Error(
-                IOException(
-                    "Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj",
-                    Exception("Causing exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj ")
-                )
-            ),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenError(
+			uiState =
+				LegacyEncryptionMigrationUiState.Error(
+					IOException(
+						"Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj",
+						Exception(
+							"Causing exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj ",
+						),
+					),
+				),
+			handleUiEvent = {},
+		)
+	}
 }

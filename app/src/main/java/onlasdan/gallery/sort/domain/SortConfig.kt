@@ -17,25 +17,25 @@
 package onlasdan.gallery.sort.domain
 
 enum class SortConfig(
-    val fields: List<Sort.Field>,
-    val default: Sort,
+	val fields: List<Sort.Field>,
+	val default: Sort,
 ) {
-    Gallery(
-        fields = listOf(Sort.Field.ImportDate, Sort.Field.LastModified, Sort.Field.FileName, Sort.Field.Size),
-        default = Sort(field = Sort.Field.ImportDate, Sort.Order.Desc),
-    ),
-    Album(
-        fields = listOf(Sort.Field.LinkedAt, Sort.Field.LastModified, Sort.Field.FileName, Sort.Field.Size),
-        default = Sort(field = Sort.Field.LinkedAt, Sort.Order.Desc),
-    );
+	Gallery(
+		fields = listOf(Sort.Field.ImportDate, Sort.Field.LastModified, Sort.Field.FileName, Sort.Field.Size),
+		default = Sort(field = Sort.Field.ImportDate, Sort.Order.Desc),
+	),
+	Album(
+		fields = listOf(Sort.Field.LinkedAt, Sort.Field.LastModified, Sort.Field.FileName, Sort.Field.Size),
+		default = Sort(field = Sort.Field.LinkedAt, Sort.Order.Desc),
+	),
+	;
 
-    companion object {
-        fun defaultFor(albumUuid: String?): Sort {
-            return if (albumUuid != null) {
-                Album.default
-            } else {
-                Gallery.default
-            }
-        }
-    }
+	companion object {
+		fun defaultFor(albumUuid: String?): Sort =
+			if (albumUuid != null) {
+				Album.default
+			} else {
+				Gallery.default
+			}
+	}
 }

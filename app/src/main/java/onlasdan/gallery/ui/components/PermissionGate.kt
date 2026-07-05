@@ -63,101 +63,104 @@ import onlasdan.gallery.R
  */
 @Composable
 fun PermissionGate(
-    permission: String,
-    rationaleText: String,
-    modifier: Modifier = Modifier,
-    label: String = "Request Permission",
-    content: @Composable () -> Unit,
+	permission: String,
+	rationaleText: String,
+	modifier: Modifier = Modifier,
+	label: String = "Request Permission",
+	content: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
-    val activity = LocalActivity.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
 
-    var granted by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                permission,
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
+	var granted by remember {
+		mutableStateOf(
+			ContextCompat.checkSelfPermission(
+				context,
+				permission,
+			) == PackageManager.PERMISSION_GRANTED,
+		)
+	}
 
-    var shouldRequestInSettings by remember {
-        mutableStateOf(activity?.shouldRequestInSettings(permission) == true)
-    }
+	var shouldRequestInSettings by remember {
+		mutableStateOf(activity?.shouldRequestInSettings(permission) == true)
+	}
 
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            granted = true
-        } else {
-            shouldRequestInSettings =
-                activity?.shouldShowRequestPermissionRationale(permission) == false
-        }
-    }
+	val launcher =
+		rememberLauncherForActivityResult(
+			ActivityResultContracts.RequestPermission(),
+		) { isGranted ->
+			if (isGranted) {
+				granted = true
+			} else {
+				shouldRequestInSettings =
+					activity?.shouldShowRequestPermissionRationale(permission) == false
+			}
+		}
 
+	val lifecycleOwner = LocalLifecycleOwner.current
+	val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+	LaunchedEffect(lifecycleState) {
+		if (lifecycleState == androidx.lifecycle.Lifecycle.State.RESUMED) {
+			granted = ContextCompat.checkSelfPermission(
+				context,
+				permission,
+			) == PackageManager.PERMISSION_GRANTED
+		}
+	}
 
-    LaunchedEffect(lifecycleState) {
-        if (lifecycleState == androidx.lifecycle.Lifecycle.State.RESUMED) {
-            granted = ContextCompat.checkSelfPermission(
-                context,
-                permission,
-            ) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+	if (granted) {
+		content()
+		return
+	}
 
-    if (granted) {
-        content()
-        return
-    }
+	Column(
+		modifier = modifier,
+		horizontalAlignment = Alignment.CenterHorizontally,
+		verticalArrangement = Arrangement.Center,
+	) {
+		if (shouldRequestInSettings) {
+			Text(
+				text = rationaleText,
+				style = MaterialTheme.typography.bodySmall,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				textAlign = TextAlign.Center,
+			)
 
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        if (shouldRequestInSettings) {
-            Text(
-                text = rationaleText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+			Spacer(Modifier.height(8.dp))
 
-            Spacer(Modifier.height(8.dp))
+			TextButton(
+				onClick = {
+					val intent =
+						Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+							data = Uri.fromParts("package", context.packageName, null)
+						}
 
-            TextButton(
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                    }
-
-                    context.startActivity(intent)
-                },
-            ) {
-                Text(stringResource(R.string.permission_gate_change_in_settings))
-            }
-        } else {
-            TextButton(onClick = { launcher.launch(permission) }) {
-                Text(label)
-            }
-        }
-    }
+					context.startActivity(intent)
+				},
+			) {
+				Text(stringResource(R.string.permission_gate_change_in_settings))
+			}
+		} else {
+			TextButton(onClick = { launcher.launch(permission) }) {
+				Text(label)
+			}
+		}
+	}
 }
 
 fun Activity.shouldRequestInSettings(permission: String): Boolean {
-    val hasPermission = ContextCompat.checkSelfPermission(
-        this,
-        permission
-    ) == PackageManager.PERMISSION_GRANTED
+	val hasPermission =
+		ContextCompat.checkSelfPermission(
+			this,
+			permission,
+		) == PackageManager.PERMISSION_GRANTED
 
-    val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
-        this,
-        permission
-    )
+	val shouldShowRationale =
+		ActivityCompat.shouldShowRequestPermissionRationale(
+			this,
+			permission,
+		)
 
-    return !hasPermission && shouldShowRationale
+	return !hasPermission && shouldShowRationale
 }

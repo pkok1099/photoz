@@ -39,87 +39,92 @@ import kotlin.io.encoding.Base64
 private const val KEK_SIZE = 256
 private const val KEK_ITERATIONS = 100_000
 
-class RecoveryPhraseVaultProtectionHandler @Inject constructor(
-    private val keyGen: KeyGen,
-    private val mnemonicGenerator: Bip39MnemonicGenerator,
-    private val recoveryPhraseStore: RecoveryPhraseStore,
-) : VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase> {
+class RecoveryPhraseVaultProtectionHandler
+	@Inject
+	constructor(
+		private val keyGen: KeyGen,
+		private val mnemonicGenerator: Bip39MnemonicGenerator,
+		private val recoveryPhraseStore: RecoveryPhraseStore,
+	) : VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase> {
+		override suspend fun unlock(
+			request: UnlockRequest.RecoveryPhrase,
+			protection: VaultProtection,
+		): javax.crypto.SecretKey {
+			val params = protection.params
 
-    override suspend fun unlock(
-        request: UnlockRequest.RecoveryPhrase,
-        protection: VaultProtection,
-    ): javax.crypto.SecretKey {
-        val params = protection.params
+			requireNotNull(params.salt)
+			requireNotNull(params.iv)
+			requireNotNull(params.kdf)
+			requireNotNull(params.kdfIterations)
 
-        requireNotNull(params.salt)
-        requireNotNull(params.iv)
-        requireNotNull(params.kdf)
-        requireNotNull(params.kdfIterations)
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = request.phrase.toMnemonicString(),
+					salt = Base64.decode(params.salt),
+					kdf = params.kdf,
+					kdfIterations = params.kdfIterations,
+					keySize = params.keySize,
+				)
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = request.phrase.toMnemonicString(),
-            salt = Base64.decode(params.salt),
-            kdf = params.kdf,
-            kdfIterations = params.kdfIterations,
-            keySize = params.keySize,
-        )
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(Base64.decode(params.iv)))
+				}
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(Base64.decode(params.iv)))
-        }
+			val vmkBytes = cipher.doFinal(protection.wrappedVMK)
+			return SecretKeySpec(vmkBytes, "AES")
+		}
 
-        val vmkBytes = cipher.doFinal(protection.wrappedVMK)
-        return SecretKeySpec(vmkBytes, "AES")
-    }
+		override suspend fun create(request: CreateRequest.RecoveryPhrase): VaultProtection {
+			val vmk = request.session.vmk
+			val phrase = RecoveryPhrase(mnemonicGenerator.generate(request.wordCount))
 
-    override suspend fun create(request: CreateRequest.RecoveryPhrase): VaultProtection {
-        val vmk = request.session.vmk
-        val phrase = RecoveryPhrase(mnemonicGenerator.generate(request.wordCount))
+			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+			val kdf = Kdf.PBKDF2WithHmacSHA256
 
-        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-        val kdf = Kdf.PBKDF2WithHmacSHA256
+			val params =
+				VaultProtectionParams(
+					salt = Base64.encode(salt),
+					iv = Base64.encode(iv),
+					kdf = kdf,
+					kdfIterations = KEK_ITERATIONS,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = KEK_SIZE,
+				)
 
-        val params = VaultProtectionParams(
-            salt = Base64.encode(salt),
-            iv = Base64.encode(iv),
-            kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = KEK_SIZE,
-        )
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = phrase.toMnemonicString(),
+					salt = salt,
+					kdf = kdf,
+					kdfIterations = KEK_ITERATIONS,
+					keySize = KEK_SIZE,
+				)
 
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = phrase.toMnemonicString(),
-            salt = salt,
-            kdf = kdf,
-            kdfIterations = KEK_ITERATIONS,
-            keySize = KEK_SIZE,
-        )
+			val cipher =
+				Cipher.getInstance(params.algorithm.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+				}
 
-        val cipher = Cipher.getInstance(params.algorithm.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
-        }
+			val wrappedVmk = cipher.doFinal(vmk.encoded)
 
-        val wrappedVmk = cipher.doFinal(vmk.encoded)
+			recoveryPhraseStore.store(phrase, request.session)
 
-        recoveryPhraseStore.store(phrase, request.session)
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = request.protectionType,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = request.protectionType,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
+		override suspend fun canMigrate(): Boolean = false
 
-    override suspend fun canMigrate(): Boolean = false
+		override suspend fun migrate(request: UnlockRequest.RecoveryPhrase): VaultProtection =
+			throw UnsupportedOperationException("RecoveryPhrase protection has no legacy migration path")
 
-    override suspend fun migrate(request: UnlockRequest.RecoveryPhrase): VaultProtection {
-        throw UnsupportedOperationException("RecoveryPhrase protection has no legacy migration path")
-    }
-
-    override suspend fun reset() {
-        recoveryPhraseStore.clear()
-    }
-}
+		override suspend fun reset() {
+			recoveryPhraseStore.clear()
+		}
+	}

@@ -31,18 +31,17 @@ import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetD
  */
 @AndroidEntryPoint
 class ExportBottomSheetDialogFragment(
-    photos: List<Photo>,
-    private val target: Uri,
+	photos: List<Photo>,
+	private val target: Uri,
 ) : BaseProcessBottomSheetDialogFragment<Photo>(
-    photos,
-    R.string.export_exporting,
-    true
-) {
+		photos,
+		R.string.export_exporting,
+		true,
+	) {
+	override val viewModel: ExportViewModel by viewModels()
 
-    override val viewModel: ExportViewModel by viewModels()
-
-    override fun prepareViewModel(items: List<Photo>?) {
-        super.prepareViewModel(items)
-        viewModel.target = target
-    }
+	override fun prepareViewModel(items: List<Photo>?) {
+		super.prepareViewModel(items)
+		viewModel.target = target
+	}
 }

@@ -32,14 +32,15 @@ import onlasdan.gallery.R
  * @author PhotoZ
  */
 abstract class BaseDialogFragment : DialogFragment() {
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        // Set necessary drawables for rounded corners
-        dialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        view.background =
-            ResourcesCompat.getDrawable(resources, R.drawable.bg_dialog_round, null)
-    }
-
+		// Set necessary drawables for rounded corners
+		dialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+		view.background =
+			ResourcesCompat.getDrawable(resources, R.drawable.bg_dialog_round, null)
+	}
 }

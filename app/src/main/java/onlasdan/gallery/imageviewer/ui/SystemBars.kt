@@ -29,63 +29,60 @@ import androidx.compose.runtime.DisposableEffect
  * @since PR1: minSdk bumped to 35 — all `Build.VERSION.SDK_INT >= R` guards removed (always true).
  */
 @Composable
-fun ImageViewerSystemBarsController(
-    visible: Boolean
-) {
-    val activity = LocalActivity.current ?: return
-    val window = activity.window
+fun ImageViewerSystemBarsController(visible: Boolean) {
+	val activity = LocalActivity.current ?: return
+	val window = activity.window
 
-    DisposableEffect(visible) {
-        val previousStatusColor = window.statusBarColor
-        val previousNavColor = window.navigationBarColor
-        val previousAppearance = window.insetsController?.systemBarsAppearance ?: 0
+	DisposableEffect(visible) {
+		val previousStatusColor = window.statusBarColor
+		val previousNavColor = window.navigationBarColor
+		val previousAppearance = window.insetsController?.systemBarsAppearance ?: 0
 
-        window.forceLightSystemBarIcons()
+		window.forceLightSystemBarIcons()
 
-        // OEM / edge-to-edge safety net
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+		// OEM / edge-to-edge safety net
+		window.statusBarColor = android.graphics.Color.TRANSPARENT
+		window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-        if (visible) {
-            window.showSystemBars()
-        } else {
-            window.hideSystemBars()
-        }
+		if (visible) {
+			window.showSystemBars()
+		} else {
+			window.hideSystemBars()
+		}
 
-        onDispose {
-            window.showSystemBars()
+		onDispose {
+			window.showSystemBars()
 
-            // restore colors
-            window.statusBarColor = previousStatusColor
-            window.navigationBarColor = previousNavColor
+			// restore colors
+			window.statusBarColor = previousStatusColor
+			window.navigationBarColor = previousNavColor
 
-            // restore appearance
-            window.insetsController?.setSystemBarsAppearance(
-                previousAppearance,
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            )
-        }
-    }
+			// restore appearance
+			window.insetsController?.setSystemBarsAppearance(
+				previousAppearance,
+				WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+					WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+			)
+		}
+	}
 }
 
-
 fun Window.forceLightSystemBarIcons() {
-    insetsController?.setSystemBarsAppearance(
-        0,
-        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-    )
+	insetsController?.setSystemBarsAppearance(
+		0,
+		WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+			WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+	)
 }
 
 private fun Window.showSystemBars() {
-    insetsController?.show(WindowInsets.Type.systemBars())
+	insetsController?.show(WindowInsets.Type.systemBars())
 }
 
 private fun Window.hideSystemBars() {
-    insetsController?.let {
-        it.systemBarsBehavior =
-            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        it.hide(WindowInsets.Type.systemBars())
-    }
+	insetsController?.let {
+		it.systemBarsBehavior =
+			WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+		it.hide(WindowInsets.Type.systemBars())
+	}
 }

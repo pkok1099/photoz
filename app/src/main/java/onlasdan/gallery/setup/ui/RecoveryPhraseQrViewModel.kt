@@ -23,52 +23,56 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.io.IO
 import onlasdan.gallery.other.extensions.writeTo
 import onlasdan.gallery.uicomponnets.Dialogs
 import onlasdan.gallery.uicomponnets.qr.QRCodeGenerator
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 sealed interface RecoveryPhraseQrUiEvent {
-    data class SaveToFile(
-        val phrase: RecoveryPhrase,
-        val context: Context,
-        val uri: Uri,
-    ) : RecoveryPhraseQrUiEvent
+	data class SaveToFile(
+		val phrase: RecoveryPhrase,
+		val context: Context,
+		val uri: Uri,
+	) : RecoveryPhraseQrUiEvent
 }
 
 @HiltViewModel
-class RecoveryPhraseQrViewModel @Inject constructor(
-    private val resources: Resources,
-    private val io: IO,
-) : ViewModel() {
+class RecoveryPhraseQrViewModel
+	@Inject
+	constructor(
+		private val resources: Resources,
+		private val io: IO,
+	) : ViewModel() {
+		fun handleUiEvent(event: RecoveryPhraseQrUiEvent) {
+			when (event) {
+				is RecoveryPhraseQrUiEvent.SaveToFile ->
+					viewModelScope.launch(Dispatchers.IO) {
+						val qrBitmap =
+							QRCodeGenerator.generateQRCode(
+								text = event.phrase.toMnemonicString(),
+								size = 512,
+								foregroundColor = Color.BLACK,
+								backgroundColor = Color.WHITE,
+							) ?: return@launch
 
-    fun handleUiEvent(event: RecoveryPhraseQrUiEvent) {
-        when (event) {
-            is RecoveryPhraseQrUiEvent.SaveToFile -> viewModelScope.launch(Dispatchers.IO) {
-                val qrBitmap = QRCodeGenerator.generateQRCode(
-                    text = event.phrase.toMnemonicString(),
-                    size = 512,
-                    foregroundColor = Color.BLACK,
-                    backgroundColor = Color.WHITE,
-                ) ?: return@launch
+						val documentBitmap = createRecoveryPhraseDocument(event.context, qrBitmap, event.phrase)
+						qrBitmap.recycle()
 
-                val documentBitmap = createRecoveryPhraseDocument(event.context, qrBitmap, event.phrase)
-                qrBitmap.recycle()
-
-                val outputStream = io.openFileOutput(event.uri) ?: run {
-                    documentBitmap.recycle()
-                    return@launch
-                }
-                outputStream.use { documentBitmap.writeTo(it) }
-                documentBitmap.recycle()
-                val fileName = io.getFileName(event.uri)
-                Dialogs.showLongToast(event.context, resources.getString(R.string.recovery_phrase_saved_to_file, fileName))
-            }
-        }
-    }
-}
+						val outputStream =
+							io.openFileOutput(event.uri) ?: run {
+								documentBitmap.recycle()
+								return@launch
+							}
+						outputStream.use { documentBitmap.writeTo(it) }
+						documentBitmap.recycle()
+						val fileName = io.getFileName(event.uri)
+						Dialogs.showLongToast(event.context, resources.getString(R.string.recovery_phrase_saved_to_file, fileName))
+					}
+			}
+		}
+	}

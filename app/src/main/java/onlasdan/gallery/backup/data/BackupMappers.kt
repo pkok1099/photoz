@@ -21,52 +21,52 @@ import onlasdan.gallery.gallery.albums.domain.model.AlbumPhotoRef
 import onlasdan.gallery.model.database.entity.Photo
 
 fun Photo.toBackup(): PhotoBackup =
-    PhotoBackup(
-        fileName = fileName,
-        importedAt = importedAt,
-        lastModified = lastModified,
-        type = type,
-        size = size,
-        uuid = uuid,
-    )
+	PhotoBackup(
+		fileName = fileName,
+		importedAt = importedAt,
+		lastModified = lastModified,
+		type = type,
+		size = size,
+		uuid = uuid,
+	)
 
 fun PhotoBackup.toDomain(): Photo =
-    Photo(
-        fileName = fileName,
-        importedAt = importedAt,
-        lastModified = lastModified,
-        type = type,
-        size = size,
-        uuid = uuid,
-    )
+	Photo(
+		fileName = fileName,
+		importedAt = importedAt,
+		lastModified = lastModified,
+		type = type,
+		size = size,
+		uuid = uuid,
+	)
 
 fun Album.toBackup(): AlbumBackup =
-    AlbumBackup(
-        uuid = uuid,
-        modifiedAt = modifiedAt,
-        name = name,
-    )
+	AlbumBackup(
+		uuid = uuid,
+		modifiedAt = modifiedAt,
+		name = name,
+	)
 
 fun AlbumBackup.toDomain(): Album =
-    Album(
-        uuid = uuid,
-        name = name,
-        modifiedAt = modifiedAt ?: System.currentTimeMillis(),
-        files = emptyList(),
-    )
+	Album(
+		uuid = uuid,
+		name = name,
+		modifiedAt = modifiedAt ?: System.currentTimeMillis(),
+		files = emptyList(),
+	)
 
 fun AlbumPhotoRef.toBackup(): AlbumPhotoRefBackup =
-    AlbumPhotoRefBackup(
-        albumUUID = albumUUID,
-        photoUUID = photoUUID,
-        linkedAt = linkedAt,
-        pinned = pinned,
-    )
+	AlbumPhotoRefBackup(
+		albumUUID = albumUUID,
+		photoUUID = photoUUID,
+		linkedAt = linkedAt,
+		pinned = pinned,
+	)
 
 fun AlbumPhotoRefBackup.toDomain(): AlbumPhotoRef =
-    AlbumPhotoRef(
-        albumUUID = albumUUID,
-        photoUUID = photoUUID,
-        linkedAt = linkedAt,
-        pinned = pinned,
-    )
+	AlbumPhotoRef(
+		albumUUID = albumUUID,
+		photoUUID = photoUUID,
+		linkedAt = linkedAt,
+		pinned = pinned,
+	)

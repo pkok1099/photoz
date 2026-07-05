@@ -21,29 +21,35 @@ import androidx.appcompat.app.AppCompatActivity
 import onlasdan.gallery.main.ui.MainActivity
 import javax.inject.Inject
 
-class RecoveryMenuNavigator @Inject constructor() {
+class RecoveryMenuNavigator
+	@Inject
+	constructor() {
+		fun navigate(
+			navigationEvent: NavigationEvent,
+			activity: AppCompatActivity,
+		) {
+			when (navigationEvent) {
+				NavigationEvent.OpenPhotoZ -> navigateOpenPhotoZ(activity)
+				NavigationEvent.AfterResetHideApp -> navigateAfterResetHideApp(activity)
+			}
+		}
 
-    fun navigate(navigationEvent: NavigationEvent, activity: AppCompatActivity) {
-        when (navigationEvent) {
-            NavigationEvent.OpenPhotoZ -> navigateOpenPhotoZ(activity)
-            NavigationEvent.AfterResetHideApp -> navigateAfterResetHideApp(activity)
-        }
-    }
+		private fun navigateAfterResetHideApp(activity: AppCompatActivity) {
+			activity.finish()
+		}
 
-    private fun navigateAfterResetHideApp(activity: AppCompatActivity) {
-        activity.finish()
-    }
+		private fun navigateOpenPhotoZ(activity: AppCompatActivity) {
+			val intent =
+				Intent(activity, MainActivity::class.java).apply {
+					flags = Intent.FLAG_ACTIVITY_NEW_TASK
+				}
+			activity.startActivity(intent)
+			activity.finish()
+		}
 
-    private fun navigateOpenPhotoZ(activity: AppCompatActivity) {
-        val intent = Intent(activity, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        activity.startActivity(intent)
-        activity.finish()
-    }
+		sealed class NavigationEvent {
+			object OpenPhotoZ : NavigationEvent()
 
-    sealed class NavigationEvent {
-        object OpenPhotoZ : NavigationEvent()
-        object AfterResetHideApp : NavigationEvent()
-    }
-}
+			object AfterResetHideApp : NavigationEvent()
+		}
+	}

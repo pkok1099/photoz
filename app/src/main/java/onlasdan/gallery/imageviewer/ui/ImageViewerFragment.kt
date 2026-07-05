@@ -44,37 +44,35 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ImageViewerFragment : Fragment() {
+	private val args: ImageViewerFragmentArgs by navArgs()
 
-    private val args: ImageViewerFragmentArgs by navArgs()
+	@EncryptedImageLoader
+	@Inject
+	lateinit var encryptedImageLoader: ImageLoader
 
-    @EncryptedImageLoader
-    @Inject
-    lateinit var encryptedImageLoader: ImageLoader
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        return ComposeView(requireContext()).apply {
-            setBackgroundColor(Color.BLACK)
-            setContent {
-                AppTheme {
-                    CompositionLocalProvider(
-                        LocalEncryptedImageLoader provides encryptedImageLoader,
-                        LocalConfig provides config,
-                    ) {
-                        ImageViewerScreen(
-                            navController = findNavController(),
-                            photoUuid = args.photoUuid,
-                            albumUuid = args.albumUuid.takeIf { it.isNotEmpty() },
-                        )
-                    }
-                }
-            }
-        }
-    }
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? =
+		ComposeView(requireContext()).apply {
+			setBackgroundColor(Color.BLACK)
+			setContent {
+				AppTheme {
+					CompositionLocalProvider(
+						LocalEncryptedImageLoader provides encryptedImageLoader,
+						LocalConfig provides config,
+					) {
+						ImageViewerScreen(
+							navController = findNavController(),
+							photoUuid = args.photoUuid,
+							albumUuid = args.albumUuid.takeIf { it.isNotEmpty() },
+						)
+					}
+				}
+			}
+		}
 }

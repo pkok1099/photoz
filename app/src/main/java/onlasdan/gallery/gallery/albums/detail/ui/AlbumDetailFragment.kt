@@ -40,58 +40,59 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class AlbumDetailFragment : Fragment() {
+	private val args: AlbumDetailFragmentArgs by navArgs()
 
-    private val args: AlbumDetailFragmentArgs by navArgs()
+	private val viewModel by assistedViewModel<AlbumDetailViewModel.Factory, AlbumDetailViewModel> {
+		it.create(args.albumUuid)
+	}
 
-    private val viewModel by assistedViewModel<AlbumDetailViewModel.Factory, AlbumDetailViewModel> {
-        it.create(args.albumUuid)
-    }
+	@Inject
+	lateinit var photoActionsNavigator: PhotoActionsNavigator
 
-    @Inject
-    lateinit var photoActionsNavigator: PhotoActionsNavigator
+	@Inject
+	lateinit var albumDetailNavigator: AlbumDetailNavigator
 
-    @Inject
-    lateinit var albumDetailNavigator: AlbumDetailNavigator
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
+	@EncryptedImageLoader
+	@Inject
+	lateinit var encryptedImageLoader: ImageLoader
 
-    @EncryptedImageLoader
-    @Inject
-    lateinit var encryptedImageLoader: ImageLoader
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					CompositionLocalProvider(
+						LocalEncryptedImageLoader provides encryptedImageLoader,
+						LocalConfig provides config,
+					) {
+						AlbumDetailScreen(viewModel, findNavController())
+					}
+				}
+			}
+		}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    CompositionLocalProvider(
-                        LocalEncryptedImageLoader provides encryptedImageLoader,
-                        LocalConfig provides config,
-                    ) {
-                        AlbumDetailScreen(viewModel, findNavController())
-                    }
-                }
-            }
-        }
-    }
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+		launchLifecycleAwareJob {
+			viewModel.photoActions.collect { action ->
+				photoActionsNavigator.navigate(action, findNavController(), this)
+			}
+		}
 
-        launchLifecycleAwareJob {
-            viewModel.photoActions.collect { action ->
-                photoActionsNavigator.navigate(action, findNavController(), this)
-            }
-        }
-
-        launchLifecycleAwareJob {
-            viewModel.navEvents.collect { event ->
-                albumDetailNavigator.navigate(event, this)
-            }
-        }
-    }
+		launchLifecycleAwareJob {
+			viewModel.navEvents.collect { event ->
+				albumDetailNavigator.navigate(event, this)
+			}
+		}
+	}
 }

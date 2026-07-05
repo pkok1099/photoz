@@ -52,82 +52,86 @@ import javax.crypto.spec.GCMParameterSpec
  * @since v15 — TODO #2 chunked streaming encryption
  */
 class ChunkedGcmOutputStream(
-    private val output: OutputStream,
-    private val vmk: SecretKey,
-    private val chunkSize: Int = CHUNK_SIZE,
+	private val output: OutputStream,
+	private val vmk: SecretKey,
+	private val chunkSize: Int = CHUNK_SIZE,
 ) : OutputStream() {
+	private val buffer = ByteArray(chunkSize)
+	private var bufferPos = 0
+	private var totalBytesWritten = 0L
+	private var headerWritten = false
+	private val secureRandom = SecureRandom()
+	private var closed = false
 
-    private val buffer = ByteArray(chunkSize)
-    private var bufferPos = 0
-    private var totalBytesWritten = 0L
-    private var headerWritten = false
-    private val secureRandom = SecureRandom()
-    private var closed = false
+	private fun writeHeaderIfNeeded() {
+		if (headerWritten) return
+		// Version byte
+		output.write(byteArrayOf(EncryptionVersionByte.Four.value))
+		// Chunk size (4 bytes, big-endian)
+		val csBytes = ByteBuffer.allocate(4).putInt(chunkSize).array()
+		output.write(csBytes)
+		// Total plaintext size (8 bytes, big-endian) — 0 = unknown.
+		// The decryptor reads chunks until EOF when totalPlaintextSize=0.
+		output.write(ByteArray(8))
+		headerWritten = true
+	}
 
-    private fun writeHeaderIfNeeded() {
-        if (headerWritten) return
-        // Version byte
-        output.write(byteArrayOf(EncryptionVersionByte.Four.value))
-        // Chunk size (4 bytes, big-endian)
-        val csBytes = ByteBuffer.allocate(4).putInt(chunkSize).array()
-        output.write(csBytes)
-        // Total plaintext size (8 bytes, big-endian) — 0 = unknown.
-        // The decryptor reads chunks until EOF when totalPlaintextSize=0.
-        output.write(ByteArray(8))
-        headerWritten = true
-    }
+	override fun write(b: Int) {
+		write(byteArrayOf(b.toByte()))
+	}
 
-    override fun write(b: Int) {
-        write(byteArrayOf(b.toByte()))
-    }
+	override fun write(
+		b: ByteArray,
+		off: Int,
+		len: Int,
+	) {
+		writeHeaderIfNeeded()
+		var remaining = len
+		var srcPos = off
+		while (remaining > 0) {
+			val space = chunkSize - bufferPos
+			val toCopy = minOf(remaining, space)
+			System.arraycopy(b, srcPos, buffer, bufferPos, toCopy)
+			bufferPos += toCopy
+			srcPos += toCopy
+			remaining -= toCopy
+			if (bufferPos == chunkSize) {
+				flushChunk()
+			}
+		}
+	}
 
-    override fun write(b: ByteArray, off: Int, len: Int) {
-        writeHeaderIfNeeded()
-        var remaining = len
-        var srcPos = off
-        while (remaining > 0) {
-            val space = chunkSize - bufferPos
-            val toCopy = minOf(remaining, space)
-            System.arraycopy(b, srcPos, buffer, bufferPos, toCopy)
-            bufferPos += toCopy
-            srcPos += toCopy
-            remaining -= toCopy
-            if (bufferPos == chunkSize) {
-                flushChunk()
-            }
-        }
-    }
+	private fun flushChunk() {
+		if (bufferPos == 0) return
+		val nonce = ByteArray(GCM_IV_SIZE).also { secureRandom.nextBytes(it) }
+		val cipher =
+			Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+				init(Cipher.ENCRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
+			}
+		val ciphertext = cipher.doFinal(buffer, 0, bufferPos)
+		// Write: nonce(12) + ciphertext(plaintext_len) + tag(16, included in ciphertext)
+		output.write(nonce)
+		output.write(ciphertext)
+		totalBytesWritten += bufferPos
+		bufferPos = 0
+	}
 
-    private fun flushChunk() {
-        if (bufferPos == 0) return
-        val nonce = ByteArray(GCM_IV_SIZE).also { secureRandom.nextBytes(it) }
-        val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-            init(Cipher.ENCRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
-        }
-        val ciphertext = cipher.doFinal(buffer, 0, bufferPos)
-        // Write: nonce(12) + ciphertext(plaintext_len) + tag(16, included in ciphertext)
-        output.write(nonce)
-        output.write(ciphertext)
-        totalBytesWritten += bufferPos
-        bufferPos = 0
-    }
+	override fun flush() {
+		output.flush()
+	}
 
-    override fun flush() {
-        output.flush()
-    }
-
-    override fun close() {
-        if (closed) return
-        closed = true
-        try {
-            writeHeaderIfNeeded()
-            flushChunk() // Flush remaining buffered data
-            output.flush()
-        } catch (e: Exception) {
-            Timber.e(e, "ChunkedGcmOutputStream: close failed")
-        } finally {
-            output.close()
-        }
-        Timber.d("ChunkedGcmOutputStream: closed, total plaintext=%d bytes", totalBytesWritten)
-    }
+	override fun close() {
+		if (closed) return
+		closed = true
+		try {
+			writeHeaderIfNeeded()
+			flushChunk() // Flush remaining buffered data
+			output.flush()
+		} catch (e: Exception) {
+			Timber.e(e, "ChunkedGcmOutputStream: close failed")
+		} finally {
+			output.close()
+		}
+		Timber.d("ChunkedGcmOutputStream: closed, total plaintext=%d bytes", totalBytesWritten)
+	}
 }

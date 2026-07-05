@@ -37,103 +37,111 @@ import java.io.ByteArrayOutputStream
  */
 @RunWith(RobolectricTestRunner::class)
 class CryptoMigrationV1ToV3Test {
+	private val legacyEngine = LegacyGcmCryptoEngine()
+	private val cbcEngine = CbcCryptoEngine()
+	private val legacyEncryption = LegacyEncryption()
+	private val keyGen = KeyGen()
 
-    private val legacyEngine = LegacyGcmCryptoEngine()
-    private val cbcEngine = CbcCryptoEngine()
-    private val legacyEncryption = LegacyEncryption()
-    private val keyGen = KeyGen()
+	@Test
+	fun `migrating small file from V1 GCM to V3 CBC preserves plaintext`() {
+		val password = "legacy-password-123"
+		val plaintext = "This is a 1.x.x encrypted photo file.".toByteArray()
 
-    @Test
-    fun `migrating small file from V1 GCM to V3 CBC preserves plaintext`() {
-        val password = "legacy-password-123"
-        val plaintext = "This is a 1.x.x encrypted photo file.".toByteArray()
+		val decrypted = migrateV1ToV3(password, plaintext)
 
-        val decrypted = migrateV1ToV3(password, plaintext)
+		assertArrayEquals(plaintext, decrypted)
+	}
 
-        assertArrayEquals(plaintext, decrypted)
-    }
+	@Test
+	fun `migrating large file from V1 GCM to V3 CBC preserves plaintext`() {
+		val password = "legacy-password-123"
+		val plaintext = ByteArray(1_500_000) { (it % 256).toByte() }
 
-    @Test
-    fun `migrating large file from V1 GCM to V3 CBC preserves plaintext`() {
-        val password = "legacy-password-123"
-        val plaintext = ByteArray(1_500_000) { (it % 256).toByte() }
+		val decrypted = migrateV1ToV3(password, plaintext)
 
-        val decrypted = migrateV1ToV3(password, plaintext)
+		assertArrayEquals(plaintext, decrypted)
+	}
 
-        assertArrayEquals(plaintext, decrypted)
-    }
+	@Test
+	fun `migrated file has V2 header byte`() {
+		val password = "legacy-password-123"
+		val plaintext = "some content".toByteArray()
+		val legacySession = legacyEncryption.obtainSession(password)
+		val vmk = keyGen.generateVaultMasterKey()
+		val vaultSession = VaultSession(vmk)
 
-    @Test
-    fun `migrated file has V2 header byte`() {
-        val password = "legacy-password-123"
-        val plaintext = "some content".toByteArray()
-        val legacySession = legacyEncryption.obtainSession(password)
-        val vmk = keyGen.generateVaultMasterKey()
-        val vaultSession = VaultSession(vmk)
+		// Encrypt with legacy GCM
+		val gcmOutput = ByteArrayOutputStream()
+		val gcmStream = legacyEngine.createEncryptStream(gcmOutput, legacySession)!!
+		gcmStream.write(plaintext)
+		gcmStream.close()
 
-        // Encrypt with legacy GCM
-        val gcmOutput = ByteArrayOutputStream()
-        val gcmStream = legacyEngine.createEncryptStream(gcmOutput, legacySession)!!
-        gcmStream.write(plaintext)
-        gcmStream.close()
+		// Decrypt legacy GCM
+		val decryptStream =
+			legacyEngine.createDecryptStream(
+				ByteArrayInputStream(gcmOutput.toByteArray()),
+				legacySession,
+			)!!
+		val decryptedBytes = decryptStream.readBytes()
 
-        // Decrypt legacy GCM
-        val decryptStream = legacyEngine.createDecryptStream(
-            ByteArrayInputStream(gcmOutput.toByteArray()),
-            legacySession,
-        )!!
-        val decryptedBytes = decryptStream.readBytes()
+		// Re-encrypt with modern CBC
+		val cbcOutput = ByteArrayOutputStream()
+		// Sprint 1 / P6: pass useGcm = false explicitly — the engine's default
+		// is now GCM (version 3), but this test verifies the CBC (version 2)
+		// migration path. Without this flag, the assertion below (expecting
+		// 0x02) would fail.
+		val cbcStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
+		cbcStream.write(decryptedBytes)
+		cbcStream.close()
 
-        // Re-encrypt with modern CBC
-        val cbcOutput = ByteArrayOutputStream()
-        // Sprint 1 / P6: pass useGcm = false explicitly — the engine's default
-        // is now GCM (version 3), but this test verifies the CBC (version 2)
-        // migration path. Without this flag, the assertion below (expecting
-        // 0x02) would fail.
-        val cbcStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
-        cbcStream.write(decryptedBytes)
-        cbcStream.close()
+		val migratedBytes = cbcOutput.toByteArray()
 
-        val migratedBytes = cbcOutput.toByteArray()
+		assertEquals("Migrated file must start with version byte 0x02", 0x02.toByte(), migratedBytes[0])
+	}
 
-        assertEquals("Migrated file must start with version byte 0x02", 0x02.toByte(), migratedBytes[0])
-    }
+	// --- helpers ---
 
-    // --- helpers ---
+	private fun migrateV1ToV3(
+		password: String,
+		plaintext: ByteArray,
+	): ByteArray {
+		val legacySession = legacyEncryption.obtainSession(password)
+		val vmk = keyGen.generateVaultMasterKey()
+		val vaultSession = VaultSession(vmk)
 
-    private fun migrateV1ToV3(password: String, plaintext: ByteArray): ByteArray {
-        val legacySession = legacyEncryption.obtainSession(password)
-        val vmk = keyGen.generateVaultMasterKey()
-        val vaultSession = VaultSession(vmk)
+		// Step 1: Encrypt with legacy GCM (simulates existing 1.x.x file on disk)
+		val gcmOutput = ByteArrayOutputStream()
+		val gcmEncryptStream = legacyEngine.createEncryptStream(gcmOutput, legacySession)!!
+		gcmEncryptStream.write(plaintext)
+		gcmEncryptStream.close()
 
-        // Step 1: Encrypt with legacy GCM (simulates existing 1.x.x file on disk)
-        val gcmOutput = ByteArrayOutputStream()
-        val gcmEncryptStream = legacyEngine.createEncryptStream(gcmOutput, legacySession)!!
-        gcmEncryptStream.write(plaintext)
-        gcmEncryptStream.close()
+		// Step 2: Decrypt from GCM (what the migrator does when reading the legacy file)
+		val gcmDecryptStream =
+			legacyEngine.createDecryptStream(
+				ByteArrayInputStream(gcmOutput.toByteArray()),
+				legacySession,
+			)!!
+		val decryptedBytes = gcmDecryptStream.readBytes()
 
-        // Step 2: Decrypt from GCM (what the migrator does when reading the legacy file)
-        val gcmDecryptStream = legacyEngine.createDecryptStream(
-            ByteArrayInputStream(gcmOutput.toByteArray()),
-            legacySession,
-        )!!
-        val decryptedBytes = gcmDecryptStream.readBytes()
+		// Step 3: Re-encrypt with modern CBC (what the migrator writes into the new file)
+		val cbcOutput = ByteArrayOutputStream()
+		// Sprint 1 / P6: pass useGcm = false explicitly (see comment above).
+		val cbcEncryptStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
+		cbcEncryptStream.write(decryptedBytes)
+		cbcEncryptStream.close()
 
-        // Step 3: Re-encrypt with modern CBC (what the migrator writes into the new file)
-        val cbcOutput = ByteArrayOutputStream()
-        // Sprint 1 / P6: pass useGcm = false explicitly (see comment above).
-        val cbcEncryptStream = cbcEngine.createEncryptStream(cbcOutput, vaultSession, useGcm = false)!!
-        cbcEncryptStream.write(decryptedBytes)
-        cbcEncryptStream.close()
+		// Step 4: Decrypt the migrated CBC file to verify it's readable
+		val cbcDecryptStream =
+			cbcEngine.createDecryptStream(
+				ByteArrayInputStream(cbcOutput.toByteArray()),
+				vaultSession,
+			)!!
+		return cbcDecryptStream.readBytes()
+	}
 
-        // Step 4: Decrypt the migrated CBC file to verify it's readable
-        val cbcDecryptStream = cbcEngine.createDecryptStream(
-            ByteArrayInputStream(cbcOutput.toByteArray()),
-            vaultSession,
-        )!!
-        return cbcDecryptStream.readBytes()
-    }
-
-    private fun assertEquals(message: String, expected: Byte, actual: Byte) =
-        org.junit.Assert.assertEquals(message, expected, actual)
+	private fun assertEquals(
+		message: String,
+		expected: Byte,
+		actual: Byte,
+	) = org.junit.Assert.assertEquals(message, expected, actual)
 }

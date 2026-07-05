@@ -75,6 +75,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.compose.ContentFrame
+import me.saket.telephoto.zoomable.EnabledZoomGestures
+import me.saket.telephoto.zoomable.ZoomSpec
+import me.saket.telephoto.zoomable.rememberZoomableState
+import me.saket.telephoto.zoomable.zoomable
 import onlasdan.gallery.R
 import onlasdan.gallery.imageviewer.ui.ImageViewerItem
 import onlasdan.gallery.imageviewer.ui.ImageViewerUiEvent
@@ -82,501 +86,522 @@ import onlasdan.gallery.imageviewer.ui.ImageViewerUiState
 import onlasdan.gallery.imageviewer.ui.VideoDownloadState
 import onlasdan.gallery.transcoding.compose.model.EncryptedImageRequestData
 import onlasdan.gallery.transcoding.compose.rememberEncryptedImagePainter
-import me.saket.telephoto.zoomable.EnabledZoomGestures
-import me.saket.telephoto.zoomable.ZoomSpec
-import me.saket.telephoto.zoomable.rememberZoomableState
-import me.saket.telephoto.zoomable.zoomable
 import java.util.Locale
 
 @Composable
 fun BoxScope.ImageViewerImagePage(
-    item: ImageViewerItem.Image,
-    uiState: ImageViewerUiState,
-    handleUiEvent: (ImageViewerUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+	item: ImageViewerItem.Image,
+	uiState: ImageViewerUiState,
+	handleUiEvent: (ImageViewerUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    val photo = item.photo
+	val photo = item.photo
 
-    val requestData = remember(photo) {
-        val fileName = if (photo.type.isVideo) {
-            photo.internalVideoPreviewFileName
-        } else {
-            photo.internalFileName
-        }
+	val requestData =
+		remember(photo) {
+			val fileName =
+				if (photo.type.isVideo) {
+					photo.internalVideoPreviewFileName
+				} else {
+					photo.internalFileName
+				}
 
-        EncryptedImageRequestData(
-            internalFileName = fileName,
-            mimeType = photo.type.mimeType,
-            playAnimation = true,
-            photoUuid = if (photo.type.isVideo) null else photo.uuid,
-        )
-    }
+			EncryptedImageRequestData(
+				internalFileName = fileName,
+				mimeType = photo.type.mimeType,
+				playAnimation = true,
+				photoUuid = if (photo.type.isVideo) null else photo.uuid,
+			)
+		}
 
-    Image(
-        painter = rememberEncryptedImagePainter(
-            data = requestData,
-            placeholder = android.R.color.black,
-        ),
-        contentDescription = photo.fileName,
-        modifier = modifier
-            .fillMaxSize()
-            .zoomable(
-                onClick = {
-                    // @since Item 3 — slideshow mode. Tap pauses the
-                    //   slideshow (and re-shows controls) instead of
-                    //   toggling controls when the slideshow is active.
-                    if (uiState.isSlideshowActive) {
-                        handleUiEvent(ImageViewerUiEvent.StopSlideshow)
-                    } else {
-                        handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
-                    }
-                },
-                state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
-                gestures = EnabledZoomGestures.ZoomAndPan,
-            ),
-    )
+	Image(
+		painter =
+			rememberEncryptedImagePainter(
+				data = requestData,
+				placeholder = android.R.color.black,
+			),
+		contentDescription = photo.fileName,
+		modifier =
+			modifier
+				.fillMaxSize()
+				.zoomable(
+					onClick = {
+						// @since Item 3 — slideshow mode. Tap pauses the
+						//   slideshow (and re-shows controls) instead of
+						//   toggling controls when the slideshow is active.
+						if (uiState.isSlideshowActive) {
+							handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+						} else {
+							handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
+						}
+					},
+					state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
+					gestures = EnabledZoomGestures.ZoomAndPan,
+				),
+	)
 
-    TopGradient(visible = uiState.inputs.showControls)
-    BottomGradient(visible = uiState.inputs.showControls)
+	TopGradient(visible = uiState.inputs.showControls)
+	BottomGradient(visible = uiState.inputs.showControls)
 }
-
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun BoxScope.ImageViewerVideoPage(
-    item: ImageViewerItem.Video,
-    isCurrentItem: Boolean,
-    exoPlayerState: ExoPlayerState,
-    player: Player,
-    uiState: ImageViewerUiState,
-    handleUiEvent: (ImageViewerUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
-    /**
-     * State of the on-demand download for this video, if it was remote-only
-     * when the user opened it. `null` means "no download needed" (the local
-     * file was already present).
-     *
-     * @since video-loading-indicator feature — on-demand video download with
-     *   visible progress
-     */
-    downloadState: VideoDownloadState? = null,
+	item: ImageViewerItem.Video,
+	isCurrentItem: Boolean,
+	exoPlayerState: ExoPlayerState,
+	player: Player,
+	uiState: ImageViewerUiState,
+	handleUiEvent: (ImageViewerUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
+	/**
+	 * State of the on-demand download for this video, if it was remote-only
+	 * when the user opened it. `null` means "no download needed" (the local
+	 * file was already present).
+	 *
+	 * @since video-loading-indicator feature — on-demand video download with
+	 *   visible progress
+	 */
+	downloadState: VideoDownloadState? = null,
 ) {
-    ContentFrame(
-        player = if (isCurrentItem) player else null,
-        shutter = {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .background(Color.Black) // Important! Otherwise last frame is background
-                    .fillMaxSize()
-            ) {
-                val photo = item.photo
+	ContentFrame(
+		player = if (isCurrentItem) player else null,
+		shutter = {
+			Box(
+				contentAlignment = Alignment.Center,
+				modifier =
+					Modifier
+						.background(Color.Black) // Important! Otherwise last frame is background
+						.fillMaxSize(),
+			) {
+				val photo = item.photo
 
-                val requestData = remember(photo) {
+				val requestData =
+					remember(photo) {
+						EncryptedImageRequestData(
+							internalFileName = photo.internalVideoPreviewFileName,
+							mimeType = photo.type.mimeType,
+							playAnimation = false,
+						)
+					}
 
-                    EncryptedImageRequestData(
-                        internalFileName = photo.internalVideoPreviewFileName,
-                        mimeType = photo.type.mimeType,
-                        playAnimation = false,
-                    )
-                }
+				Image(
+					painter =
+						rememberEncryptedImagePainter(
+							data = requestData,
+							placeholder = android.R.color.black,
+						),
+					contentDescription = photo.fileName,
+					modifier = modifier.fillMaxSize(),
+				)
 
-                Image(
-                    painter = rememberEncryptedImagePainter(
-                        data = requestData,
-                        placeholder = android.R.color.black,
-                    ),
-                    contentDescription = photo.fileName,
-                    modifier = modifier.fillMaxSize()
-                )
+				// ─── Video loading indicator ───────────────────────────────────
+				// @since video-loading-indicator feature — replace the bare
+				//   CircularProgressIndicator with a contextual download
+				//   progress UI. Three branches:
+				//     (a) DownloadState.Downloading → "Downloading video…"
+				//       with a determinate LinearProgressIndicator (or
+				//       indeterminate if the size estimate is 0%).
+				//     (b) DownloadState.Failed → "Couldn't download video"
+				//       with the error message — no spinner.
+				//     (c) null / Idle / Done → fall back to the original
+				//       CircularProgressIndicator (ExoPlayer is buffering).
+				when (downloadState) {
+					is VideoDownloadState.Downloading -> {
+						Column(
+							horizontalAlignment = Alignment.CenterHorizontally,
+							verticalArrangement = Arrangement.spacedBy(12.dp),
+							modifier =
+								Modifier
+									.padding(24.dp)
+									.background(Color.Black.copy(alpha = 0.6f)),
+						) {
+							Text(
+								text = stringResource(R.string.video_downloading),
+								color = Color.White,
+							)
+							// width clamps the progress bar to a sensible size
+							// instead of stretching across the full screen.
+							val pct = downloadState.progress.toInt().coerceIn(0, 100)
+							if (pct <= 0) {
+								LinearProgressIndicator(
+									modifier = Modifier.width(180.dp),
+									color = Color.White,
+								)
+							} else {
+								LinearProgressIndicator(
+									progress = { downloadState.progress / 100f },
+									modifier = Modifier.width(180.dp),
+									color = Color.White,
+								)
+							}
+							Text(
+								text = "$pct%",
+								color = Color.White,
+								style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+							)
+						}
+					}
+					is VideoDownloadState.Failed -> {
+						Column(
+							horizontalAlignment = Alignment.CenterHorizontally,
+							verticalArrangement = Arrangement.spacedBy(8.dp),
+							modifier =
+								Modifier
+									.padding(24.dp)
+									.background(Color.Black.copy(alpha = 0.6f)),
+						) {
+							Text(
+								text = stringResource(R.string.video_download_failed),
+								color = Color.White,
+							)
+							Text(
+								text = downloadState.message,
+								color = Color.White.copy(alpha = 0.7f),
+								style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+							)
+						}
+					}
+					else -> {
+						// null, Idle, or Done — ExoPlayer is buffering the
+						// local file. Show the original spinner.
+						CircularProgressIndicator(
+							color = LocalContentColor.current,
+						)
+					}
+				}
+			}
+		},
+		modifier =
+			modifier
+				.fillMaxSize()
+				.zoomable(
+					onClick = {
+						// @since Item 3 — slideshow mode. Tap pauses the
+						//   slideshow (and re-shows controls) instead of
+						//   toggling controls when the slideshow is active.
+						if (uiState.isSlideshowActive) {
+							handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+						} else {
+							handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
+						}
+					},
+					state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
+					gestures = EnabledZoomGestures.ZoomAndPan,
+				),
+	)
 
-                // ─── Video loading indicator ───────────────────────────────────
-                // @since video-loading-indicator feature — replace the bare
-                //   CircularProgressIndicator with a contextual download
-                //   progress UI. Three branches:
-                //     (a) DownloadState.Downloading → "Downloading video…"
-                //       with a determinate LinearProgressIndicator (or
-                //       indeterminate if the size estimate is 0%).
-                //     (b) DownloadState.Failed → "Couldn't download video"
-                //       with the error message — no spinner.
-                //     (c) null / Idle / Done → fall back to the original
-                //       CircularProgressIndicator (ExoPlayer is buffering).
-                when (downloadState) {
-                    is VideoDownloadState.Downloading -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .background(Color.Black.copy(alpha = 0.6f)),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.video_downloading),
-                                color = Color.White,
-                            )
-                            // width clamps the progress bar to a sensible size
-                            // instead of stretching across the full screen.
-                            val pct = downloadState.progress.toInt().coerceIn(0, 100)
-                            if (pct <= 0) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.width(180.dp),
-                                    color = Color.White,
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    progress = { downloadState.progress / 100f },
-                                    modifier = Modifier.width(180.dp),
-                                    color = Color.White,
-                                )
-                            }
-                            Text(
-                                text = "$pct%",
-                                color = Color.White,
-                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    }
-                    is VideoDownloadState.Failed -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .background(Color.Black.copy(alpha = 0.6f)),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.video_download_failed),
-                                color = Color.White,
-                            )
-                            Text(
-                                text = downloadState.message,
-                                color = Color.White.copy(alpha = 0.7f),
-                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    }
-                    else -> {
-                        // null, Idle, or Done — ExoPlayer is buffering the
-                        // local file. Show the original spinner.
-                        CircularProgressIndicator(
-                            color = LocalContentColor.current,
-                        )
-                    }
-                }
-            }
-        },
-        modifier = modifier
-            .fillMaxSize()
-            .zoomable(
-                onClick = {
-                    // @since Item 3 — slideshow mode. Tap pauses the
-                    //   slideshow (and re-shows controls) instead of
-                    //   toggling controls when the slideshow is active.
-                    if (uiState.isSlideshowActive) {
-                        handleUiEvent(ImageViewerUiEvent.StopSlideshow)
-                    } else {
-                        handleUiEvent(ImageViewerUiEvent.ToggleShowControls)
-                    }
-                },
-                state = rememberZoomableState(zoomSpec = ZoomSpec(maxZoomFactor = 4f)),
-                gestures = EnabledZoomGestures.ZoomAndPan,
-            ),
-    )
+	TopGradient(visible = uiState.inputs.showControls)
+	BottomVideoGradient(visible = uiState.inputs.showControls)
 
-    TopGradient(visible = uiState.inputs.showControls)
-    BottomVideoGradient(visible = uiState.inputs.showControls)
+	val navBarHeight =
+		WindowInsets
+			.navigationBarsIgnoringVisibility
+			.asPaddingValues()
+			.calculateBottomPadding()
 
-    val navBarHeight = WindowInsets
-        .navigationBarsIgnoringVisibility
-        .asPaddingValues()
-        .calculateBottomPadding()
+	val sliderOffset =
+		if (LocalConfiguration.current.orientation == ORIENTATION_LANDSCAPE) {
+			20.dp
+		} else {
+			110.dp
+		}
 
-    val sliderOffset = if (LocalConfiguration.current.orientation == ORIENTATION_LANDSCAPE) {
-        20.dp
-    } else {
-        110.dp
-    }
+	AnimatedVisibility(
+		visible = uiState.inputs.showControls,
+		enter = fadeIn(),
+		exit = fadeOut(),
+		modifier =
+			Modifier
+				.align(Alignment.BottomCenter)
+				.padding(
+					WindowInsets.displayCutout
+						.only(WindowInsetsSides.Horizontal)
+						.asPaddingValues(),
+				).padding(bottom = navBarHeight + sliderOffset),
+	) {
+		Column(
+			verticalArrangement = Arrangement.spacedBy(12.dp),
+		) {
+			Row(
+				horizontalArrangement = Arrangement.SpaceBetween,
+				verticalAlignment = Alignment.CenterVertically,
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 8.dp),
+			) {
+				AnimatedContent(
+					targetState = exoPlayerState.isPlaying,
+					transitionSpec = {
+						fadeIn() togetherWith fadeOut()
+					},
+				) { isPlaying ->
+					val icon =
+						if (isPlaying) {
+							R.drawable.media3_icon_pause
+						} else {
+							R.drawable.media3_icon_play
+						}
+					IconButton(
+						onClick = {
+							if (isPlaying) {
+								player.pause()
+							} else {
+								if (exoPlayerState.playbackState == Player.STATE_ENDED) {
+									player.seekTo(0L)
+								}
+								player.play()
+							}
+						},
+						enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_PLAY_PAUSE),
+					) {
+						Icon(
+							painter = painterResource(icon),
+							contentDescription =
+								stringResource(
+									if (isPlaying) R.string.video_player_pause else R.string.video_player_play,
+								),
+						)
+					}
+				}
 
-    AnimatedVisibility(
-        visible = uiState.inputs.showControls,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(
-                WindowInsets.displayCutout
-                    .only(WindowInsetsSides.Horizontal)
-                    .asPaddingValues()
-            )
-            .padding(bottom = navBarHeight + sliderOffset)
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-            ) {
-                AnimatedContent(
-                    targetState = exoPlayerState.isPlaying,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                ) { isPlaying ->
-                    val icon = if (isPlaying) {
-                        R.drawable.media3_icon_pause
-                    } else {
-                        R.drawable.media3_icon_play
-                    }
-                    IconButton(
-                        onClick = {
-                            if (isPlaying) {
-                                player.pause()
-                            } else {
-                                if (exoPlayerState.playbackState == Player.STATE_ENDED) {
-                                    player.seekTo(0L)
-                                }
-                                player.play()
-                            }
-                        },
-                        enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_PLAY_PAUSE)
-                    ) {
-                        Icon(
-                            painter = painterResource(icon),
-                            contentDescription = stringResource(
-                                if (isPlaying) R.string.video_player_pause else R.string.video_player_play
-                            ),
-                        )
-                    }
-                }
+				val formattedPosition =
+					remember(exoPlayerState.position, isCurrentItem) {
+						if (isCurrentItem) {
+							exoPlayerState.position.toVideoTime()
+						} else {
+							"00:00"
+						}
+					}
+				val formattedDuration =
+					remember(exoPlayerState.duration, isCurrentItem) {
+						if (isCurrentItem) {
+							exoPlayerState.duration.toVideoTime()
+						} else {
+							"00:00"
+						}
+					}
 
-                val formattedPosition = remember(exoPlayerState.position, isCurrentItem) {
-                    if (isCurrentItem) {
-                        exoPlayerState.position.toVideoTime()
-                    } else {
-                        "00:00"
-                    }
-                }
-                val formattedDuration = remember(exoPlayerState.duration, isCurrentItem) {
-                    if (isCurrentItem) {
-                        exoPlayerState.duration.toVideoTime()
-                    } else {
-                        "00:00"
-                    }
-                }
+				Text(
+					text = "$formattedPosition / $formattedDuration",
+					fontFamily = FontFamily.Monospace,
+					fontSize = 14.sp,
+					textAlign = TextAlign.Center,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+					modifier = Modifier.weight(1f),
+				)
 
-                Text(
-                    text = "$formattedPosition / $formattedDuration",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+				AnimatedContent(
+					targetState = uiState.muteVideoPlayer,
+					transitionSpec = {
+						fadeIn() togetherWith fadeOut()
+					},
+				) { isMute ->
+					val icon =
+						if (isMute) {
+							R.drawable.media3_icon_volume_off
+						} else {
+							R.drawable.media3_icon_volume_up
+						}
+					IconButton(
+						onClick = {
+							handleUiEvent(ImageViewerUiEvent.ToggleMuteVideoPlayer)
+						},
+						enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_VOLUME),
+					) {
+						Icon(
+							painter = painterResource(icon),
+							contentDescription =
+								stringResource(
+									if (isMute) R.string.video_player_unmute else R.string.video_player_mute,
+								),
+						)
+					}
+				}
+			}
 
-                AnimatedContent(
-                    targetState = uiState.muteVideoPlayer,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                ) { isMute ->
-                    val icon = if (isMute) {
-                        R.drawable.media3_icon_volume_off
-                    } else {
-                        R.drawable.media3_icon_volume_up
-                    }
-                    IconButton(
-                        onClick = {
-                            handleUiEvent(ImageViewerUiEvent.ToggleMuteVideoPlayer)
-                        },
-                        enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_VOLUME)
-                    ) {
-                        Icon(
-                            painter = painterResource(icon),
-                            contentDescription = stringResource(
-                                if (isMute) R.string.video_player_unmute else R.string.video_player_mute
-                            )
-                        )
-                    }
-                }
-            }
+			val sliderColors =
+				SliderDefaults.colors(
+					thumbColor = Color.White,
+					activeTrackColor = Color.White,
+					inactiveTrackColor = Color.White.copy(alpha = 0.4f),
+				)
 
-            val sliderColors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.4f)
-            )
+			val safePosition by remember(isCurrentItem) {
+				derivedStateOf {
+					if (isCurrentItem) {
+						exoPlayerState.position.coerceAtMost(exoPlayerState.duration)
+					} else {
+						0L
+					}
+				}
+			}
 
-            val safePosition by remember(isCurrentItem) {
-                derivedStateOf {
-                    if (isCurrentItem) {
-                        exoPlayerState.position.coerceAtMost(exoPlayerState.duration)
-                    } else {
-                        0L
-                    }
-                }
-            }
+			val safeDuration by remember(isCurrentItem) {
+				derivedStateOf {
+					if (isCurrentItem) {
+						exoPlayerState.duration.coerceAtLeast(minimumValue = 0L)
+					} else {
+						1L
+					}
+				}
+			}
 
-            val safeDuration by remember(isCurrentItem) {
-                derivedStateOf {
-                    if (isCurrentItem) {
-                        exoPlayerState.duration.coerceAtLeast(minimumValue = 0L)
-                    } else {
-                        1L
-                    }
-                }
-            }
+			var wasPlayingWhenStartedScrubbing by remember { mutableStateOf(false) }
 
-            var wasPlayingWhenStartedScrubbing by remember { mutableStateOf(false) }
+			Slider(
+				value = safePosition.toFloat(),
+				onValueChange = {
+					if (!exoPlayerState.isScrubbing) {
+						wasPlayingWhenStartedScrubbing = exoPlayerState.isPlaying
+					}
 
-            Slider(
-                value = safePosition.toFloat(),
-                onValueChange = {
-                    if (!exoPlayerState.isScrubbing) {
-                        wasPlayingWhenStartedScrubbing = exoPlayerState.isPlaying
-                    }
+					player.pause()
+					exoPlayerState.isScrubbing = true
+					exoPlayerState.position = it.toLong()
+				},
+				onValueChangeFinished = {
+					player.seekTo(exoPlayerState.position)
 
-                    player.pause()
-                    exoPlayerState.isScrubbing = true
-                    exoPlayerState.position = it.toLong()
-                },
-                onValueChangeFinished = {
-                    player.seekTo(exoPlayerState.position)
+					if (wasPlayingWhenStartedScrubbing) {
+						player.play()
+						wasPlayingWhenStartedScrubbing = false
+					}
 
-                    if (wasPlayingWhenStartedScrubbing) {
-                        player.play()
-                        wasPlayingWhenStartedScrubbing = false
-                    }
-
-                    exoPlayerState.isScrubbing = false
-                },
-                valueRange = 0f..safeDuration.toFloat(),
-                colors = sliderColors,
-                enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-            )
-        }
-
-    }
-
+					exoPlayerState.isScrubbing = false
+				},
+				valueRange = 0f..safeDuration.toFloat(),
+				colors = sliderColors,
+				enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 20.dp),
+			)
+		}
+	}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BoxScope.TopGradient(visible: Boolean) {
-    val statusBarsHeight = WindowInsets
-        .statusBarsIgnoringVisibility
-        .asPaddingValues()
-        .calculateTopPadding()
+	val statusBarsHeight =
+		WindowInsets
+			.statusBarsIgnoringVisibility
+			.asPaddingValues()
+			.calculateTopPadding()
 
+	val brush =
+		remember {
+			Brush.verticalGradient(
+				colors =
+					listOf(
+						Color.Black.copy(alpha = 0.6f),
+						Color.Transparent,
+					),
+			)
+		}
 
-    val brush = remember {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color.Black.copy(alpha = 0.6f),
-                Color.Transparent,
-            )
-        )
-    }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = Modifier.align(Alignment.TopCenter)
-
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(TopAppBarDefaults.TopAppBarExpandedHeight + statusBarsHeight + 40.dp)
-                .background(brush)
-        )
-    }
+	AnimatedVisibility(
+		visible = visible,
+		enter = fadeIn(),
+		exit = fadeOut(),
+		modifier = Modifier.align(Alignment.TopCenter),
+	) {
+		Box(
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.height(TopAppBarDefaults.TopAppBarExpandedHeight + statusBarsHeight + 40.dp)
+					.background(brush),
+		)
+	}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BoxScope.BottomGradient(visible: Boolean) {
-    val navBarHeight = WindowInsets
-        .navigationBarsIgnoringVisibility
-        .asPaddingValues()
-        .calculateBottomPadding()
+	val navBarHeight =
+		WindowInsets
+			.navigationBarsIgnoringVisibility
+			.asPaddingValues()
+			.calculateBottomPadding()
 
-    val brush = remember {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color.Black.copy(alpha = 0.6f),
-            )
-        )
-    }
+	val brush =
+		remember {
+			Brush.verticalGradient(
+				colors =
+					listOf(
+						Color.Transparent,
+						Color.Black.copy(alpha = 0.6f),
+					),
+			)
+		}
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = Modifier.align(Alignment.BottomCenter)
-
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp + navBarHeight + 40.dp)
-                .background(brush)
-        )
-    }
+	AnimatedVisibility(
+		visible = visible,
+		enter = fadeIn(),
+		exit = fadeOut(),
+		modifier = Modifier.align(Alignment.BottomCenter),
+	) {
+		Box(
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.height(80.dp + navBarHeight + 40.dp)
+					.background(brush),
+		)
+	}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BoxScope.BottomVideoGradient(visible: Boolean) {
-    val navBarHeight = WindowInsets
-        .navigationBarsIgnoringVisibility
-        .asPaddingValues()
-        .calculateBottomPadding()
+	val navBarHeight =
+		WindowInsets
+			.navigationBarsIgnoringVisibility
+			.asPaddingValues()
+			.calculateBottomPadding()
 
-    val brush = remember {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color.Black.copy(alpha = 0.4f),
-                Color.Black.copy(alpha = 0.6f),
-            )
-        )
-    }
+	val brush =
+		remember {
+			Brush.verticalGradient(
+				colors =
+					listOf(
+						Color.Transparent,
+						Color.Black.copy(alpha = 0.4f),
+						Color.Black.copy(alpha = 0.6f),
+					),
+			)
+		}
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = Modifier.align(Alignment.BottomCenter)
-
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp + navBarHeight + 180.dp)
-                .background(brush)
-        )
-    }
+	AnimatedVisibility(
+		visible = visible,
+		enter = fadeIn(),
+		exit = fadeOut(),
+		modifier = Modifier.align(Alignment.BottomCenter),
+	) {
+		Box(
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.height(80.dp + navBarHeight + 180.dp)
+					.background(brush),
+		)
+	}
 }
 
 fun Long.toVideoTime(): String {
-    val totalSeconds = this / 1_000
+	val totalSeconds = this / 1_000
 
-    val seconds = (totalSeconds % 60)
-    val minutes = (totalSeconds / 60) % 60
-    val hours = (totalSeconds / 3_600)
+	val seconds = (totalSeconds % 60)
+	val minutes = (totalSeconds / 60) % 60
+	val hours = (totalSeconds / 3_600)
 
-    return when {
-        hours > 0 -> String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
-        else -> String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
-    }
+	return when {
+		hours > 0 -> String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+		else -> String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+	}
 }

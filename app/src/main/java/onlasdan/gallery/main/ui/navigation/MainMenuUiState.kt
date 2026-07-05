@@ -17,5 +17,5 @@
 package onlasdan.gallery.main.ui.navigation
 
 data class MainMenuUiState(
-    val currentFragmentId: Int
+	val currentFragmentId: Int,
 )

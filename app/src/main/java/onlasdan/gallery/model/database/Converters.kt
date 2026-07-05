@@ -30,53 +30,51 @@ import onlasdan.gallery.sync.domain.SyncState
  * @author PhotoZ
  */
 class Converters {
+	/**
+	 * Convert [PhotoType] to [Int].
+	 */
+	@TypeConverter
+	fun fromPhotoType(photoType: PhotoType): Int = photoType.value
 
-    /**
-     * Convert [PhotoType] to [Int].
-     */
-    @TypeConverter
-    fun fromPhotoType(photoType: PhotoType): Int = photoType.value
+	/**
+	 * Convert [Int] to [PhotoType].
+	 */
+	@TypeConverter
+	fun toPhotoType(photoType: Int): PhotoType = PhotoType.fromValue(photoType)
 
-    /**
-     * Convert [Int] to [PhotoType].
-     */
-    @TypeConverter
-    fun toPhotoType(photoType: Int): PhotoType = PhotoType.fromValue(photoType)
+	@TypeConverter
+	fun toSortOrder(value: Int): Sort.Order = Sort.Order.fromValue(value)
 
+	@TypeConverter
+	fun fromSortOrder(order: Sort.Order) = order.value
 
-    @TypeConverter
-    fun toSortOrder(value: Int): Sort.Order = Sort.Order.fromValue(value)
+	@TypeConverter
+	fun toSortField(value: Int): Sort.Field = Sort.Field.fromValue(value)
 
-    @TypeConverter
-    fun fromSortOrder(order: Sort.Order) = order.value
+	@TypeConverter
+	fun fromSortField(field: Sort.Field): Int = field.value
 
-    @TypeConverter
-    fun toSortField(value: Int): Sort.Field = Sort.Field.fromValue(value)
+	@TypeConverter
+	fun fromKdfParams(params: VaultProtectionParams): String {
+		val gson = Gson()
+		return gson.toJson(params)
+	}
 
-    @TypeConverter
-    fun fromSortField(field: Sort.Field): Int = field.value
+	@TypeConverter
+	fun toKdfParams(string: String): VaultProtectionParams {
+		val gson = Gson()
+		return gson.fromJson(string, VaultProtectionParams::class.java)
+	}
 
-    @TypeConverter
-    fun fromKdfParams(params: VaultProtectionParams): String {
-        val gson = Gson()
-        return gson.toJson(params)
-    }
+	/**
+	 * Persist [SyncState] as its [SyncState.storageKey] string. Storing as TEXT (rather than
+	 * Int ordinal) keeps the column readable in DB browsers and is robust against enum reordering.
+	 *
+	 * @since PR1 sync feature
+	 */
+	@TypeConverter
+	fun fromSyncState(state: SyncState): String = state.storageKey
 
-    @TypeConverter
-    fun toKdfParams(string: String): VaultProtectionParams {
-        val gson = Gson()
-        return gson.fromJson(string, VaultProtectionParams::class.java)
-    }
-
-    /**
-     * Persist [SyncState] as its [SyncState.storageKey] string. Storing as TEXT (rather than
-     * Int ordinal) keeps the column readable in DB browsers and is robust against enum reordering.
-     *
-     * @since PR1 sync feature
-     */
-    @TypeConverter
-    fun fromSyncState(state: SyncState): String = state.storageKey
-
-    @TypeConverter
-    fun toSyncState(value: String): SyncState = SyncState.fromStorageKey(value)
+	@TypeConverter
+	fun toSyncState(value: String): SyncState = SyncState.fromStorageKey(value)
 }

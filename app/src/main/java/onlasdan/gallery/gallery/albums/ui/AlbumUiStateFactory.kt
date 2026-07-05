@@ -21,15 +21,20 @@ import onlasdan.gallery.gallery.albums.toUi
 import onlasdan.gallery.gallery.albums.ui.compose.AlbumsUiState
 import javax.inject.Inject
 
-class AlbumUiStateFactory @Inject constructor() {
-    fun create(albums: List<Album>, showCreateDialog: Boolean): AlbumsUiState {
-        if (albums.isEmpty()) {
-            return AlbumsUiState.Empty(showCreateDialog)
-        }
+class AlbumUiStateFactory
+	@Inject
+	constructor() {
+		fun create(
+			albums: List<Album>,
+			showCreateDialog: Boolean,
+		): AlbumsUiState {
+			if (albums.isEmpty()) {
+				return AlbumsUiState.Empty(showCreateDialog)
+			}
 
-        return AlbumsUiState.Content(
-            albums = albums.map { album -> album.toUi() },
-            showCreateDialog = showCreateDialog,
-        )
-    }
-}
+			return AlbumsUiState.Content(
+				albums = albums.map { album -> album.toUi() },
+				showCreateDialog = showCreateDialog,
+			)
+		}
+	}

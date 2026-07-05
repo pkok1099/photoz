@@ -19,12 +19,12 @@ package onlasdan.gallery.gallery.ui.importing
 import android.app.Application
 import android.net.Uri
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import onlasdan.gallery.gallery.albums.domain.AlbumRepository
 import onlasdan.gallery.model.repositories.ImportSource
 import onlasdan.gallery.model.repositories.PhotoRepository
 import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessViewModel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
 import javax.inject.Inject
 
 /**
@@ -34,57 +34,59 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class ImportViewModel @Inject constructor(
-    app: Application,
-    private val photoRepository: PhotoRepository,
-    private val albumRepository: AlbumRepository,
-    private val sharedUrisStore: SharedUrisStore,
-) : BaseProcessViewModel<Uri>(app) {
+class ImportViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val photoRepository: PhotoRepository,
+		private val albumRepository: AlbumRepository,
+		private val sharedUrisStore: SharedUrisStore,
+	) : BaseProcessViewModel<Uri>(app) {
+		var albumUUID: String? = null
+		var importSource = ImportSource.InApp
 
-    var albumUUID: String? = null
-    var importSource = ImportSource.InApp
+		/**
+		 * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
+		 *
+		 * When non-null, [processItem] passes this to
+		 * [PhotoRepository.safeImportPhoto] as `overrideAlbumPath`. The photo's
+		 * `albumPath` is set to this value (e.g. "Picker") instead of falling
+		 * back to the filename, and `ensureAlbumForPhoto` creates/links the
+		 * named album.
+		 *
+		 * Null for the regular MediaStore import (auto-album-from-folder path).
+		 */
+		var targetAlbumName: String? = null
 
-    /**
-     * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.
-     *
-     * When non-null, [processItem] passes this to
-     * [PhotoRepository.safeImportPhoto] as `overrideAlbumPath`. The photo's
-     * `albumPath` is set to this value (e.g. "Picker") instead of falling
-     * back to the filename, and `ensureAlbumForPhoto` creates/links the
-     * named album.
-     *
-     * Null for the regular MediaStore import (auto-album-from-folder path).
-     */
-    var targetAlbumName: String? = null
+		private val _reviewTrigger = Channel<Unit>(Channel.CONFLATED)
+		val reviewTrigger = _reviewTrigger.receiveAsFlow()
 
-    private val _reviewTrigger = Channel<Unit>(Channel.CONFLATED)
-    val reviewTrigger = _reviewTrigger.receiveAsFlow()
+		override suspend fun processItem(item: Uri) {
+			val photoUUID =
+				photoRepository.safeImportPhoto(
+					sourceUri = item,
+					importSource = importSource,
+					overrideAlbumPath = targetAlbumName,
+				)
+			if (photoUUID.isEmpty()) {
+				failuresOccurred = true
+				return
+			}
 
-    override suspend fun processItem(item: Uri) {
-        val photoUUID = photoRepository.safeImportPhoto(
-            sourceUri = item,
-            importSource = importSource,
-            overrideAlbumPath = targetAlbumName,
-        )
-        if (photoUUID.isEmpty()) {
-            failuresOccurred = true
-            return
-        }
+			albumUUID?.let {
+				albumRepository.link(listOf(photoUUID), it)
+			}
+		}
 
-        albumUUID?.let {
-            albumRepository.link(listOf(photoUUID), it)
-        }
-    }
+		override suspend fun postProcess() {
+			super.postProcess()
+			sharedUrisStore.reset()
+			if (!failuresOccurred && photoRepository.countAll() >= REVIEW_PHOTO_THRESHOLD) {
+				_reviewTrigger.trySend(Unit)
+			}
+		}
 
-    override suspend fun postProcess() {
-        super.postProcess()
-        sharedUrisStore.reset()
-        if (!failuresOccurred && photoRepository.countAll() >= REVIEW_PHOTO_THRESHOLD) {
-            _reviewTrigger.trySend(Unit)
-        }
-    }
-
-    companion object {
-        private const val REVIEW_PHOTO_THRESHOLD = 100
-    }
-}
+		companion object {
+			private const val REVIEW_PHOTO_THRESHOLD = 100
+		}
+	}

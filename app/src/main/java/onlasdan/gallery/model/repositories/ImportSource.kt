@@ -17,5 +17,6 @@
 package onlasdan.gallery.model.repositories
 
 enum class ImportSource {
-    InApp, Share,
+	InApp,
+	Share,
 }

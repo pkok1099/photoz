@@ -52,116 +52,120 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumDetailScreen(viewModel: AlbumDetailViewModel, navController: NavController) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+fun AlbumDetailScreen(
+	viewModel: AlbumDetailViewModel,
+	navController: NavController,
+) {
+	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    var showConfirmDeleteDialog by remember { mutableStateOf(false) }
-    var showRenameDialog by remember { mutableStateOf(false) }
+	var showConfirmDeleteDialog by remember { mutableStateOf(false) }
+	var showRenameDialog by remember { mutableStateOf(false) }
 
-    AppTheme {
-        Scaffold(
-            topBar = {
-                var showMore by remember { mutableStateOf(false) }
+	AppTheme {
+		Scaffold(
+			topBar = {
+				var showMore by remember { mutableStateOf(false) }
 
-                LargeTopAppBar(
-                    title = { Text(uiState.albumName) },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = { navController.navigateUp() }
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_back),
-                                contentDescription = stringResource(R.string.process_close)
-                            )
-                        }
-                    },
-                    windowInsets = WindowInsets.statusBars,
-                    scrollBehavior = scrollBehavior,
-                    actions = {
-                        var showSortMenu by remember { mutableStateOf(false) }
+				LargeTopAppBar(
+					title = { Text(uiState.albumName) },
+					navigationIcon = {
+						IconButton(
+							onClick = { navController.navigateUp() },
+						) {
+							Icon(
+								painter = painterResource(R.drawable.ic_back),
+								contentDescription = stringResource(R.string.process_close),
+							)
+						}
+					},
+					windowInsets = WindowInsets.statusBars,
+					scrollBehavior = scrollBehavior,
+					actions = {
+						var showSortMenu by remember { mutableStateOf(false) }
 
-                        SortingMenuIconButton(
-                            config = SortConfig.Album,
-                            sort = uiState.sort,
-                            onClick = { showSortMenu = true }
-                        )
+						SortingMenuIconButton(
+							config = SortConfig.Album,
+							sort = uiState.sort,
+							onClick = { showSortMenu = true },
+						)
 
-                        SortingMenu(
-                            config = SortConfig.Album,
-                            expanded = showSortMenu,
-                            onDismissRequest = {showSortMenu = false },
-                            sort = uiState.sort,
-                            onSortChanged = { viewModel.handleUiEvent(AlbumDetailUiEvent.SortChanged(it)) },
-                        )
+						SortingMenu(
+							config = SortConfig.Album,
+							expanded = showSortMenu,
+							onDismissRequest = { showSortMenu = false },
+							sort = uiState.sort,
+							onSortChanged = { viewModel.handleUiEvent(AlbumDetailUiEvent.SortChanged(it)) },
+						)
 
-                        IconButton(onClick = { showMore = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_more),
-                                contentDescription = stringResource(R.string.common_more)
-                            )
-                        }
+						IconButton(onClick = { showMore = true }) {
+							Icon(
+								painter = painterResource(R.drawable.ic_more),
+								contentDescription = stringResource(R.string.common_more),
+							)
+						}
 
-                        RoundedDropdownMenu(
-                            expanded = showMore,
-                            onDismissRequest = { showMore = false },
-                            modifier = Modifier.animateContentSize()
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.common_delete)) },
-                                onClick = {
-                                    showMore = false
-                                    showConfirmDeleteDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_delete),
-                                        contentDescription = stringResource(R.string.common_delete)
-                                    )
-                                }
-                            )
+						RoundedDropdownMenu(
+							expanded = showMore,
+							onDismissRequest = { showMore = false },
+							modifier = Modifier.animateContentSize(),
+						) {
+							DropdownMenuItem(
+								text = { Text(stringResource(R.string.common_delete)) },
+								onClick = {
+									showMore = false
+									showConfirmDeleteDialog = true
+								},
+								leadingIcon = {
+									Icon(
+										painter = painterResource(R.drawable.ic_delete),
+										contentDescription = stringResource(R.string.common_delete),
+									)
+								},
+							)
 
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.common_rename)) },
-                                onClick = {
-                                    showMore = false
-                                    showRenameDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_edit),
-                                        contentDescription = stringResource(R.string.common_rename),
-                                    )
-                                }
-                            )
-                        }
-                    }
-                )
-            }
-        ) { contentPadding ->
-            AlbumDetailContent(
-                uiState = uiState,
-                handleUiEvent = { viewModel.handleUiEvent(it) },
-                modifier = Modifier
-                    .padding(top = contentPadding.calculateTopPadding())
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-            )
+							DropdownMenuItem(
+								text = { Text(stringResource(R.string.common_rename)) },
+								onClick = {
+									showMore = false
+									showRenameDialog = true
+								},
+								leadingIcon = {
+									Icon(
+										painter = painterResource(R.drawable.ic_edit),
+										contentDescription = stringResource(R.string.common_rename),
+									)
+								},
+							)
+						}
+					},
+				)
+			},
+		) { contentPadding ->
+			AlbumDetailContent(
+				uiState = uiState,
+				handleUiEvent = { viewModel.handleUiEvent(it) },
+				modifier =
+					Modifier
+						.padding(top = contentPadding.calculateTopPadding())
+						.nestedScroll(scrollBehavior.nestedScrollConnection),
+			)
 
-            ConfirmationDialog(
-                show = showConfirmDeleteDialog,
-                onDismissRequest = { showConfirmDeleteDialog = false },
-                text = stringResource(R.string.common_are_you_sure),
-                onConfirm = { viewModel.handleUiEvent(AlbumDetailUiEvent.DeleteAlbum) }
-            )
+			ConfirmationDialog(
+				show = showConfirmDeleteDialog,
+				onDismissRequest = { showConfirmDeleteDialog = false },
+				text = stringResource(R.string.common_are_you_sure),
+				onConfirm = { viewModel.handleUiEvent(AlbumDetailUiEvent.DeleteAlbum) },
+			)
 
-            RenameAlbumDialog(
-                show = showRenameDialog,
-                onDismiss = { showRenameDialog = false },
-                currentName = uiState.albumName,
-                onRename = { newName ->
-                    viewModel.handleUiEvent(AlbumDetailUiEvent.RenameAlbum(newName))
-                }
-            )
-        }
-    }
+			RenameAlbumDialog(
+				show = showRenameDialog,
+				onDismiss = { showRenameDialog = false },
+				currentName = uiState.albumName,
+				onRename = { newName ->
+					viewModel.handleUiEvent(AlbumDetailUiEvent.RenameAlbum(newName))
+				},
+			)
+		}
+	}
 }

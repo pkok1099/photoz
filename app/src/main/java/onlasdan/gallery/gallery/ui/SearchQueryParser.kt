@@ -45,24 +45,28 @@ import java.util.Locale
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 data class SearchQuery(
-    /** Plain-text tokens (no prefix) — matched against filename, case-insensitive contains. */
-    val textTokens: List<String> = emptyList(),
-    /** Date prefix (e.g. "2024-01"). Empty string means no date filter. */
-    val datePrefix: String = "",
-    /** Camera prefix (e.g. "Canon"). Empty string means no camera filter. */
-    val cameraPrefix: String = "",
-    /** Location prefix as (lat, lon). Null means no location filter. */
-    val location: Pair<Double, Double>? = null,
-    /**
-     * Sprint 9 / L6 — AI tag prefix (e.g. "beach").
-     * Empty string means no tag filter.
-     * @since v14 — Sprint 9 / L6 semantic search
-     */
-    val tagPrefix: String = "",
+	/** Plain-text tokens (no prefix) — matched against filename, case-insensitive contains. */
+	val textTokens: List<String> = emptyList(),
+	/** Date prefix (e.g. "2024-01"). Empty string means no date filter. */
+	val datePrefix: String = "",
+	/** Camera prefix (e.g. "Canon"). Empty string means no camera filter. */
+	val cameraPrefix: String = "",
+	/** Location prefix as (lat, lon). Null means no location filter. */
+	val location: Pair<Double, Double>? = null,
+	/**
+	 * Sprint 9 / L6 — AI tag prefix (e.g. "beach").
+	 * Empty string means no tag filter.
+	 * @since v14 — Sprint 9 / L6 semantic search
+	 */
+	val tagPrefix: String = "",
 ) {
-    /** True when the query has no filters at all (empty search bar). */
-    val isEmpty: Boolean get() = textTokens.isEmpty() && datePrefix.isEmpty() &&
-        cameraPrefix.isEmpty() && location == null && tagPrefix.isEmpty()
+	/** True when the query has no filters at all (empty search bar). */
+	val isEmpty: Boolean get() =
+		textTokens.isEmpty() &&
+			datePrefix.isEmpty() &&
+			cameraPrefix.isEmpty() &&
+			location == null &&
+			tagPrefix.isEmpty()
 }
 
 /**
@@ -86,55 +90,55 @@ data class SearchQuery(
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 fun parseSearchQuery(raw: String): SearchQuery {
-    if (raw.isBlank()) return SearchQuery()
+	if (raw.isBlank()) return SearchQuery()
 
-    val textTokens = mutableListOf<String>()
-    var datePrefix = ""
-    var cameraPrefix = ""
-    var location: Pair<Double, Double>? = null
-    var tagPrefix = ""
+	val textTokens = mutableListOf<String>()
+	var datePrefix = ""
+	var cameraPrefix = ""
+	var location: Pair<Double, Double>? = null
+	var tagPrefix = ""
 
-    for (token in raw.trim().split(Regex("\\s+"))) {
-        if (token.isEmpty()) continue
-        val colonIdx = token.indexOf(':')
-        if (colonIdx <= 0) {
-            // No prefix — plain text token.
-            textTokens.add(token)
-            continue
-        }
-        val prefix = token.substring(0, colonIdx).lowercase(Locale.US)
-        val value = token.substring(colonIdx + 1)
-        if (value.isEmpty()) continue
+	for (token in raw.trim().split(Regex("\\s+"))) {
+		if (token.isEmpty()) continue
+		val colonIdx = token.indexOf(':')
+		if (colonIdx <= 0) {
+			// No prefix — plain text token.
+			textTokens.add(token)
+			continue
+		}
+		val prefix = token.substring(0, colonIdx).lowercase(Locale.US)
+		val value = token.substring(colonIdx + 1)
+		if (value.isEmpty()) continue
 
-        when (prefix) {
-            "date" -> datePrefix = value
-            "camera" -> cameraPrefix = value
-            "tag" -> tagPrefix = value
-            "location" -> {
-                val parts = value.split(",")
-                if (parts.size == 2) {
-                    val lat = parts[0].trim().toDoubleOrNull()
-                    val lon = parts[1].trim().toDoubleOrNull()
-                    if (lat != null && lon != null) {
-                        location = lat to lon
-                    }
-                }
-            }
-            else -> {
-                // Unknown prefix — treat the whole token as plain text so
-                // the user doesn't lose their query if they typo a prefix.
-                textTokens.add(token)
-            }
-        }
-    }
+		when (prefix) {
+			"date" -> datePrefix = value
+			"camera" -> cameraPrefix = value
+			"tag" -> tagPrefix = value
+			"location" -> {
+				val parts = value.split(",")
+				if (parts.size == 2) {
+					val lat = parts[0].trim().toDoubleOrNull()
+					val lon = parts[1].trim().toDoubleOrNull()
+					if (lat != null && lon != null) {
+						location = lat to lon
+					}
+				}
+			}
+			else -> {
+				// Unknown prefix — treat the whole token as plain text so
+				// the user doesn't lose their query if they typo a prefix.
+				textTokens.add(token)
+			}
+		}
+	}
 
-    return SearchQuery(
-        textTokens = textTokens,
-        datePrefix = datePrefix,
-        cameraPrefix = cameraPrefix,
-        location = location,
-        tagPrefix = tagPrefix,
-    )
+	return SearchQuery(
+		textTokens = textTokens,
+		datePrefix = datePrefix,
+		cameraPrefix = cameraPrefix,
+		location = location,
+		tagPrefix = tagPrefix,
+	)
 }
 
 /**
@@ -154,56 +158,60 @@ fun parseSearchQuery(raw: String): SearchQuery {
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 fun List<Photo>.filterBySearchQuery(query: SearchQuery): List<Photo> {
-    if (query.isEmpty) return this
+	if (query.isEmpty) return this
 
-    return this.filter { photo ->
-        // ─── Text tokens: filename contains (case-insensitive) ─────────────
-        val filenameLower = photo.fileName.lowercase(Locale.US)
-        val matchesText = query.textTokens.all { token ->
-            filenameLower.contains(token.lowercase(Locale.US))
-        }
-        if (!matchesText) return@filter false
+	return this.filter { photo ->
+		// ─── Text tokens: filename contains (case-insensitive) ─────────────
+		val filenameLower = photo.fileName.lowercase(Locale.US)
+		val matchesText =
+			query.textTokens.all { token ->
+				filenameLower.contains(token.lowercase(Locale.US))
+			}
+		if (!matchesText) return@filter false
 
-        // ─── Date prefix: EXIF date starts with the prefix ─────────────────
-        if (query.datePrefix.isNotEmpty()) {
-            val dateStr = formatDateTakenForSearch(photo.exifDateTaken)
-            // formatDateTakenForSearch returns "yyyy-MM-dd HH:mm" — the
-            // user's prefix can be "2024" (year), "2024-01" (year-month),
-            // or "2024-01-15" (full date). All three are prefixes of the
-            // formatted string, so a simple startsWith works.
-            if (!dateStr.startsWith(query.datePrefix)) return@filter false
-        }
+		// ─── Date prefix: EXIF date starts with the prefix ─────────────────
+		if (query.datePrefix.isNotEmpty()) {
+			val dateStr = formatDateTakenForSearch(photo.exifDateTaken)
+			// formatDateTakenForSearch returns "yyyy-MM-dd HH:mm" — the
+			// user's prefix can be "2024" (year), "2024-01" (year-month),
+			// or "2024-01-15" (full date). All three are prefixes of the
+			// formatted string, so a simple startsWith works.
+			if (!dateStr.startsWith(query.datePrefix)) return@filter false
+		}
 
-        // ─── Camera prefix: EXIF camera contains (case-insensitive) ────────
-        if (query.cameraPrefix.isNotEmpty()) {
-            val camera = photo.exifCamera ?: return@filter false
-            if (!camera.lowercase(Locale.US).contains(
-                    query.cameraPrefix.lowercase(Locale.US)
-                )) return@filter false
-        }
+		// ─── Camera prefix: EXIF camera contains (case-insensitive) ────────
+		if (query.cameraPrefix.isNotEmpty()) {
+			val camera = photo.exifCamera ?: return@filter false
+			if (!camera.lowercase(Locale.US).contains(
+					query.cameraPrefix.lowercase(Locale.US),
+				)
+			) {
+				return@filter false
+			}
+		}
 
-        // ─── Location: EXIF GPS within ~50km of the target ─────────────────
-        if (query.location != null) {
-            val lat = photo.exifGpsLat ?: return@filter false
-            val lon = photo.exifGpsLon ?: return@filter false
-            val (targetLat, targetLon) = query.location
-            val distanceM = haversineDistance(lat, lon, targetLat, targetLon)
-            if (distanceM > LOCATION_MATCH_RADIUS_M) return@filter false
-        }
+		// ─── Location: EXIF GPS within ~50km of the target ─────────────────
+		if (query.location != null) {
+			val lat = photo.exifGpsLat ?: return@filter false
+			val lon = photo.exifGpsLon ?: return@filter false
+			val (targetLat, targetLon) = query.location
+			val distanceM = haversineDistance(lat, lon, targetLat, targetLon)
+			if (distanceM > LOCATION_MATCH_RADIUS_M) return@filter false
+		}
 
-        // ─── Sprint 9 / L6 — AI tag prefix: comma-separated tags contain ──
-        // The photo's `aiTags` field is a comma-separated string like
-        // "beach,sunset,ocean". The user's `tag:beach` query matches if
-        // any tag in that list contains "beach" (case-insensitive).
-        if (query.tagPrefix.isNotEmpty()) {
-            val tags = photo.aiTags ?: return@filter false
-            val tagList = tags.split(",").map { it.trim().lowercase(Locale.US) }
-            val needle = query.tagPrefix.lowercase(Locale.US)
-            if (tagList.none { it.contains(needle) }) return@filter false
-        }
+		// ─── Sprint 9 / L6 — AI tag prefix: comma-separated tags contain ──
+		// The photo's `aiTags` field is a comma-separated string like
+		// "beach,sunset,ocean". The user's `tag:beach` query matches if
+		// any tag in that list contains "beach" (case-insensitive).
+		if (query.tagPrefix.isNotEmpty()) {
+			val tags = photo.aiTags ?: return@filter false
+			val tagList = tags.split(",").map { it.trim().lowercase(Locale.US) }
+			val needle = query.tagPrefix.lowercase(Locale.US)
+			if (tagList.none { it.contains(needle) }) return@filter false
+		}
 
-        true
-    }
+		true
+	}
 }
 
 /** ~50km radius for location: prefix matches. Coarse but useful for "city-level" search. */
@@ -217,15 +225,21 @@ private const val LOCATION_MATCH_RADIUS_M = 50_000.0
  *
  * @since v13 — Sprint 6 / M4 EXIF search
  */
-private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val r = 6_371_000.0 // Earth radius in meters
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2)
-    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-    return r * c
+private fun haversineDistance(
+	lat1: Double,
+	lon1: Double,
+	lat2: Double,
+	lon2: Double,
+): Double {
+	val r = 6_371_000.0 // Earth radius in meters
+	val dLat = Math.toRadians(lat2 - lat1)
+	val dLon = Math.toRadians(lon2 - lon1)
+	val a =
+		Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+			Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+			Math.sin(dLon / 2) * Math.sin(dLon / 2)
+	val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+	return r * c
 }
 
 /**
@@ -237,6 +251,6 @@ private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Do
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 fun searchHintText(): String {
-    val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-    return "Search by name, or use date:$currentYear, camera:Canon, location:lat,lon"
+	val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+	return "Search by name, or use date:$currentYear, camera:Canon, location:lat,lon"
 }

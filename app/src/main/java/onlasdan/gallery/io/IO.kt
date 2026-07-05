@@ -36,132 +36,138 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 @Singleton
-class IO @Inject constructor(
-    @ApplicationContext val context: Context,
-) {
-    val zip = Zip(context)
+class IO
+	@Inject
+	constructor(
+		@ApplicationContext val context: Context,
+	) {
+		val zip = Zip(context)
 
-    class Zip(private val context: Context) {
-        fun openZipInput(uri: Uri): ZipInputStream {
-            val inputStream = try {
-                context.contentResolver.openInputStream(uri)
-            } catch (e: IOException) {
-                Timber.Forest.d("Error opening zip at: $uri $e")
-                null
-            }
+		class Zip(
+			private val context: Context,
+		) {
+			fun openZipInput(uri: Uri): ZipInputStream {
+				val inputStream =
+					try {
+						context.contentResolver.openInputStream(uri)
+					} catch (e: IOException) {
+						Timber.Forest.d("Error opening zip at: $uri $e")
+						null
+					}
 
-            return if (inputStream != null) {
-                ZipInputStream(BufferedInputStream(inputStream))
-            } else {
-                error("Could not open zip file at $uri")
-            }
-        }
+				return if (inputStream != null) {
+					ZipInputStream(BufferedInputStream(inputStream))
+				} else {
+					error("Could not open zip file at $uri")
+				}
+			}
 
-        fun openZipOutput(uri: Uri): ZipOutputStream {
-            val out = context.contentResolver.openOutputStream(uri)
-            return ZipOutputStream(out)
-        }
+			fun openZipOutput(uri: Uri): ZipOutputStream {
+				val out = context.contentResolver.openOutputStream(uri)
+				return ZipOutputStream(out)
+			}
 
-        suspend fun writeZipEntry(
-            filename: String,
-            input: InputStream,
-            zipOutputStream: ZipOutputStream,
-        ): Result<Unit> = suspendCoroutine { continuation ->
-            try {
-                val entry = ZipEntry(filename)
-                zipOutputStream.putNextEntry(entry)
+			suspend fun writeZipEntry(
+				filename: String,
+				input: InputStream,
+				zipOutputStream: ZipOutputStream,
+			): Result<Unit> =
+				suspendCoroutine { continuation ->
+					try {
+						val entry = ZipEntry(filename)
+						zipOutputStream.putNextEntry(entry)
 
-                val bytesWritten = input.copyTo(zipOutputStream)
-                input.close()
-                zipOutputStream.closeEntry()
+						val bytesWritten = input.copyTo(zipOutputStream)
+						input.close()
+						zipOutputStream.closeEntry()
 
-                if (bytesWritten <= 0) {
-                    throw IOException("Failed writing bytes to zip entry for: $filename. Copied bytes: $bytesWritten")
-                }
+						if (bytesWritten <= 0) {
+							throw IOException("Failed writing bytes to zip entry for: $filename. Copied bytes: $bytesWritten")
+						}
 
-                continuation.resume(Result.success(Unit))
-            } catch (e: IOException) {
-                Timber.Forest.e(e, "Error writing zip entry for $filename")
-                continuation.resume(Result.failure(e))
-            }
-        }
-    }
+						continuation.resume(Result.success(Unit))
+					} catch (e: IOException) {
+						Timber.Forest.e(e, "Error writing zip entry for $filename")
+						continuation.resume(Result.failure(e))
+					}
+				}
+		}
 
-    fun getFileName(uri: Uri): String? = try {
-        val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
-        context.contentResolver.query(uri, projection, null, null, null)?.use {
-            if (it.moveToFirst()) {
-                return it.getString(0)
+		fun getFileName(uri: Uri): String? =
+			try {
+				val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+				context.contentResolver.query(uri, projection, null, null, null)?.use {
+					if (it.moveToFirst()) {
+						return it.getString(0)
+					}
+				}
+				null
+			} catch (e: SecurityException) {
+				null
+			}
 
-            }
-        }
-        null
-    } catch (e: SecurityException) {
-        null
-    }
+		fun getFileSize(uri: Uri): Long {
+			context.contentResolver.openFileDescriptor(uri, "r")?.use {
+				return it.statSize
+			}
 
-    fun getFileSize(uri: Uri): Long {
-        context.contentResolver.openFileDescriptor(uri, "r")?.use {
-            return it.statSize
-        }
+			return -1L
+		}
 
-        return -1L
-    }
+		suspend fun copy(
+			input: InputStream,
+			output: OutputStream,
+		): Result<Long> =
+			suspendCoroutine { continuation ->
+				try {
+					val bytesWritten = input.copyTo(output, bufferSize = 8192)
+					output.flush()
+					output.close()
 
-    suspend fun copy(
-        input: InputStream,
-        output: OutputStream
-    ): Result<Long> = suspendCoroutine { continuation ->
-        try {
-            val bytesWritten = input.copyTo(output, bufferSize = 8192)
-            output.flush()
-            output.close()
+					continuation.resume(Result.success(bytesWritten))
+				} catch (e: Exception) {
+					continuation.resume(Result.failure(e))
+				}
+			}
 
-            continuation.resume(Result.success(bytesWritten))
-        } catch (e: Exception) {
-            continuation.resume(Result.failure(e))
-        }
-    }
+		fun openFileInput(fileUri: Uri): InputStream? =
+			try {
+				context.contentResolver.openInputStream(fileUri)
+			} catch (e: Exception) {
+				Timber.e("Error opening external file at $fileUri: $e")
+				null
+			}
 
-    fun openFileInput(fileUri: Uri): InputStream? =
-        try {
-            context.contentResolver.openInputStream(fileUri)
-        } catch (e: Exception) {
-            Timber.e("Error opening external file at $fileUri: $e")
-            null
-        }
+		fun openFileOutput(fileUri: Uri): OutputStream? =
+			try {
+				context.contentResolver.openOutputStream(fileUri)
+			} catch (e: Exception) {
+				Timber.e("Error opening external file at $fileUri: $e")
+				null
+			}
 
-    fun openFileOutput(fileUri: Uri): OutputStream? =
-        try {
-            context.contentResolver.openOutputStream(fileUri)
-        } catch (e: Exception) {
-            Timber.e("Error opening external file at $fileUri: $e")
-            null
-        }
+		fun openFileOutput(
+			contentResolver: ContentResolver,
+			filename: String,
+			mimeType: String,
+			destinationUri: Uri,
+		): OutputStream? =
+			try {
+				DocumentFile.fromTreeUri(context, destinationUri)?.let { dir ->
+					val newFile = dir.createFile(mimeType, filename)
+					newFile?.uri?.let { contentResolver.openOutputStream(it) }
+				}
+			} catch (e: IOException) {
+				Timber.e("Error opening external file at $destinationUri: $e")
+				null
+			}
 
-    fun openFileOutput(
-        contentResolver: ContentResolver,
-        filename: String,
-        mimeType: String,
-        destinationUri: Uri
-    ): OutputStream? {
-        return try {
-            DocumentFile.fromTreeUri(context, destinationUri)?.let { dir ->
-                val newFile = dir.createFile(mimeType, filename)
-                newFile?.uri?.let { contentResolver.openOutputStream(it) }
-            }
-        } catch (e: IOException) {
-            Timber.e("Error opening external file at $destinationUri: $e")
-            null
-        }
-    }
-
-    fun deleteFile(fileUri: Uri): Boolean? =
-        try {
-            val srcDoc = DocumentFile.fromSingleUri(context, fileUri)
-            srcDoc?.delete()
-        } catch (e: IOException) {
-            Timber.Forest.e("Error deleting external file at $fileUri: $e")
-            null
-        }
-}
+		fun deleteFile(fileUri: Uri): Boolean? =
+			try {
+				val srcDoc = DocumentFile.fromSingleUri(context, fileUri)
+				srcDoc?.delete()
+			} catch (e: IOException) {
+				Timber.Forest.e("Error deleting external file at $fileUri: $e")
+				null
+			}
+	}

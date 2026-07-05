@@ -54,56 +54,56 @@ import onlasdan.gallery.ui.theme.AppTheme
  * @since v13 — Sprint 7 / L2 fake crash
  */
 class FakeCrashActivity : ComponentActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            AppTheme {
-                FakeCrashScreen(
-                    onClose = { finishAndRemoveTask() },
-                )
-            }
-        }
-    }
+	override fun onCreate(savedInstanceState: Bundle?) {
+		super.onCreate(savedInstanceState)
+		setContent {
+			AppTheme {
+				FakeCrashScreen(
+					onClose = { finishAndRemoveTask() },
+				)
+			}
+		}
+	}
 }
 
 @Composable
 private fun FakeCrashScreen(onClose: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = "PhotoZ keeps stopping",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = "The app has stopped unexpectedly. Try again.",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Column(
-                modifier = Modifier.padding(top = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(onClick = onClose) {
-                    Text("Close app")
-                }
-                TextButton(onClick = onClose) {
-                    Text("Send feedback")
-                }
-            }
-        }
-    }
+	Surface(
+		modifier = Modifier.fillMaxSize(),
+		color = MaterialTheme.colorScheme.surface,
+	) {
+		Column(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(24.dp),
+			horizontalAlignment = Alignment.CenterHorizontally,
+			verticalArrangement = Arrangement.Center,
+		) {
+			Text(
+				text = "PhotoZ keeps stopping",
+				style = MaterialTheme.typography.headlineSmall,
+				textAlign = TextAlign.Center,
+				color = MaterialTheme.colorScheme.onSurface,
+			)
+			Text(
+				text = "The app has stopped unexpectedly. Try again.",
+				style = MaterialTheme.typography.bodyMedium,
+				textAlign = TextAlign.Center,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				modifier = Modifier.padding(top = 8.dp),
+			)
+			Column(
+				modifier = Modifier.padding(top = 24.dp),
+				verticalArrangement = Arrangement.spacedBy(8.dp),
+			) {
+				TextButton(onClick = onClose) {
+					Text("Close app")
+				}
+				TextButton(onClick = onClose) {
+					Text("Send feedback")
+				}
+			}
+		}
+	}
 }

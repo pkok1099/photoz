@@ -94,403 +94,418 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class RepoSetupFragment : Fragment() {
+	private val viewModel: RepoSetupViewModel by viewModels()
 
-    private val viewModel: RepoSetupViewModel by viewModels()
+	@Inject
+	lateinit var navigateToGallery: NavigateToGallery
 
-    @Inject
-    lateinit var navigateToGallery: NavigateToGallery
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					// ─── Item 2 fix: POST_NOTIFICATIONS permission launcher (login branch) ──
+					// The login branch (onUnlocked) goes directly to the gallery WITHOUT
+					// passing through RecoveryPhraseSetupFragment, so the permission request
+					// that lives in RecoveryPhraseSetupFragment never fires for login users.
+					// This was the root cause of "notifications never appear for users who
+					// log in with their recovery phrase".
+					//
+					// Fix: register the same kind of launcher here at the RepoSetupScreen
+					// composable level (rememberLauncherForActivityResult must be called
+					// from a @Composable context). The onUnlocked lambda below checks the
+					// permission; if not granted (and SDK >= 33), it launches the system
+					// dialog. The result callback navigates to the gallery regardless of
+					// granted/denied — uploads work either way (notification is UX-only).
+					val notificationPermissionLauncher =
+						rememberLauncherForActivityResult(
+							ActivityResultContracts.RequestPermission(),
+						) { granted ->
+							android.util.Log.e(
+								"RcloneDiag",
+								"POST_NOTIFICATIONS: result callback fired — granted=$granted (login branch, RepoSetupFragment)",
+							)
+							Timber.i("POST_NOTIFICATIONS permission granted=$granted (login branch)")
+							// Navigate to gallery regardless of granted/denied — uploads work
+							// either way (notification is UX-only, not a functional dependency).
+							navigateToGallery(findNavController())
+						}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    // ─── Item 2 fix: POST_NOTIFICATIONS permission launcher (login branch) ──
-                    // The login branch (onUnlocked) goes directly to the gallery WITHOUT
-                    // passing through RecoveryPhraseSetupFragment, so the permission request
-                    // that lives in RecoveryPhraseSetupFragment never fires for login users.
-                    // This was the root cause of "notifications never appear for users who
-                    // log in with their recovery phrase".
-                    //
-                    // Fix: register the same kind of launcher here at the RepoSetupScreen
-                    // composable level (rememberLauncherForActivityResult must be called
-                    // from a @Composable context). The onUnlocked lambda below checks the
-                    // permission; if not granted (and SDK >= 33), it launches the system
-                    // dialog. The result callback navigates to the gallery regardless of
-                    // granted/denied — uploads work either way (notification is UX-only).
-                    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { granted ->
-                        android.util.Log.e("RcloneDiag",
-                            "POST_NOTIFICATIONS: result callback fired — granted=$granted (login branch, RepoSetupFragment)")
-                        Timber.i("POST_NOTIFICATIONS permission granted=$granted (login branch)")
-                        // Navigate to gallery regardless of granted/denied — uploads work
-                        // either way (notification is UX-only, not a functional dependency).
-                        navigateToGallery(findNavController())
-                    }
-
-                    RepoSetupScreen(
-                        viewModel = viewModel,
-                        onCompleted = {
-                            // @since PR3 — repo setup now chains forward to SetupFragment
-                            // (vault password) instead of jumping directly to the gallery.
-                            // The OpenGalleryUseCase gate inside SetupFragment's
-                            // navigateToGallery will pass because repoConfirmed was set
-                            // to true during repo setup.
-                            findNavController().navigate(
-                                R.id.action_repoSetupFragment_to_setupFragment
-                            )
-                        },
-                        // @since key-escrow — login-branch phrase entry.
-                        // When the user successfully unlocks via the embedded
-                        // RecoveryPhraseRestoreScreen, the VMK is in memory via
-                        // SessionRepository — skip SetupFragment (no PIN/password
-                        // needed) and go straight to the gallery.
-                        //
-                        // @since Item 2 fix — request POST_NOTIFICATIONS before
-                        // navigating to gallery. The login branch never reaches
-                        // RecoveryPhraseSetupFragment (where the permission request
-                        // lives for the register branch), so without this the
-                        // notification permission would never be requested for
-                        // login users.
-                        onUnlocked = {
-                            // Check + request POST_NOTIFICATIONS before navigating to gallery.
-                            // Same pattern as RecoveryPhraseSetupFragment's onContinue —
-                            // see that file for the full rationale.
-                            val needsRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                ContextCompat.checkSelfPermission(
-                                    requireContext(),
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) != PackageManager.PERMISSION_GRANTED
-                            } else {
-                                false
-                            }
-                            if (needsRequest) {
-                                android.util.Log.e("RcloneDiag",
-                                    "POST_NOTIFICATIONS: launching permission request (login branch, onUnlocked)")
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                android.util.Log.e("RcloneDiag",
-                                    "POST_NOTIFICATIONS: launch() returned (login branch, onUnlocked) — awaiting result callback")
-                            } else {
-                                android.util.Log.e("RcloneDiag",
-                                    "POST_NOTIFICATIONS: already granted or not needed (SDK < 33) — navigating to gallery (login branch, onUnlocked)")
-                                navigateToGallery(findNavController())
-                            }
-                        },
-                        onBack = {
-                            findNavController().navigateUp()
-                        },
-                    )
-                }
-            }
-        }
-    }
+					RepoSetupScreen(
+						viewModel = viewModel,
+						onCompleted = {
+							// @since PR3 — repo setup now chains forward to SetupFragment
+							// (vault password) instead of jumping directly to the gallery.
+							// The OpenGalleryUseCase gate inside SetupFragment's
+							// navigateToGallery will pass because repoConfirmed was set
+							// to true during repo setup.
+							findNavController().navigate(
+								R.id.action_repoSetupFragment_to_setupFragment,
+							)
+						},
+						// @since key-escrow — login-branch phrase entry.
+						// When the user successfully unlocks via the embedded
+						// RecoveryPhraseRestoreScreen, the VMK is in memory via
+						// SessionRepository — skip SetupFragment (no PIN/password
+						// needed) and go straight to the gallery.
+						//
+						// @since Item 2 fix — request POST_NOTIFICATIONS before
+						// navigating to gallery. The login branch never reaches
+						// RecoveryPhraseSetupFragment (where the permission request
+						// lives for the register branch), so without this the
+						// notification permission would never be requested for
+						// login users.
+						onUnlocked = {
+							// Check + request POST_NOTIFICATIONS before navigating to gallery.
+							// Same pattern as RecoveryPhraseSetupFragment's onContinue —
+							// see that file for the full rationale.
+							val needsRequest =
+								if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+									ContextCompat.checkSelfPermission(
+										requireContext(),
+										Manifest.permission.POST_NOTIFICATIONS,
+									) != PackageManager.PERMISSION_GRANTED
+								} else {
+									false
+								}
+							if (needsRequest) {
+								android.util.Log.e(
+									"RcloneDiag",
+									"POST_NOTIFICATIONS: launching permission request (login branch, onUnlocked)",
+								)
+								notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+								android.util.Log.e(
+									"RcloneDiag",
+									"POST_NOTIFICATIONS: launch() returned (login branch, onUnlocked) — awaiting result callback",
+								)
+							} else {
+								android.util.Log.e(
+									"RcloneDiag",
+									"POST_NOTIFICATIONS: already granted or not needed (SDK < 33) — navigating to gallery (login branch, onUnlocked)",
+								)
+								navigateToGallery(findNavController())
+							}
+						},
+						onBack = {
+							findNavController().navigateUp()
+						},
+					)
+				}
+			}
+		}
 }
 
 @Composable
 private fun RepoSetupScreen(
-    viewModel: RepoSetupViewModel,
-    onCompleted: () -> Unit,
-    onUnlocked: () -> Unit,
-    onBack: () -> Unit,
+	viewModel: RepoSetupViewModel,
+	onCompleted: () -> Unit,
+	onUnlocked: () -> Unit,
+	onBack: () -> Unit,
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+	val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(state) {
-        if (state is RepoSetupState.Completed) {
-            onCompleted()
-        }
-        // @since Part B two-layer escrow — when the user successfully unlocks via
-        // the password-entry (or phrase-entry) login-branch path, the VMK is in
-        // memory via SessionRepository. Skip SetupFragment (no PIN/password
-        // needed) and go straight to the gallery.
-        if (state is RepoSetupState.Unlocked) {
-            onUnlocked()
-        }
-    }
+	LaunchedEffect(state) {
+		if (state is RepoSetupState.Completed) {
+			onCompleted()
+		}
+		// @since Part B two-layer escrow — when the user successfully unlocks via
+		// the password-entry (or phrase-entry) login-branch path, the VMK is in
+		// memory via SessionRepository. Skip SetupFragment (no PIN/password
+		// needed) and go straight to the gallery.
+		if (state is RepoSetupState.Unlocked) {
+			onUnlocked()
+		}
+	}
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        // @since key-escrow — login-branch phrase entry.
-        // NeedsPhraseEntry embeds RecoveryPhraseRestoreScreen, which has its own
-        // Scaffold (topBar + bottomBar). It needs the full screen — NOT wrapped
-        // in the padded/centered Column used by the other states.
-        if (state is RepoSetupState.NeedsPhraseEntry) {
-            NeedsPhraseEntryContent(
-                onUnlocked = onUnlocked,
-                onBack = onBack,
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // ─── Sprint 1 / P5: Edge-to-Edge ─────────────────────────────
-                    // Apply status bar inset so the centered content (title, buttons,
-                    // text fields) isn't drawn under the status bar. The navigation
-                    // bar inset is handled by the activity's bottom Compose menu (not
-                    // shown on this screen — RepoSetup blocks navigation until done).
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                when (val s = state) {
-                    RepoSetupState.NeedsConfig -> NeedsConfigContent(viewModel)
-                    is RepoSetupState.NeedsRemoteChoice -> NeedsRemoteChoiceContent(s.remotes, viewModel)
-                    RepoSetupState.Checking -> CheckingContent()
-                    RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
-                    RepoSetupState.Connecting -> ConnectingContent()
-                    RepoSetupState.RestoringBackup -> RestoringBackupContent()
-                    RepoSetupState.NoEscrowAvailable -> NoEscrowAvailableContent(viewModel)
-                    is RepoSetupState.NeedsPasswordEntry -> NeedsPasswordEntryContent(s, viewModel)
-                    RepoSetupState.Completed -> {
-                        // Will be navigated away by LaunchedEffect
-                    }
-                    RepoSetupState.Unlocked -> {
-                        // Will be navigated away by LaunchedEffect (onUnlocked)
-                    }
-                    is RepoSetupState.Error -> ErrorContent(s.message, viewModel)
-                    RepoSetupState.NeedsPhraseEntry -> {
-                        // Handled by the outer if — unreachable here, but the
-                        // when must remain exhaustive over the sealed hierarchy.
-                    }
-                }
-            }
-        }
-    }
+	Surface(
+		modifier = Modifier.fillMaxSize(),
+		color = MaterialTheme.colorScheme.background,
+	) {
+		// @since key-escrow — login-branch phrase entry.
+		// NeedsPhraseEntry embeds RecoveryPhraseRestoreScreen, which has its own
+		// Scaffold (topBar + bottomBar). It needs the full screen — NOT wrapped
+		// in the padded/centered Column used by the other states.
+		if (state is RepoSetupState.NeedsPhraseEntry) {
+			NeedsPhraseEntryContent(
+				onUnlocked = onUnlocked,
+				onBack = onBack,
+			)
+		} else {
+			Column(
+				modifier =
+					Modifier
+						.fillMaxSize()
+						// ─── Sprint 1 / P5: Edge-to-Edge ─────────────────────────────
+						// Apply status bar inset so the centered content (title, buttons,
+						// text fields) isn't drawn under the status bar. The navigation
+						// bar inset is handled by the activity's bottom Compose menu (not
+						// shown on this screen — RepoSetup blocks navigation until done).
+						.statusBarsPadding()
+						.navigationBarsPadding()
+						.padding(24.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.Center,
+			) {
+				when (val s = state) {
+					RepoSetupState.NeedsConfig -> NeedsConfigContent(viewModel)
+					is RepoSetupState.NeedsRemoteChoice -> NeedsRemoteChoiceContent(s.remotes, viewModel)
+					RepoSetupState.Checking -> CheckingContent()
+					RepoSetupState.ReadyToRegister -> ReadyToRegisterContent(viewModel)
+					RepoSetupState.Connecting -> ConnectingContent()
+					RepoSetupState.RestoringBackup -> RestoringBackupContent()
+					RepoSetupState.NoEscrowAvailable -> NoEscrowAvailableContent(viewModel)
+					is RepoSetupState.NeedsPasswordEntry -> NeedsPasswordEntryContent(s, viewModel)
+					RepoSetupState.Completed -> {
+						// Will be navigated away by LaunchedEffect
+					}
+					RepoSetupState.Unlocked -> {
+						// Will be navigated away by LaunchedEffect (onUnlocked)
+					}
+					is RepoSetupState.Error -> ErrorContent(s.message, viewModel)
+					RepoSetupState.NeedsPhraseEntry -> {
+						// Handled by the outer if — unreachable here, but the
+						// when must remain exhaustive over the sealed hierarchy.
+					}
+				}
+			}
+		}
+	}
 }
 
 @Composable
 private fun NeedsConfigContent(viewModel: RepoSetupViewModel) {
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let { viewModel.importConfig(it) }
-    }
+	val launcher =
+		rememberLauncherForActivityResult(
+			ActivityResultContracts.OpenDocument(),
+		) { uri ->
+			uri?.let { viewModel.importConfig(it) }
+		}
 
-    Text(
-        text = stringResource(R.string.repo_setup_title),
-        style = MaterialTheme.typography.headlineMedium,
-        textAlign = TextAlign.Center,
-    )
-    Text(
-        text = stringResource(R.string.repo_setup_needs_config),
-        style = MaterialTheme.typography.bodyMedium,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 16.dp),
-    )
-    Button(
-        onClick = { launcher.launch(arrayOf("*/*")) },
-        modifier = Modifier.padding(top = 24.dp),
-    ) {
-        Text(stringResource(R.string.repo_setup_pick_config))
-    }
+	Text(
+		text = stringResource(R.string.repo_setup_title),
+		style = MaterialTheme.typography.headlineMedium,
+		textAlign = TextAlign.Center,
+	)
+	Text(
+		text = stringResource(R.string.repo_setup_needs_config),
+		style = MaterialTheme.typography.bodyMedium,
+		textAlign = TextAlign.Center,
+		modifier = Modifier.padding(top = 16.dp),
+	)
+	Button(
+		onClick = { launcher.launch(arrayOf("*/*")) },
+		modifier = Modifier.padding(top = 24.dp),
+	) {
+		Text(stringResource(R.string.repo_setup_pick_config))
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NeedsRemoteChoiceContent(
-    remotes: List<RcloneConfigManager.RemoteInfo>,
-    viewModel: RepoSetupViewModel,
+	remotes: List<RcloneConfigManager.RemoteInfo>,
+	viewModel: RepoSetupViewModel,
 ) {
-    // Single-page remote picker (Item 3 redesign).
-    //
-    // Layout (top-to-bottom):
-    //   1. Title — "Pick which remote to use for backup"
-    //   2. "Check All" button — probes every remote in the imported rclone.conf
-    //      via [RepoSetupViewModel.checkAllRemotes] and annotates each row with
-    //      "Repo found" / "No repo" / "Checking…" / "Error". Optional — the
-    //      user can pick a remote without checking first.
-    //   3. Scrollable list of remotes — each row is a radio button + name +
-    //      type + status badge. Tapping a row selects that remote.
-    //   4. Inline password field — visible below the list. The user can type
-    //      their vault password preemptively; if the chosen remote turns out
-    //      to have an existing repo with PASSWORD_PLUS_PHRASE escrow, the
-    //      password is auto-submitted via [RepoSetupViewModel.submitPassword]
-    //      so the user goes straight to the gallery without re-typing it on
-    //      the dedicated NeedsPasswordEntry screen. For other cases (no repo,
-    //      PHRASE_ONLY escrow, no escrow), the password is ignored and the
-    //      existing state-machine flow takes over.
-    //   5. "Connect" button — triggers the existing
-    //      `chooseRemote(selected)` flow which transitions through Checking
-    //      → Connecting → RestoringBackup → (NeedsPasswordEntry |
-    //      NeedsPhraseEntry | NoEscrowAvailable | Completed | Unlocked).
+	// Single-page remote picker (Item 3 redesign).
+	//
+	// Layout (top-to-bottom):
+	//   1. Title — "Pick which remote to use for backup"
+	//   2. "Check All" button — probes every remote in the imported rclone.conf
+	//      via [RepoSetupViewModel.checkAllRemotes] and annotates each row with
+	//      "Repo found" / "No repo" / "Checking…" / "Error". Optional — the
+	//      user can pick a remote without checking first.
+	//   3. Scrollable list of remotes — each row is a radio button + name +
+	//      type + status badge. Tapping a row selects that remote.
+	//   4. Inline password field — visible below the list. The user can type
+	//      their vault password preemptively; if the chosen remote turns out
+	//      to have an existing repo with PASSWORD_PLUS_PHRASE escrow, the
+	//      password is auto-submitted via [RepoSetupViewModel.submitPassword]
+	//      so the user goes straight to the gallery without re-typing it on
+	//      the dedicated NeedsPasswordEntry screen. For other cases (no repo,
+	//      PHRASE_ONLY escrow, no escrow), the password is ignored and the
+	//      existing state-machine flow takes over.
+	//   5. "Connect" button — triggers the existing
+	//      `chooseRemote(selected)` flow which transitions through Checking
+	//      → Connecting → RestoringBackup → (NeedsPasswordEntry |
+	//      NeedsPhraseEntry | NoEscrowAvailable | Completed | Unlocked).
 
-    val remoteStatuses by viewModel.remoteStatuses.collectAsStateWithLifecycle()
-    var selected by remember { mutableStateOf<String?>(null) }
-    var password by remember { mutableStateOf("") }
+	val remoteStatuses by viewModel.remoteStatuses.collectAsStateWithLifecycle()
+	var selected by remember { mutableStateOf<String?>(null) }
+	var password by remember { mutableStateOf("") }
 
-    val statusesByRemote: Map<String, RemoteStatus> = remoteStatuses.associateBy { it.remote.name }
+	val statusesByRemote: Map<String, RemoteStatus> = remoteStatuses.associateBy { it.remote.name }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = stringResource(R.string.repo_setup_pick_remote),
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-        )
+	Column(
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.verticalScroll(rememberScrollState()),
+		horizontalAlignment = Alignment.CenterHorizontally,
+	) {
+		Text(
+			text = stringResource(R.string.repo_setup_pick_remote),
+			style = MaterialTheme.typography.titleLarge,
+			textAlign = TextAlign.Center,
+		)
 
-        OutlinedButton(
-            onClick = { viewModel.checkAllRemotes() },
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(stringResource(R.string.repo_setup_check_all))
-        }
+		OutlinedButton(
+			onClick = { viewModel.checkAllRemotes() },
+			modifier = Modifier.padding(top = 16.dp),
+		) {
+			Text(stringResource(R.string.repo_setup_check_all))
+		}
 
-        Spacer(Modifier.height(16.dp))
+		Spacer(Modifier.height(16.dp))
 
-        // Scrollable remote list. Capped at 320.dp so the password field +
-        // Connect button remain visible even when there are many remotes.
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 320.dp),
-            ) {
-                items(remotes) { remote ->
-                    val status = statusesByRemote[remote.name]?.status
-                    RemoteRow(
-                        remote = remote,
-                        status = status,
-                        selected = selected == remote.name,
-                        onSelect = { selected = remote.name },
-                    )
-                }
-            }
-        }
+		// Scrollable remote list. Capped at 320.dp so the password field +
+		// Connect button remain visible even when there are many remotes.
+		Surface(
+			shape = RoundedCornerShape(12.dp),
+			color = MaterialTheme.colorScheme.surfaceContainerLow,
+			modifier = Modifier.fillMaxWidth(),
+		) {
+			LazyColumn(
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.heightIn(max = 320.dp),
+			) {
+				items(remotes) { remote ->
+					val status = statusesByRemote[remote.name]?.status
+					RemoteRow(
+						remote = remote,
+						status = status,
+						selected = selected == remote.name,
+						onSelect = { selected = remote.name },
+					)
+				}
+			}
+		}
 
-        Spacer(Modifier.height(16.dp))
+		Spacer(Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text(stringResource(R.string.repo_setup_password_label)) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done,
-            ),
-            supportingText = {
-                Text(stringResource(R.string.repo_setup_password_hint))
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+		OutlinedTextField(
+			value = password,
+			onValueChange = { password = it },
+			label = { Text(stringResource(R.string.repo_setup_password_label)) },
+			singleLine = true,
+			visualTransformation = PasswordVisualTransformation(),
+			keyboardOptions =
+				KeyboardOptions(
+					keyboardType = KeyboardType.Password,
+					imeAction = ImeAction.Done,
+				),
+			supportingText = {
+				Text(stringResource(R.string.repo_setup_password_hint))
+			},
+			modifier = Modifier.fillMaxWidth(),
+		)
 
-        Spacer(Modifier.height(16.dp))
+		Spacer(Modifier.height(16.dp))
 
-        Button(
-            onClick = {
-                val picked = selected ?: return@Button
-                viewModel.chooseRemote(picked, pendingPassword = password)
-            },
-            enabled = selected != null,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.repo_setup_connect))
-        }
-    }
+		Button(
+			onClick = {
+				val picked = selected ?: return@Button
+				viewModel.chooseRemote(picked, pendingPassword = password)
+			},
+			enabled = selected != null,
+			modifier = Modifier.fillMaxWidth(),
+		) {
+			Text(stringResource(R.string.repo_setup_connect))
+		}
+	}
 }
 
 @Composable
 private fun RemoteRow(
-    remote: RcloneConfigManager.RemoteInfo,
-    status: RemoteCheckStatus?,
-    selected: Boolean,
-    onSelect: () -> Unit,
+	remote: RcloneConfigManager.RemoteInfo,
+	status: RemoteCheckStatus?,
+	selected: Boolean,
+	onSelect: () -> Unit,
 ) {
-    val typeSuffix = remote.type?.let { " ($it)" } ?: ""
-    val (statusText, statusColor) = when (status) {
-        RemoteCheckStatus.REPO_FOUND ->
-            stringResource(R.string.repo_setup_remote_status_repo_found) to
-                MaterialTheme.colorScheme.primary
-        RemoteCheckStatus.NO_REPO ->
-            stringResource(R.string.repo_setup_remote_status_no_repo) to
-                MaterialTheme.colorScheme.tertiary
-        RemoteCheckStatus.CHECKING ->
-            stringResource(R.string.repo_setup_remote_status_checking) to
-                MaterialTheme.colorScheme.secondary
-        RemoteCheckStatus.ERROR ->
-            stringResource(R.string.repo_setup_remote_status_error) to
-                MaterialTheme.colorScheme.error
-        RemoteCheckStatus.UNCHECKED, null ->
-            stringResource(R.string.repo_setup_remote_status_unchecked) to
-                MaterialTheme.colorScheme.outline
-    }
+	val typeSuffix = remote.type?.let { " ($it)" } ?: ""
+	val (statusText, statusColor) =
+		when (status) {
+			RemoteCheckStatus.REPO_FOUND ->
+				stringResource(R.string.repo_setup_remote_status_repo_found) to
+					MaterialTheme.colorScheme.primary
+			RemoteCheckStatus.NO_REPO ->
+				stringResource(R.string.repo_setup_remote_status_no_repo) to
+					MaterialTheme.colorScheme.tertiary
+			RemoteCheckStatus.CHECKING ->
+				stringResource(R.string.repo_setup_remote_status_checking) to
+					MaterialTheme.colorScheme.secondary
+			RemoteCheckStatus.ERROR ->
+				stringResource(R.string.repo_setup_remote_status_error) to
+					MaterialTheme.colorScheme.error
+			RemoteCheckStatus.UNCHECKED, null ->
+				stringResource(R.string.repo_setup_remote_status_unchecked) to
+					MaterialTheme.colorScheme.outline
+		}
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(CircleShape)
-            .clickable { onSelect() }
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onSelect,
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = remote.name + typeSuffix,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = statusText,
-                fontSize = 13.sp,
-                color = statusColor,
-            )
-        }
-    }
+	Row(
+		horizontalArrangement = Arrangement.spacedBy(12.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		modifier =
+			Modifier
+				.clip(CircleShape)
+				.clickable { onSelect() }
+				.fillMaxWidth()
+				.padding(horizontal = 12.dp, vertical = 10.dp),
+	) {
+		RadioButton(
+			selected = selected,
+			onClick = onSelect,
+		)
+		Column(modifier = Modifier.weight(1f)) {
+			Text(
+				text = remote.name + typeSuffix,
+				style = MaterialTheme.typography.bodyLarge,
+				fontWeight = FontWeight.Medium,
+			)
+			Text(
+				text = statusText,
+				fontSize = 13.sp,
+				color = statusColor,
+			)
+		}
+	}
 }
 
 @Composable
 private fun CheckingContent() {
-    CircularProgressIndicator()
-    Text(
-        text = stringResource(R.string.repo_setup_checking),
-        modifier = Modifier.padding(top = 16.dp),
-    )
+	CircularProgressIndicator()
+	Text(
+		text = stringResource(R.string.repo_setup_checking),
+		modifier = Modifier.padding(top = 16.dp),
+	)
 }
 
 @Composable
 private fun ReadyToRegisterContent(viewModel: RepoSetupViewModel) {
-    Text(
-        text = stringResource(R.string.repo_setup_ready_to_register),
-        style = MaterialTheme.typography.bodyLarge,
-        textAlign = TextAlign.Center,
-    )
-    Button(
-        onClick = { viewModel.confirmRegister() },
-        modifier = Modifier.padding(top = 24.dp),
-    ) {
-        Text(stringResource(R.string.repo_setup_register))
-    }
+	Text(
+		text = stringResource(R.string.repo_setup_ready_to_register),
+		style = MaterialTheme.typography.bodyLarge,
+		textAlign = TextAlign.Center,
+	)
+	Button(
+		onClick = { viewModel.confirmRegister() },
+		modifier = Modifier.padding(top = 24.dp),
+	) {
+		Text(stringResource(R.string.repo_setup_register))
+	}
 }
 
 @Composable
 private fun ConnectingContent() {
-    CircularProgressIndicator()
-    Text(
-        text = stringResource(R.string.repo_setup_connecting),
-        modifier = Modifier.padding(top = 16.dp),
-    )
+	CircularProgressIndicator()
+	Text(
+		text = stringResource(R.string.repo_setup_connecting),
+		modifier = Modifier.padding(top = 16.dp),
+	)
 }
 
 /**
@@ -502,12 +517,12 @@ private fun ConnectingContent() {
  */
 @Composable
 private fun RestoringBackupContent() {
-    CircularProgressIndicator()
-    Text(
-        text = stringResource(R.string.repo_setup_restoring_backup),
-        modifier = Modifier.padding(top = 16.dp),
-        textAlign = TextAlign.Center,
-    )
+	CircularProgressIndicator()
+	Text(
+		text = stringResource(R.string.repo_setup_restoring_backup),
+		modifier = Modifier.padding(top = 16.dp),
+		textAlign = TextAlign.Center,
+	)
 }
 
 /**
@@ -531,16 +546,16 @@ private fun RestoringBackupContent() {
  */
 @Composable
 private fun NeedsPhraseEntryContent(
-    onUnlocked: () -> Unit,
-    onBack: () -> Unit,
+	onUnlocked: () -> Unit,
+	onBack: () -> Unit,
 ) {
-    // Reused AS-IS — do NOT rebuild the phrase input UI. The screen has its
-    // own Scaffold (TopAppBar + bottom unlock button) and handles all input
-    // methods (type-by-hand, file, QR, clipboard).
-    RecoveryPhraseRestoreScreen(
-        onUnlocked = onUnlocked,
-        onBack = onBack,
-    )
+	// Reused AS-IS — do NOT rebuild the phrase input UI. The screen has its
+	// own Scaffold (TopAppBar + bottom unlock button) and handles all input
+	// methods (type-by-hand, file, QR, clipboard).
+	RecoveryPhraseRestoreScreen(
+		onUnlocked = onUnlocked,
+		onBack = onBack,
+	)
 }
 
 /**
@@ -556,23 +571,23 @@ private fun NeedsPhraseEntryContent(
  */
 @Composable
 private fun NoEscrowAvailableContent(viewModel: RepoSetupViewModel) {
-    Text(
-        text = stringResource(R.string.repo_setup_no_escrow_title),
-        style = MaterialTheme.typography.titleMedium,
-        textAlign = TextAlign.Center,
-    )
-    Text(
-        text = stringResource(R.string.repo_setup_no_escrow_body),
-        style = MaterialTheme.typography.bodyMedium,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 16.dp),
-    )
-    Button(
-        onClick = { viewModel.continueWithoutEscrow() },
-        modifier = Modifier.padding(top = 24.dp),
-    ) {
-        Text(stringResource(R.string.repo_setup_no_escrow_continue))
-    }
+	Text(
+		text = stringResource(R.string.repo_setup_no_escrow_title),
+		style = MaterialTheme.typography.titleMedium,
+		textAlign = TextAlign.Center,
+	)
+	Text(
+		text = stringResource(R.string.repo_setup_no_escrow_body),
+		style = MaterialTheme.typography.bodyMedium,
+		textAlign = TextAlign.Center,
+		modifier = Modifier.padding(top = 16.dp),
+	)
+	Button(
+		onClick = { viewModel.continueWithoutEscrow() },
+		modifier = Modifier.padding(top = 24.dp),
+	) {
+		Text(stringResource(R.string.repo_setup_no_escrow_continue))
+	}
 }
 
 /**
@@ -595,89 +610,96 @@ private fun NoEscrowAvailableContent(viewModel: RepoSetupViewModel) {
  */
 @Composable
 private fun NeedsPasswordEntryContent(
-    state: RepoSetupState.NeedsPasswordEntry,
-    viewModel: RepoSetupViewModel,
+	state: RepoSetupState.NeedsPasswordEntry,
+	viewModel: RepoSetupViewModel,
 ) {
-    var password by remember { mutableStateOf("") }
+	var password by remember { mutableStateOf("") }
 
-    Text(
-        text = stringResource(R.string.repo_setup_password_entry_title),
-        style = MaterialTheme.typography.titleMedium,
-        textAlign = TextAlign.Center,
-    )
-    Text(
-        text = stringResource(R.string.repo_setup_password_entry_subtitle),
-        style = MaterialTheme.typography.bodyMedium,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 16.dp),
-    )
+	Text(
+		text = stringResource(R.string.repo_setup_password_entry_title),
+		style = MaterialTheme.typography.titleMedium,
+		textAlign = TextAlign.Center,
+	)
+	Text(
+		text = stringResource(R.string.repo_setup_password_entry_subtitle),
+		style = MaterialTheme.typography.bodyMedium,
+		textAlign = TextAlign.Center,
+		modifier = Modifier.padding(top = 16.dp),
+	)
 
-    OutlinedTextField(
-        value = password,
-        onValueChange = { password = it },
-        label = { Text(stringResource(R.string.repo_setup_password_entry_title)) },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Password,
-            imeAction = ImeAction.Done,
-        ),
-        keyboardActions = KeyboardActions(
-            onDone = {
-                if (password.isNotEmpty() && !state.loading) {
-                    viewModel.submitPassword(password)
-                }
-            },
-        ),
-        isError = state.error != null,
-        supportingText = {
-            if (state.error != null) {
-                Text(
-                    text = state.error,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-        enabled = !state.loading,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 24.dp),
-    )
+	OutlinedTextField(
+		value = password,
+		onValueChange = { password = it },
+		label = { Text(stringResource(R.string.repo_setup_password_entry_title)) },
+		singleLine = true,
+		visualTransformation = PasswordVisualTransformation(),
+		keyboardOptions =
+			KeyboardOptions(
+				keyboardType = KeyboardType.Password,
+				imeAction = ImeAction.Done,
+			),
+		keyboardActions =
+			KeyboardActions(
+				onDone = {
+					if (password.isNotEmpty() && !state.loading) {
+						viewModel.submitPassword(password)
+					}
+				},
+			),
+		isError = state.error != null,
+		supportingText = {
+			if (state.error != null) {
+				Text(
+					text = state.error,
+					color = MaterialTheme.colorScheme.error,
+				)
+			}
+		},
+		enabled = !state.loading,
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.padding(top = 24.dp),
+	)
 
-    Spacer(Modifier.height(16.dp))
+	Spacer(Modifier.height(16.dp))
 
-    if (state.loading) {
-        CircularProgressIndicator()
-    } else {
-        Button(
-            onClick = { viewModel.submitPassword(password) },
-            enabled = password.isNotEmpty(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-        ) {
-            Text(stringResource(R.string.repo_setup_password_entry_submit))
-        }
-    }
+	if (state.loading) {
+		CircularProgressIndicator()
+	} else {
+		Button(
+			onClick = { viewModel.submitPassword(password) },
+			enabled = password.isNotEmpty(),
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.padding(top = 8.dp),
+		) {
+			Text(stringResource(R.string.repo_setup_password_entry_submit))
+		}
+	}
 }
 
 @Composable
-private fun ErrorContent(message: String, viewModel: RepoSetupViewModel) {
-    Text(
-        text = stringResource(R.string.repo_setup_error),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.error,
-    )
-    Text(
-        text = message,
-        style = MaterialTheme.typography.bodyMedium,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 8.dp),
-    )
-    OutlinedButton(
-        onClick = { viewModel.dismissError() },
-        modifier = Modifier.padding(top = 24.dp),
-    ) {
-        Text(stringResource(R.string.repo_setup_retry))
-    }
+private fun ErrorContent(
+	message: String,
+	viewModel: RepoSetupViewModel,
+) {
+	Text(
+		text = stringResource(R.string.repo_setup_error),
+		style = MaterialTheme.typography.titleMedium,
+		color = MaterialTheme.colorScheme.error,
+	)
+	Text(
+		text = message,
+		style = MaterialTheme.typography.bodyMedium,
+		textAlign = TextAlign.Center,
+		modifier = Modifier.padding(top = 8.dp),
+	)
+	OutlinedButton(
+		onClick = { viewModel.dismissError() },
+		modifier = Modifier.padding(top = 24.dp),
+	) {
+		Text(stringResource(R.string.repo_setup_retry))
+	}
 }

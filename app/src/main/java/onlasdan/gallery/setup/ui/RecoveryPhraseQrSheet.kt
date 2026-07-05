@@ -50,81 +50,83 @@ import onlasdan.gallery.uicomponnets.qr.QRCodeImage
 
 @Composable
 fun RecoveryPhraseQrSheet(
-    phrase: RecoveryPhrase,
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+	phrase: RecoveryPhrase,
+	onDismiss: () -> Unit,
+	onSaved: () -> Unit,
 ) {
-    val viewModel = hiltViewModel<RecoveryPhraseQrViewModel>()
+	val viewModel = hiltViewModel<RecoveryPhraseQrViewModel>()
 
-    Content(
-        phrase = phrase,
-        handleUiEvent = viewModel::handleUiEvent,
-        onDismiss = onDismiss,
-        onSaved = onSaved,
-    )
+	Content(
+		phrase = phrase,
+		handleUiEvent = viewModel::handleUiEvent,
+		onDismiss = onDismiss,
+		onSaved = onSaved,
+	)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Content(
-    phrase: RecoveryPhrase,
-    handleUiEvent: (RecoveryPhraseQrUiEvent) -> Unit,
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+	phrase: RecoveryPhrase,
+	handleUiEvent: (RecoveryPhraseQrUiEvent) -> Unit,
+	onDismiss: () -> Unit,
+	onSaved: () -> Unit,
 ) {
-    val context = LocalContext.current
+	val context = LocalContext.current
 
-    val saveQrLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-            it ?: return@rememberLauncherForActivityResult
-            handleUiEvent(RecoveryPhraseQrUiEvent.SaveToFile(phrase, context, it))
-            onSaved()
-        }
+	val saveQrLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
+			it ?: return@rememberLauncherForActivityResult
+			handleUiEvent(RecoveryPhraseQrUiEvent.SaveToFile(phrase, context, it))
+			onSaved()
+		}
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        dragHandle = null,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 20.dp)
-                .navigationBarsPadding()
-        ) {
-            AppName()
+	ModalBottomSheet(
+		onDismissRequest = onDismiss,
+		sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+		dragHandle = null,
+	) {
+		Column(
+			horizontalAlignment = Alignment.CenterHorizontally,
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.padding(horizontal = 20.dp)
+					.padding(top = 20.dp)
+					.navigationBarsPadding(),
+		) {
+			AppName()
 
-            Text(
-                text = stringResource(R.string.recovery_phrase_label)
-            )
+			Text(
+				text = stringResource(R.string.recovery_phrase_label),
+			)
 
-            QRCodeImage(
-                text = phrase.toMnemonicString(),
-                foregroundColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                backgroundColor = BottomSheetDefaults.ContainerColor,
-                modifier = Modifier
-                    .size(200.dp)
-            )
+			QRCodeImage(
+				text = phrase.toMnemonicString(),
+				foregroundColor = MaterialTheme.colorScheme.onSurfaceVariant,
+				backgroundColor = BottomSheetDefaults.ContainerColor,
+				modifier =
+					Modifier
+						.size(200.dp),
+			)
 
-            Text(
-                text = phrase.toMnemonicString().breakableAtDashes(),
-                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 30.dp)
-            )
+			Text(
+				text = phrase.toMnemonicString().breakableAtDashes(),
+				style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+				textAlign = TextAlign.Center,
+				modifier = Modifier.padding(horizontal = 30.dp),
+			)
 
-            Spacer(Modifier.height(20.dp))
+			Spacer(Modifier.height(20.dp))
 
-            Button(
-                onClick = { saveQrLauncher.launch("photok-recovery-phrase.jpg") },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.recovery_phrase_qr_save_as_image))
-            }
-        }
-    }
+			Button(
+				onClick = { saveQrLauncher.launch("photok-recovery-phrase.jpg") },
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				Text(stringResource(R.string.recovery_phrase_qr_save_as_image))
+			}
+		}
+	}
 }
 
 private fun String.breakableAtDashes() = replace("-", "-\u200B")
@@ -132,16 +134,17 @@ private fun String.breakableAtDashes() = replace("-", "-\u200B")
 @PreviewLightDark
 @Composable
 private fun Preview() {
-    AppTheme {
-        Content(
-            phrase = RecoveryPhrase(
-                buildList {
-                    repeat(12) { add("asd") }
-                },
-            ),
-            handleUiEvent = {},
-            onDismiss = {},
-            onSaved = {},
-        )
-    }
+	AppTheme {
+		Content(
+			phrase =
+				RecoveryPhrase(
+					buildList {
+						repeat(12) { add("asd") }
+					},
+				),
+			handleUiEvent = {},
+			onDismiss = {},
+			onSaved = {},
+		)
+	}
 }

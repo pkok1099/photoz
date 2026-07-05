@@ -26,8 +26,6 @@ import onlasdan.gallery.settings.data.Config.Companion.SECURITY_ALLOW_SCREENSHOT
 import onlasdan.gallery.settings.data.Config.Companion.SECURITY_ALLOW_SCREENSHOTS_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED
 import onlasdan.gallery.settings.data.Config.Companion.SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT
-import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN
-import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_AUTO_UPLOAD_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_DELETE_AFTER_UPLOAD
@@ -36,6 +34,8 @@ import onlasdan.gallery.settings.data.Config.Companion.SYNC_VERIFY_HASH
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_VERIFY_HASH_DEFAULT
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY
 import onlasdan.gallery.settings.data.Config.Companion.SYNC_WIFI_ONLY_DEFAULT
+import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN
+import onlasdan.gallery.settings.data.Config.Companion.SYSTEM_DESIGN_DEFAULT
 import onlasdan.gallery.settings.domain.models.LockTimeout
 import onlasdan.gallery.settings.domain.models.SettingsEnum
 import onlasdan.gallery.settings.domain.models.StartPage
@@ -43,417 +43,426 @@ import onlasdan.gallery.settings.domain.models.SystemDesignEnum
 import onlasdan.gallery.settings.ui.SettingsFragment
 
 data class PreferenceScreenConfig(
-    val sections: List<PreferenceSection>,
+	val sections: List<PreferenceSection>,
 )
 
 data class PreferenceSection(
-    @get:StringRes val title: Int,
-    @get:StringRes val summary: Int?,
-    val preferences: List<Preference>,
+	@get:StringRes val title: Int,
+	@get:StringRes val summary: Int?,
+	val preferences: List<Preference>,
 )
 
 sealed interface Preference {
-    val key: String
-    @get:DrawableRes val icon: Int
-    @get:StringRes val title: Int
+	val key: String
 
-    data class Simple(
-        override val key: String,
-        override val icon: Int,
-        override val title: Int,
-        val summary: Int,
-    ) : Preference
+	@get:DrawableRes val icon: Int
 
-    data class Switch(
-        override val key: String,
-        override val icon: Int,
-        override val title: Int,
-        val summary: Int,
-        val default: Boolean
-    ) : Preference
+	@get:StringRes val title: Int
 
-    data class Enum<T: SettingsEnum>(
-        override val key: String,
-        override val icon: Int,
-        override val title: Int,
-        val default: T,
-        val possibleValues: List<T>,
-    ) : Preference
+	data class Simple(
+		override val key: String,
+		override val icon: Int,
+		override val title: Int,
+		val summary: Int,
+	) : Preference
 
-    /**
-     * A preference row whose subtitle is dynamic (computed at runtime from a StateFlow, not
-     * from a static string resource). Used by the Cloud Sync row.
-     *
-     * @since PR1 sync addendum (Settings UI)
-     */
-    data class DynamicSummary(
-        override val key: String,
-        override val icon: Int,
-        override val title: Int,
-        val summaryPlaceholder: Int,
-    ) : Preference
+	data class Switch(
+		override val key: String,
+		override val icon: Int,
+		override val title: Int,
+		val summary: Int,
+		val default: Boolean,
+	) : Preference
 
-    /**
-     * Read-only info row whose subtitle is computed at runtime from a
-     * `Map<String, String>` keyed by [key] (see `SettingsUiState.infoSummaries`).
-     * No onClick / switch — the row is purely informational. Used by the
-     * Storage section to surface "Local originals: X MB (N files)" etc.
-     * without requiring the user to tap anything.
-     *
-     * The subtitle falls back to a placeholder string resource when the
-     * map has no entry for [key] (e.g. before the first stats refresh
-     * completes).
-     *
-     * @since Item 4 — storage analytics
-     */
-    data class Info(
-        override val key: String,
-        override val icon: Int,
-        override val title: Int,
-        val summaryPlaceholder: Int,
-    ) : Preference
+	data class Enum<T : SettingsEnum>(
+		override val key: String,
+		override val icon: Int,
+		override val title: Int,
+		val default: T,
+		val possibleValues: List<T>,
+	) : Preference
+
+	/**
+	 * A preference row whose subtitle is dynamic (computed at runtime from a StateFlow, not
+	 * from a static string resource). Used by the Cloud Sync row.
+	 *
+	 * @since PR1 sync addendum (Settings UI)
+	 */
+	data class DynamicSummary(
+		override val key: String,
+		override val icon: Int,
+		override val title: Int,
+		val summaryPlaceholder: Int,
+	) : Preference
+
+	/**
+	 * Read-only info row whose subtitle is computed at runtime from a
+	 * `Map<String, String>` keyed by [key] (see `SettingsUiState.infoSummaries`).
+	 * No onClick / switch — the row is purely informational. Used by the
+	 * Storage section to surface "Local originals: X MB (N files)" etc.
+	 * without requiring the user to tap anything.
+	 *
+	 * The subtitle falls back to a placeholder string resource when the
+	 * map has no entry for [key] (e.g. before the first stats refresh
+	 * completes).
+	 *
+	 * @since Item 4 — storage analytics
+	 */
+	data class Info(
+		override val key: String,
+		override val icon: Int,
+		override val title: Int,
+		val summaryPlaceholder: Int,
+	) : Preference
 }
 
-val PreferenceScreenConfigContent = buildList {
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_app,
-            summary = null,
-            preferences = listOf(
-                Preference.Enum(
-                    key = SYSTEM_DESIGN,
-                    icon = R.drawable.ic_brush,
-                    title = R.string.settings_app_design_title,
-                    default = SYSTEM_DESIGN_DEFAULT,
-                    possibleValues = SystemDesignEnum.entries,
-                ),
-                Preference.Enum(
-                    key = GALLERY_START_PAGE,
-                    icon = R.drawable.ic_gallery_thumbnail,
-                    title = R.string.settings_gallery_start_page_title,
-                    default = GALLERY_START_PAGE_DEFAULT,
-                    possibleValues = StartPage.entries,
-                )
-            )
-        )
-    )
-    // ─── Cloud Sync section (PR1 addendum + sync-settings feature) ───────────
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_cloud_sync,
-            summary = R.string.settings_category_cloud_sync_summary,
-            preferences = listOf(
-                Preference.DynamicSummary(
-                    key = SettingsFragment.KEY_ACTION_CLOUD_SYNC,
-                    icon = R.drawable.ic_cloud_upload,
-                    title = R.string.settings_cloud_sync_config_title,
-                    summaryPlaceholder = R.string.settings_cloud_sync_not_configured,
-                ),
-                // ─── sync-settings feature — three user-configurable toggles ──
-                // Replacements for the previously-hardcoded flags in
-                // SyncConfig. Defaults match the prior hardcoded values so
-                // existing users see no behaviour change on upgrade.
-                Preference.Switch(
-                    key = SYNC_AUTO_UPLOAD,
-                    icon = R.drawable.ic_cloud_upload,
-                    title = R.string.settings_sync_auto_upload_title,
-                    summary = R.string.settings_sync_auto_upload_summary,
-                    default = SYNC_AUTO_UPLOAD_DEFAULT,
-                ),
-                Preference.Switch(
-                    key = SYNC_WIFI_ONLY,
-                    icon = R.drawable.ic_cloud,
-                    title = R.string.settings_sync_wifi_only_title,
-                    summary = R.string.settings_sync_wifi_only_summary,
-                    default = SYNC_WIFI_ONLY_DEFAULT,
-                ),
-                // ─── Item 2: restored `syncDeleteAfterUpload` toggle ─────────
-                // When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] deletes
-                // the local `.crypt` original after a verified upload. When OFF,
-                // the local copy is kept for offline access and the user can
-                // reclaim space later via the "Clean cached originals" row
-                // below. Default OFF to preserve existing behaviour and avoid
-                // surprising data loss.
-                Preference.Switch(
-                    key = SYNC_DELETE_AFTER_UPLOAD,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_sync_delete_after_upload_title,
-                    summary = R.string.settings_sync_delete_after_upload_summary,
-                    default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
-                ),
-                // ─── Batch 1 / Item 3: optional hash verification after upload ──
-                // When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] downloads
-                // the freshly-uploaded remote file, decrypts it with the VMK,
-                // recomputes the SHA-256, and compares it against the photo's
-                // stored `contentHash`. Off by default — doubles bandwidth per
-                // upload. Power users / paranoiac users can turn it on.
-                Preference.Switch(
-                    key = SYNC_VERIFY_HASH,
-                    icon = R.drawable.ic_check_circle,
-                    title = R.string.settings_sync_verify_hash_title,
-                    summary = R.string.settings_sync_verify_hash_summary,
-                    default = SYNC_VERIFY_HASH_DEFAULT,
-                ),
-                // @since registry-gc feature — manual cleanup of soft-deleted
-                // entries' remote originals + thumbnail pack compaction. The
-                // row's onClick callback (registered in SettingsCallbacks)
-                // runs HashRegistry.gcThumbnailPacks() + gcOriginals() in a
-                // background coroutine and surfaces the result via a toast.
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_CLEANUP_BACKUP,
-                    icon = R.drawable.ic_refresh,
-                    title = R.string.settings_cleanup_backup_title,
-                    summary = R.string.settings_cleanup_backup_summary,
-                ),
-                // @since Item 2 — manual one-shot cleanup of cached local
-                // originals. Deletes the `.crypt` file for every photo whose
-                // syncState == UPLOADED. SAFETY: never touches LOCAL_ONLY or
-                // UPLOAD_PENDING photos (those have not yet been verified on
-                // the remote). Thumbnails are always kept so the gallery
-                // continues to show the photo. The original is re-downloaded
-                // on demand via [SyncRestorer.ensureLocalOriginal].
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_clean_cached_originals_title,
-                    summary = R.string.settings_clean_cached_originals_summary,
-                ),
-            ),
-        )
-    )
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_security,
-            summary = null,
-            preferences = listOf(
-                Preference.Switch(
-                    key = SECURITY_ALLOW_SCREENSHOTS,
-                    icon = R.drawable.ic_screen_lock,
-                    title = R.string.settings_security_allow_screenshots_title,
-                    summary = R.string.settings_security_allow_screenshots_summary,
-                    default = SECURITY_ALLOW_SCREENSHOTS_DEFAULT,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_CHANGE_PASSWORD,
-                    icon = R.drawable.ic_password,
-                    title = R.string.change_password_title,
-                    summary = R.string.settings_security_change_password_summary,
-                ),
-                Preference.Switch(
-                    key = SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED,
-                    icon = R.drawable.ic_fingerprint,
-                    title = R.string.settings_security_biometric_title,
-                    summary = R.string.settings_security_biometric_summary,
-                    default = SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT,
-                ),
-                Preference.Enum(
-                    key = Config.SECURITY_LOCK_TIMEOUT,
-                    icon = R.drawable.ic_schedule,
-                    title = R.string.settings_security_timeout_title,
-                    default = LockTimeout.FiveMinute,
-                    possibleValues = LockTimeout.entries,
-                ),
-                Preference.Simple(
-                    key = Config.SECURITY_DIAL_LAUNCH_CODE,
-                    icon = R.drawable.ic_dialpad,
-                    title = R.string.settings_security_launch_code_title,
-                    summary = R.string.settings_security_launch_code_summary,
-                ),
-
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_HIDE_APP,
-                    icon = R.drawable.ic_app_blocking,
-                    title = R.string.settings_security_hide_app_title,
-                    summary = R.string.settings_security_hide_app_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_RECOVERY_PHRASE,
-                    icon = R.drawable.ic_key,
-                    title = R.string.settings_security_recovery_phrase_title,
-                    summary = R.string.settings_security_recovery_phrase_summary,
-                ),
-
-                // ─── Sprint 2 / M7 — Multi-vault entry points ───────────────
-                // "Create New Vault" opens the CreateVaultSheet (password-only,
-                // no recovery phrase, local-only by design). "Switch Vault"
-                // simply locks the app — the user then unlocks with another
-                // vault's password. The unlock flow iterates all Password rows
-                // and picks the matching vault.
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_CREATE_VAULT,
-                    icon = R.drawable.ic_add,
-                    title = R.string.settings_security_create_vault_title,
-                    summary = R.string.settings_security_create_vault_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_SWITCH_VAULT,
-                    icon = R.drawable.ic_lock,
-                    title = R.string.settings_security_switch_vault_title,
-                    summary = R.string.settings_security_switch_vault_summary,
-                ),
-            ),
-        )
-    )
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_advanced,
-            summary = R.string.settings_category_advanced_summary,
-            preferences = listOf(
-                Preference.Simple(
-                    SettingsFragment.KEY_ACTION_BACKUP,
-                    icon = R.drawable.ic_save_as,
-                    title = R.string.settings_advanced_backup_title,
-                    summary = R.string.settings_advanced_backup_summary,
-                ),
-                Preference.Switch(
-                    Config.ADVANCED_DELETE_IMPORTED_FILES,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_advanced_delete_imported_title,
-                    summary = R.string.settings_advanced_delete_imported_summary,
-                    default = Config.ADVANCED_DELETE_IMPORTED_FILES_DEFAULT,
-                ),
-                Preference.Switch(
-                    Config.ADVANCED_DELETE_EXPORTED_FILES,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_advanced_delete_exported_title,
-                    summary = R.string.settings_advanced_delete_exported_summary,
-                    default = Config.ADVANCED_DELETE_EXPORTED_FILES_DEFAULT,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_RESET,
-                    icon = R.drawable.ic_warning,
-                    title = R.string.settings_advanced_reset_title,
-                    summary = R.string.settings_advanced_reset_summary,
-                ),
-            ),
-        )
-    )
-    // ─── Backup section (Item 1 — ZIP vault export / import) ───────────────
-    // Plain (unencrypted) ZIP archive containing each photo's decrypted
-    // plaintext + a manifest.json with per-photo metadata. The user picks
-    // the output location via SAF — they're responsible for securing the
-    // file. Import re-encrypts the bytes with the current VMK and creates
-    // fresh DB rows (new UUIDs) so re-importing the same ZIP creates
-    // distinct photos.
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_backup,
-            summary = R.string.settings_category_backup_summary,
-            preferences = listOf(
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_EXPORT_ZIP,
-                    icon = R.drawable.ic_export,
-                    title = R.string.settings_backup_export_zip_title,
-                    summary = R.string.settings_backup_export_zip_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_IMPORT_ZIP,
-                    icon = R.drawable.ic_download,
-                    title = R.string.settings_backup_import_zip_title,
-                    summary = R.string.settings_backup_import_zip_summary,
-                ),
-            ),
-        )
-    )
-    // ─── Trash section (Item 2 — recycle bin / soft delete) ────────────────
-    // Opens the Trash screen where the user can browse soft-deleted photos,
-    // restore them, or permanently delete them. The "Empty trash" action
-    // is available inside the Trash screen.
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_trash,
-            summary = null,
-            preferences = listOf(
-                Preference.DynamicSummary(
-                    key = SettingsFragment.KEY_ACTION_TRASH,
-                    icon = R.drawable.ic_delete,
-                    title = R.string.settings_trash_title,
-                    summaryPlaceholder = R.string.settings_trash_summary,
-                ),
-            ),
-        )
-    )
-    // ─── Storage section (Item 4 — storage analytics) ─────────────────────
-    // Read-only rows showing the current vault storage breakdown. The
-    // subtitles are computed at runtime by SettingsViewModel.refreshStorageStats()
-    // and surfaced via SettingsUiState.infoSummaries. Tapping a row
-    // triggers a refresh (in case the user just imported / deleted photos
-    // and wants to see the new totals without leaving and re-entering
-    // Settings).
-    add(
-        PreferenceSection(
-            title = R.string.settings_category_storage,
-            summary = null,
-            preferences = listOf(
-                Preference.Info(
-                    key = SettingsFragment.KEY_INFO_STORAGE_ORIGINALS,
-                    icon = R.drawable.ic_database,
-                    title = R.string.settings_storage_originals_title,
-                    summaryPlaceholder = R.string.settings_storage_loading,
-                ),
-                Preference.Info(
-                    key = SettingsFragment.KEY_INFO_STORAGE_THUMBNAILS,
-                    icon = R.drawable.ic_gallery_thumbnail,
-                    title = R.string.settings_storage_thumbnails_title,
-                    summaryPlaceholder = R.string.settings_storage_loading,
-                ),
-                Preference.Info(
-                    key = SettingsFragment.KEY_INFO_STORAGE_PHOTOS,
-                    icon = R.drawable.ic_image,
-                    title = R.string.settings_storage_photos_title,
-                    summaryPlaceholder = R.string.settings_storage_loading,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_REFRESH_STORAGE,
-                    icon = R.drawable.ic_refresh,
-                    title = R.string.settings_storage_refresh_title,
-                    summary = R.string.settings_storage_refresh_summary,
-                ),
-            ),
-        )
-    )
-    add(
-        PreferenceSection(
-            title = R.string.settings_other_title,
-            summary = null,
-            preferences = listOf(
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_FEEDBACK,
-                    icon = R.drawable.ic_feedback,
-                    title = R.string.settings_other_feedback_title,
-                    summary = R.string.settings_other_feedback_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_DONATE,
-                    icon = R.drawable.ic_money,
-                    title = R.string.settings_other_donate_title,
-                    summary = R.string.settings_other_donate_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_SOURCECODE,
-                    icon = R.drawable.ic_code,
-                    title = R.string.settings_other_sourcecode_title,
-                    summary = R.string.settings_other_sourcecode_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_CREDITS,
-                    icon = R.drawable.ic_book,
-                    title = R.string.settings_other_credits_title,
-                    summary = R.string.settings_other_credits_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_TELEMETRY,
-                    icon = R.drawable.ic_data_object,
-                    title = R.string.settings_other_telemetry_title,
-                    summary = R.string.settings_other_telemetry_summary,
-                ),
-                Preference.Simple(
-                    key = SettingsFragment.KEY_ACTION_ABOUT,
-                    icon = R.drawable.ic_info,
-                    title = R.string.settings_other_about_title,
-                    summary = R.string.settings_other_about_summary,
-                ),
-            ),
-        )
-    )
-}
+val PreferenceScreenConfigContent =
+	buildList {
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_app,
+				summary = null,
+				preferences =
+					listOf(
+						Preference.Enum(
+							key = SYSTEM_DESIGN,
+							icon = R.drawable.ic_brush,
+							title = R.string.settings_app_design_title,
+							default = SYSTEM_DESIGN_DEFAULT,
+							possibleValues = SystemDesignEnum.entries,
+						),
+						Preference.Enum(
+							key = GALLERY_START_PAGE,
+							icon = R.drawable.ic_gallery_thumbnail,
+							title = R.string.settings_gallery_start_page_title,
+							default = GALLERY_START_PAGE_DEFAULT,
+							possibleValues = StartPage.entries,
+						),
+					),
+			),
+		)
+		// ─── Cloud Sync section (PR1 addendum + sync-settings feature) ───────────
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_cloud_sync,
+				summary = R.string.settings_category_cloud_sync_summary,
+				preferences =
+					listOf(
+						Preference.DynamicSummary(
+							key = SettingsFragment.KEY_ACTION_CLOUD_SYNC,
+							icon = R.drawable.ic_cloud_upload,
+							title = R.string.settings_cloud_sync_config_title,
+							summaryPlaceholder = R.string.settings_cloud_sync_not_configured,
+						),
+						// ─── sync-settings feature — three user-configurable toggles ──
+						// Replacements for the previously-hardcoded flags in
+						// SyncConfig. Defaults match the prior hardcoded values so
+						// existing users see no behaviour change on upgrade.
+						Preference.Switch(
+							key = SYNC_AUTO_UPLOAD,
+							icon = R.drawable.ic_cloud_upload,
+							title = R.string.settings_sync_auto_upload_title,
+							summary = R.string.settings_sync_auto_upload_summary,
+							default = SYNC_AUTO_UPLOAD_DEFAULT,
+						),
+						Preference.Switch(
+							key = SYNC_WIFI_ONLY,
+							icon = R.drawable.ic_cloud,
+							title = R.string.settings_sync_wifi_only_title,
+							summary = R.string.settings_sync_wifi_only_summary,
+							default = SYNC_WIFI_ONLY_DEFAULT,
+						),
+						// ─── Item 2: restored `syncDeleteAfterUpload` toggle ─────────
+						// When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] deletes
+						// the local `.crypt` original after a verified upload. When OFF,
+						// the local copy is kept for offline access and the user can
+						// reclaim space later via the "Clean cached originals" row
+						// below. Default OFF to preserve existing behaviour and avoid
+						// surprising data loss.
+						Preference.Switch(
+							key = SYNC_DELETE_AFTER_UPLOAD,
+							icon = R.drawable.ic_delete,
+							title = R.string.settings_sync_delete_after_upload_title,
+							summary = R.string.settings_sync_delete_after_upload_summary,
+							default = SYNC_DELETE_AFTER_UPLOAD_DEFAULT,
+						),
+						// ─── Batch 1 / Item 3: optional hash verification after upload ──
+						// When ON, [onlasdan.gallery.sync.work.PhotoSyncWorker] downloads
+						// the freshly-uploaded remote file, decrypts it with the VMK,
+						// recomputes the SHA-256, and compares it against the photo's
+						// stored `contentHash`. Off by default — doubles bandwidth per
+						// upload. Power users / paranoiac users can turn it on.
+						Preference.Switch(
+							key = SYNC_VERIFY_HASH,
+							icon = R.drawable.ic_check_circle,
+							title = R.string.settings_sync_verify_hash_title,
+							summary = R.string.settings_sync_verify_hash_summary,
+							default = SYNC_VERIFY_HASH_DEFAULT,
+						),
+						// @since registry-gc feature — manual cleanup of soft-deleted
+						// entries' remote originals + thumbnail pack compaction. The
+						// row's onClick callback (registered in SettingsCallbacks)
+						// runs HashRegistry.gcThumbnailPacks() + gcOriginals() in a
+						// background coroutine and surfaces the result via a toast.
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_CLEANUP_BACKUP,
+							icon = R.drawable.ic_refresh,
+							title = R.string.settings_cleanup_backup_title,
+							summary = R.string.settings_cleanup_backup_summary,
+						),
+						// @since Item 2 — manual one-shot cleanup of cached local
+						// originals. Deletes the `.crypt` file for every photo whose
+						// syncState == UPLOADED. SAFETY: never touches LOCAL_ONLY or
+						// UPLOAD_PENDING photos (those have not yet been verified on
+						// the remote). Thumbnails are always kept so the gallery
+						// continues to show the photo. The original is re-downloaded
+						// on demand via [SyncRestorer.ensureLocalOriginal].
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS,
+							icon = R.drawable.ic_delete,
+							title = R.string.settings_clean_cached_originals_title,
+							summary = R.string.settings_clean_cached_originals_summary,
+						),
+					),
+			),
+		)
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_security,
+				summary = null,
+				preferences =
+					listOf(
+						Preference.Switch(
+							key = SECURITY_ALLOW_SCREENSHOTS,
+							icon = R.drawable.ic_screen_lock,
+							title = R.string.settings_security_allow_screenshots_title,
+							summary = R.string.settings_security_allow_screenshots_summary,
+							default = SECURITY_ALLOW_SCREENSHOTS_DEFAULT,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_CHANGE_PASSWORD,
+							icon = R.drawable.ic_password,
+							title = R.string.change_password_title,
+							summary = R.string.settings_security_change_password_summary,
+						),
+						Preference.Switch(
+							key = SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED,
+							icon = R.drawable.ic_fingerprint,
+							title = R.string.settings_security_biometric_title,
+							summary = R.string.settings_security_biometric_summary,
+							default = SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED_DEFAULT,
+						),
+						Preference.Enum(
+							key = Config.SECURITY_LOCK_TIMEOUT,
+							icon = R.drawable.ic_schedule,
+							title = R.string.settings_security_timeout_title,
+							default = LockTimeout.FiveMinute,
+							possibleValues = LockTimeout.entries,
+						),
+						Preference.Simple(
+							key = Config.SECURITY_DIAL_LAUNCH_CODE,
+							icon = R.drawable.ic_dialpad,
+							title = R.string.settings_security_launch_code_title,
+							summary = R.string.settings_security_launch_code_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_HIDE_APP,
+							icon = R.drawable.ic_app_blocking,
+							title = R.string.settings_security_hide_app_title,
+							summary = R.string.settings_security_hide_app_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_RECOVERY_PHRASE,
+							icon = R.drawable.ic_key,
+							title = R.string.settings_security_recovery_phrase_title,
+							summary = R.string.settings_security_recovery_phrase_summary,
+						),
+						// ─── Sprint 2 / M7 — Multi-vault entry points ───────────────
+						// "Create New Vault" opens the CreateVaultSheet (password-only,
+						// no recovery phrase, local-only by design). "Switch Vault"
+						// simply locks the app — the user then unlocks with another
+						// vault's password. The unlock flow iterates all Password rows
+						// and picks the matching vault.
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_CREATE_VAULT,
+							icon = R.drawable.ic_add,
+							title = R.string.settings_security_create_vault_title,
+							summary = R.string.settings_security_create_vault_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_SWITCH_VAULT,
+							icon = R.drawable.ic_lock,
+							title = R.string.settings_security_switch_vault_title,
+							summary = R.string.settings_security_switch_vault_summary,
+						),
+					),
+			),
+		)
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_advanced,
+				summary = R.string.settings_category_advanced_summary,
+				preferences =
+					listOf(
+						Preference.Simple(
+							SettingsFragment.KEY_ACTION_BACKUP,
+							icon = R.drawable.ic_save_as,
+							title = R.string.settings_advanced_backup_title,
+							summary = R.string.settings_advanced_backup_summary,
+						),
+						Preference.Switch(
+							Config.ADVANCED_DELETE_IMPORTED_FILES,
+							icon = R.drawable.ic_delete,
+							title = R.string.settings_advanced_delete_imported_title,
+							summary = R.string.settings_advanced_delete_imported_summary,
+							default = Config.ADVANCED_DELETE_IMPORTED_FILES_DEFAULT,
+						),
+						Preference.Switch(
+							Config.ADVANCED_DELETE_EXPORTED_FILES,
+							icon = R.drawable.ic_delete,
+							title = R.string.settings_advanced_delete_exported_title,
+							summary = R.string.settings_advanced_delete_exported_summary,
+							default = Config.ADVANCED_DELETE_EXPORTED_FILES_DEFAULT,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_RESET,
+							icon = R.drawable.ic_warning,
+							title = R.string.settings_advanced_reset_title,
+							summary = R.string.settings_advanced_reset_summary,
+						),
+					),
+			),
+		)
+		// ─── Backup section (Item 1 — ZIP vault export / import) ───────────────
+		// Plain (unencrypted) ZIP archive containing each photo's decrypted
+		// plaintext + a manifest.json with per-photo metadata. The user picks
+		// the output location via SAF — they're responsible for securing the
+		// file. Import re-encrypts the bytes with the current VMK and creates
+		// fresh DB rows (new UUIDs) so re-importing the same ZIP creates
+		// distinct photos.
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_backup,
+				summary = R.string.settings_category_backup_summary,
+				preferences =
+					listOf(
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_EXPORT_ZIP,
+							icon = R.drawable.ic_export,
+							title = R.string.settings_backup_export_zip_title,
+							summary = R.string.settings_backup_export_zip_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_IMPORT_ZIP,
+							icon = R.drawable.ic_download,
+							title = R.string.settings_backup_import_zip_title,
+							summary = R.string.settings_backup_import_zip_summary,
+						),
+					),
+			),
+		)
+		// ─── Trash section (Item 2 — recycle bin / soft delete) ────────────────
+		// Opens the Trash screen where the user can browse soft-deleted photos,
+		// restore them, or permanently delete them. The "Empty trash" action
+		// is available inside the Trash screen.
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_trash,
+				summary = null,
+				preferences =
+					listOf(
+						Preference.DynamicSummary(
+							key = SettingsFragment.KEY_ACTION_TRASH,
+							icon = R.drawable.ic_delete,
+							title = R.string.settings_trash_title,
+							summaryPlaceholder = R.string.settings_trash_summary,
+						),
+					),
+			),
+		)
+		// ─── Storage section (Item 4 — storage analytics) ─────────────────────
+		// Read-only rows showing the current vault storage breakdown. The
+		// subtitles are computed at runtime by SettingsViewModel.refreshStorageStats()
+		// and surfaced via SettingsUiState.infoSummaries. Tapping a row
+		// triggers a refresh (in case the user just imported / deleted photos
+		// and wants to see the new totals without leaving and re-entering
+		// Settings).
+		add(
+			PreferenceSection(
+				title = R.string.settings_category_storage,
+				summary = null,
+				preferences =
+					listOf(
+						Preference.Info(
+							key = SettingsFragment.KEY_INFO_STORAGE_ORIGINALS,
+							icon = R.drawable.ic_database,
+							title = R.string.settings_storage_originals_title,
+							summaryPlaceholder = R.string.settings_storage_loading,
+						),
+						Preference.Info(
+							key = SettingsFragment.KEY_INFO_STORAGE_THUMBNAILS,
+							icon = R.drawable.ic_gallery_thumbnail,
+							title = R.string.settings_storage_thumbnails_title,
+							summaryPlaceholder = R.string.settings_storage_loading,
+						),
+						Preference.Info(
+							key = SettingsFragment.KEY_INFO_STORAGE_PHOTOS,
+							icon = R.drawable.ic_image,
+							title = R.string.settings_storage_photos_title,
+							summaryPlaceholder = R.string.settings_storage_loading,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_REFRESH_STORAGE,
+							icon = R.drawable.ic_refresh,
+							title = R.string.settings_storage_refresh_title,
+							summary = R.string.settings_storage_refresh_summary,
+						),
+					),
+			),
+		)
+		add(
+			PreferenceSection(
+				title = R.string.settings_other_title,
+				summary = null,
+				preferences =
+					listOf(
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_FEEDBACK,
+							icon = R.drawable.ic_feedback,
+							title = R.string.settings_other_feedback_title,
+							summary = R.string.settings_other_feedback_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_DONATE,
+							icon = R.drawable.ic_money,
+							title = R.string.settings_other_donate_title,
+							summary = R.string.settings_other_donate_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_SOURCECODE,
+							icon = R.drawable.ic_code,
+							title = R.string.settings_other_sourcecode_title,
+							summary = R.string.settings_other_sourcecode_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_CREDITS,
+							icon = R.drawable.ic_book,
+							title = R.string.settings_other_credits_title,
+							summary = R.string.settings_other_credits_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_TELEMETRY,
+							icon = R.drawable.ic_data_object,
+							title = R.string.settings_other_telemetry_title,
+							summary = R.string.settings_other_telemetry_summary,
+						),
+						Preference.Simple(
+							key = SettingsFragment.KEY_ACTION_ABOUT,
+							icon = R.drawable.ic_info,
+							title = R.string.settings_other_about_title,
+							summary = R.string.settings_other_about_summary,
+						),
+					),
+			),
+		)
+	}

@@ -98,326 +98,342 @@ import javax.crypto.spec.IvParameterSpec
  */
 @UnstableApi
 class AesCbcRandomAccessDataSource(
-    private val sessionRepository: SessionRepository,
-    /**
-     * Returns how many bytes of the file at [uri] are currently
-     * available to read. `-1L` means "the whole file is available"
-     * (default — local, fully-downloaded file). A positive value
-     * means the file is still being written and only that many bytes
-     * are safe to read; reads past this point block until more bytes
-     * arrive (see [BlockingInputStream]).
-     */
-    private val availableBytesProvider: (Uri) -> Long = { -1L },
-    /**
-     * Returns `true` if the download of the file at [uri] has
-     * completed (success OR failure). When `true`, reads past
-     * [availableBytesProvider] return `-1` (real EOF) instead of
-     * blocking. Default `true` — no download in flight.
-     */
-    private val downloadCompleteProvider: (Uri) -> Boolean = { true },
+	private val sessionRepository: SessionRepository,
+	/**
+	 * Returns how many bytes of the file at [uri] are currently
+	 * available to read. `-1L` means "the whole file is available"
+	 * (default — local, fully-downloaded file). A positive value
+	 * means the file is still being written and only that many bytes
+	 * are safe to read; reads past this point block until more bytes
+	 * arrive (see [BlockingInputStream]).
+	 */
+	private val availableBytesProvider: (Uri) -> Long = { -1L },
+	/**
+	 * Returns `true` if the download of the file at [uri] has
+	 * completed (success OR failure). When `true`, reads past
+	 * [availableBytesProvider] return `-1` (real EOF) instead of
+	 * blocking. Default `true` — no download in flight.
+	 */
+	private val downloadCompleteProvider: (Uri) -> Boolean = { true },
 ) : DataSource {
+	private var inputStream: CipherInputStream? = null
+	private var fileInputStream: FileInputStream? = null
+	private lateinit var uri: Uri
 
-    private var inputStream: CipherInputStream? = null
-    private var fileInputStream: FileInputStream? = null
-    private lateinit var uri: Uri
+	override fun open(dataSpec: DataSpec): Long {
+		uri = dataSpec.uri
+		uri.path ?: return 0
 
-    override fun open(dataSpec: DataSpec): Long {
-        uri = dataSpec.uri
-        uri.path ?: return 0
+		val file = File(uri.path!!).canonicalFile
 
-        val file = File(uri.path!!).canonicalFile
+		// --- Wait for the file to exist and have at least the version byte ---
+		// For progressive streaming: the file may not exist yet when ExoPlayer
+		// calls open(). Block (poll) until at least 1 byte is available or the
+		// download completes (which may have failed with 0 bytes).
+		waitForBytesAvailable(minBytes = 1L)
 
-        // --- Wait for the file to exist and have at least the version byte ---
-        // For progressive streaming: the file may not exist yet when ExoPlayer
-        // calls open(). Block (poll) until at least 1 byte is available or the
-        // download completes (which may have failed with 0 bytes).
-        waitForBytesAvailable(minBytes = 1L)
+		val fis = FileInputStream(file)
+		fileInputStream = fis
+		val channel = fis.channel
 
-        val fis = FileInputStream(file)
-        fileInputStream = fis
-        val channel = fis.channel
+		// --- Read header ---
+		// Wait for the full header to be available before reading.
+		// We don't know the header size until we read the version byte, so we
+		// wait for 1 byte first, read the version, then wait for the full header.
+		waitForBytesAvailable(minBytes = 1L)
 
-        // --- Read header ---
-        // Wait for the full header to be available before reading.
-        // We don't know the header size until we read the version byte, so we
-        // wait for 1 byte first, read the version, then wait for the full header.
-        waitForBytesAvailable(minBytes = 1L)
+		val versionBuf = ByteBuffer.allocate(1)
+		channel.position(0)
+		channel.read(versionBuf)
+		versionBuf.flip()
 
-        val versionBuf = ByteBuffer.allocate(1)
-        channel.position(0)
-        channel.read(versionBuf)
-        versionBuf.flip()
+		val version = EncryptionVersionByte.fromValue(versionBuf.get())
 
-        val version = EncryptionVersionByte.fromValue(versionBuf.get())
+		// Wait for the full header to be available.
+		waitForBytesAvailable(minBytes = version.headerSize.toLong())
 
-        // Wait for the full header to be available.
-        waitForBytesAvailable(minBytes = version.headerSize.toLong())
+		channel.position(0)
+		val headerBuf = ByteBuffer.allocate(version.headerSize)
+		channel.read(headerBuf)
+		headerBuf.flip()
 
-        channel.position(0)
-        val headerBuf = ByteBuffer.allocate(version.headerSize)
-        channel.read(headerBuf)
-        headerBuf.flip()
+		// Read/skip version byte since we have the whole header
+		headerBuf.get()
 
-        // Read/skip version byte since we have the whole header
-        headerBuf.get()
+		val fileIv = ByteArray(IV_SIZE)
 
-        val fileIv = ByteArray(IV_SIZE)
+		when (version) {
+			EncryptionVersionByte.One -> {
+				val salt = ByteArray(SALT_SIZE)
+				headerBuf.get(salt)
 
-        when (version) {
-            EncryptionVersionByte.One -> {
-                val salt = ByteArray(SALT_SIZE)
-                headerBuf.get(salt)
+				headerBuf.get(fileIv)
+			}
+			EncryptionVersionByte.Two -> {
+				headerBuf.get(fileIv)
+			}
+			EncryptionVersionByte.Three -> {
+				throw IOException(
+					"AesCbcRandomAccessDataSource: refusing to stream version-3 (GCM) " +
+						"file — GCM video streaming is not yet supported. " +
+						"Video originals should be encrypted with CBC (version 2). " +
+						"Check PhotoRepository.createPhotoFile's useGcm flag.",
+				)
+			}
+			EncryptionVersionByte.Four -> {
+				// TODO #2 — Chunked GCM random access.
+				// Defer to ChunkedGcmRandomAccessDataSource for version 0x04.
+				// This is handled by the caller (ImageViewerViewModel) which
+				// checks the version byte and dispatches. If we reach here,
+				// it means the caller didn't dispatch — throw.
+				throw IOException(
+					"AesCbcRandomAccessDataSource: version-4 (chunked GCM) must be " +
+						"handled by ChunkedGcmRandomAccessDataSource, not this CBC DataSource.",
+				)
+			}
+		}
 
-                headerBuf.get(fileIv)
-            }
-            EncryptionVersionByte.Two -> {
-                headerBuf.get(fileIv)
-            }
-            EncryptionVersionByte.Three -> {
-                throw IOException(
-                    "AesCbcRandomAccessDataSource: refusing to stream version-3 (GCM) " +
-                        "file — GCM video streaming is not yet supported. " +
-                        "Video originals should be encrypted with CBC (version 2). " +
-                        "Check PhotoRepository.createPhotoFile's useGcm flag."
-                )
-            }
-            EncryptionVersionByte.Four -> {
-                // TODO #2 — Chunked GCM random access.
-                // Defer to ChunkedGcmRandomAccessDataSource for version 0x04.
-                // This is handled by the caller (ImageViewerViewModel) which
-                // checks the version byte and dispatches. If we reach here,
-                // it means the caller didn't dispatch — throw.
-                throw IOException(
-                    "AesCbcRandomAccessDataSource: version-4 (chunked GCM) must be " +
-                        "handled by ChunkedGcmRandomAccessDataSource, not this CBC DataSource."
-                )
-            }
-        }
+		// --- Resolve key  ---
+		// Sprint 10+ fix: use get() instead of require() to avoid crash if
+		// the session was cleared (e.g. by BFU-Safe or lock timeout during
+		// video playback). If null, throw a clear error instead of crashing.
+		val key =
+			sessionRepository.get()?.vmk
+				?: throw java.io.IOException("Vault is locked — cannot decrypt video stream")
 
-        // --- Resolve key  ---
-        // Sprint 10+ fix: use get() instead of require() to avoid crash if
-        // the session was cleared (e.g. by BFU-Safe or lock timeout during
-        // video playback). If null, throw a clear error instead of crashing.
-        val key = sessionRepository.get()?.vmk
-            ?: throw java.io.IOException("Vault is locked — cannot decrypt video stream")
+		// --- Compute target block ---
+		val plainOffset = dataSpec.position
+		val blockIndex = (plainOffset / BLOCK_SIZE).toInt()
+		val discard = (plainOffset % BLOCK_SIZE).toInt()
 
-        // --- Compute target block ---
-        val plainOffset = dataSpec.position
-        val blockIndex = (plainOffset / BLOCK_SIZE).toInt()
-        val discard = (plainOffset % BLOCK_SIZE).toInt()
+		// --- Resolve IV for target block ---
+		val ivForTarget =
+			if (blockIndex == 0) {
+				fileIv
+			} else {
+				val prevCipherOffset = version.headerSize + (blockIndex - 1L) * BLOCK_SIZE
+				// Wait for the previous ciphertext block (needed as IV) to be available.
+				waitForBytesAvailable(minBytes = prevCipherOffset + BLOCK_SIZE)
+				channel.position(prevCipherOffset)
+				val prevCipher = ByteArray(BLOCK_SIZE)
+				channel.read(ByteBuffer.wrap(prevCipher))
+				prevCipher
+			}
 
-        // --- Resolve IV for target block ---
-        val ivForTarget = if (blockIndex == 0) {
-            fileIv
-        } else {
-            val prevCipherOffset = version.headerSize + (blockIndex - 1L) * BLOCK_SIZE
-            // Wait for the previous ciphertext block (needed as IV) to be available.
-            waitForBytesAvailable(minBytes = prevCipherOffset + BLOCK_SIZE)
-            channel.position(prevCipherOffset)
-            val prevCipher = ByteArray(BLOCK_SIZE)
-            channel.read(ByteBuffer.wrap(prevCipher))
-            prevCipher
-        }
+		// --- Position channel at the target ciphertext block ---
+		val targetCipherOffset = version.headerSize + blockIndex.toLong() * BLOCK_SIZE
+		// Wait for the target ciphertext block to be available so the first
+		// read doesn't immediately EOF. We only need the start of the block;
+		// subsequent reads block in [BlockingInputStream] as needed.
+		waitForBytesAvailable(minBytes = targetCipherOffset + 1L)
+		channel.position(targetCipherOffset)
 
-        // --- Position channel at the target ciphertext block ---
-        val targetCipherOffset = version.headerSize + blockIndex.toLong() * BLOCK_SIZE
-        // Wait for the target ciphertext block to be available so the first
-        // read doesn't immediately EOF. We only need the start of the block;
-        // subsequent reads block in [BlockingInputStream] as needed.
-        waitForBytesAvailable(minBytes = targetCipherOffset + 1L)
-        channel.position(targetCipherOffset)
+		// --- Create cipher stream from this point ---
+		val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value)
+		cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(ivForTarget))
 
-        // --- Create cipher stream from this point ---
-        val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value)
-        cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(ivForTarget))
+		// Wrap the channel's input stream in a BlockingInputStream that waits
+		// when the read position catches up to the available-bytes watermark.
+		val sourceStream = Channels.newInputStream(channel)
+		val blockingStream =
+			BlockingInputStream(
+				source = sourceStream,
+				channel = channel,
+				availableBytes = { availableBytesProvider(uri) },
+				downloadComplete = { downloadCompleteProvider(uri) },
+			)
 
-        // Wrap the channel's input stream in a BlockingInputStream that waits
-        // when the read position catches up to the available-bytes watermark.
-        val sourceStream = Channels.newInputStream(channel)
-        val blockingStream = BlockingInputStream(
-            source = sourceStream,
-            channel = channel,
-            availableBytes = { availableBytesProvider(uri) },
-            downloadComplete = { downloadCompleteProvider(uri) },
-        )
+		inputStream = CipherInputStream(blockingStream, cipher)
 
-        inputStream = CipherInputStream(blockingStream, cipher)
+		// --- Discard bytes inside the first decrypted block ---
+		if (discard > 0) {
+			val skip = ByteArray(discard)
+			inputStream?.read(skip, 0, discard)
+		}
 
-        // --- Discard bytes inside the first decrypted block ---
-        if (discard > 0) {
-            val skip = ByteArray(discard)
-            inputStream?.read(skip, 0, discard)
-        }
+		return dataSpec.length
+	}
 
-        return dataSpec.length
-    }
+	@Throws(IOException::class)
+	override fun read(
+		target: ByteArray,
+		offset: Int,
+		length: Int,
+	): Int = if (length == 0) 0 else inputStream?.read(target, offset, length) ?: 0
 
-    @Throws(IOException::class)
-    override fun read(target: ByteArray, offset: Int, length: Int): Int =
-        if (length == 0) 0 else inputStream?.read(target, offset, length) ?: 0
+	override fun addTransferListener(transferListener: TransferListener) {}
 
-    override fun addTransferListener(transferListener: TransferListener) {}
+	override fun getUri(): Uri = uri
 
-    override fun getUri(): Uri = uri
+	override fun close() {
+		inputStream?.close()
+		fileInputStream?.close()
+	}
 
-    override fun close() {
-        inputStream?.close()
-        fileInputStream?.close()
-    }
+	/**
+	 * Block (poll) until [availableBytesProvider] reports that at least
+	 * [minBytes] bytes are available, or the download completes (which may
+	 * have produced fewer than [minBytes] bytes — in that case we return
+	 * anyway and let the subsequent channel read fail naturally), or the
+	 * timeout expires.
+	 *
+	 * No-op when the file is fully available (provider returns `-1`).
+	 *
+	 * This runs on ExoPlayer's loading thread — blocking here is safe and
+	 * does NOT stall the UI.
+	 */
+	private fun waitForBytesAvailable(minBytes: Long) {
+		if (availableBytesProvider(uri) < 0) return // no limit — fully available
 
-    /**
-     * Block (poll) until [availableBytesProvider] reports that at least
-     * [minBytes] bytes are available, or the download completes (which may
-     * have produced fewer than [minBytes] bytes — in that case we return
-     * anyway and let the subsequent channel read fail naturally), or the
-     * timeout expires.
-     *
-     * No-op when the file is fully available (provider returns `-1`).
-     *
-     * This runs on ExoPlayer's loading thread — blocking here is safe and
-     * does NOT stall the UI.
-     */
-    private fun waitForBytesAvailable(minBytes: Long) {
-        if (availableBytesProvider(uri) < 0) return // no limit — fully available
+		android.util.Log.i(
+			"RcloneDiag",
+			"[VideoStream] waitForBytesAvailable: need=$minBytes available=${availableBytesProvider(uri)}",
+		)
 
-        android.util.Log.i("RcloneDiag",
-            "[VideoStream] waitForBytesAvailable: need=$minBytes available=${availableBytesProvider(uri)}")
+		val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
+		var lastLog = 0L
+		while (true) {
+			val avail = availableBytesProvider(uri)
+			if (avail < 0) return // file became fully available
+			if (avail >= minBytes) {
+				android.util.Log.i(
+					"RcloneDiag",
+					"[VideoStream] waitForBytesAvailable: OK (need=$minBytes available=$avail)",
+				)
+				return
+			}
+			if (downloadCompleteProvider(uri)) {
+				android.util.Log.w(
+					"RcloneDiag",
+					"[VideoStream] waitForBytesAvailable: download complete but only $avail < $minBytes bytes",
+				)
+				return
+			}
+			if (System.currentTimeMillis() > deadline) {
+				throw IOException(
+					"Timeout waiting for download: needed $minBytes bytes, " +
+						"only $avail available after ${WAIT_TIMEOUT_MS}ms",
+				)
+			}
+			try {
+				Thread.sleep(WAIT_POLL_INTERVAL_MS)
+			} catch (e: InterruptedException) {
+				Thread.currentThread().interrupt()
+				throw IOException("Interrupted while waiting for download", e)
+			}
+		}
+	}
 
-        val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
-        var lastLog = 0L
-        while (true) {
-            val avail = availableBytesProvider(uri)
-            if (avail < 0) return // file became fully available
-            if (avail >= minBytes) {
-                android.util.Log.i("RcloneDiag",
-                    "[VideoStream] waitForBytesAvailable: OK (need=$minBytes available=$avail)")
-                return
-            }
-            if (downloadCompleteProvider(uri)) {
-                android.util.Log.w("RcloneDiag",
-                    "[VideoStream] waitForBytesAvailable: download complete but only $avail < $minBytes bytes")
-                return
-            }
-            if (System.currentTimeMillis() > deadline) {
-                throw IOException(
-                    "Timeout waiting for download: needed $minBytes bytes, " +
-                        "only $avail available after ${WAIT_TIMEOUT_MS}ms",
-                )
-            }
-            try {
-                Thread.sleep(WAIT_POLL_INTERVAL_MS)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("Interrupted while waiting for download", e)
-            }
-        }
-    }
+	/**
+	 * InputStream wrapper that blocks when the underlying channel reaches the
+	 * available-bytes watermark. Used to keep [CipherInputStream] from seeing
+	 * an EOF (which would finalize the cipher and end playback prematurely)
+	 * while the file is still being downloaded.
+	 *
+	 * - Reads are capped to the available-bytes window so the underlying
+	 *   channel never returns -1 prematurely.
+	 * - When the window is exhausted and the download is still in flight,
+	 *   polls until more bytes arrive.
+	 * - When the window is exhausted and the download is complete, returns
+	 *   -1 (real EOF) so the cipher finalizes and ExoPlayer ends playback
+	 *   cleanly.
+	 * - When [availableBytes] returns `-1`, no limiting/blocking is applied
+	 *   (fully-available local file — original behavior).
+	 */
+	private class BlockingInputStream(
+		private val source: InputStream,
+		private val channel: FileChannel,
+		private val availableBytes: () -> Long,
+		private val downloadComplete: () -> Boolean,
+	) : InputStream() {
+		override fun read(): Int {
+			val b = ByteArray(1)
+			val n = read(b, 0, 1)
+			return if (n <= 0) -1 else b[0].toInt() and 0xFF
+		}
 
-    /**
-     * InputStream wrapper that blocks when the underlying channel reaches the
-     * available-bytes watermark. Used to keep [CipherInputStream] from seeing
-     * an EOF (which would finalize the cipher and end playback prematurely)
-     * while the file is still being downloaded.
-     *
-     * - Reads are capped to the available-bytes window so the underlying
-     *   channel never returns -1 prematurely.
-     * - When the window is exhausted and the download is still in flight,
-     *   polls until more bytes arrive.
-     * - When the window is exhausted and the download is complete, returns
-     *   -1 (real EOF) so the cipher finalizes and ExoPlayer ends playback
-     *   cleanly.
-     * - When [availableBytes] returns `-1`, no limiting/blocking is applied
-     *   (fully-available local file — original behavior).
-     */
-    private class BlockingInputStream(
-        private val source: InputStream,
-        private val channel: FileChannel,
-        private val availableBytes: () -> Long,
-        private val downloadComplete: () -> Boolean,
-    ) : InputStream() {
+		@Throws(IOException::class)
+		override fun read(
+			b: ByteArray,
+			off: Int,
+			len: Int,
+		): Int {
+			if (len == 0) return 0
+			val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
+			var lastLog = 0L
+			while (true) {
+				val avail = availableBytes()
+				// No limit — fully-available file, just delegate.
+				if (avail < 0) return source.read(b, off, len)
 
-        override fun read(): Int {
-            val b = ByteArray(1)
-            val n = read(b, 0, 1)
-            return if (n <= 0) -1 else b[0].toInt() and 0xFF
-        }
+				val pos = channel.position()
+				if (pos < avail) {
+					// We have data available. Cap the read to the available
+					// window so the underlying channel never returns -1
+					// prematurely (which would make CipherInputStream finalize
+					// the cipher).
+					val maxToRead = minOf(len.toLong(), avail - pos).toInt().coerceAtLeast(1)
+					val n = source.read(b, off, maxToRead)
+					if (n > 0) return n
+					// n <= 0 — unexpected (we knew data was available). Fall
+					// through to the wait/recheck logic below.
+				}
 
-        @Throws(IOException::class)
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
-            if (len == 0) return 0
-            val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
-            var lastLog = 0L
-            while (true) {
-                val avail = availableBytes()
-                // No limit — fully-available file, just delegate.
-                if (avail < 0) return source.read(b, off, len)
+				// pos >= avail — at end of available data.
+				if (downloadComplete()) {
+					// Download is done. Re-check once more in case the
+					// available-bytes watermark advanced between the check
+					// above and now (race with the writer).
+					val finalAvail = availableBytes()
+					val finalPos = channel.position()
+					if (finalPos < finalAvail) {
+						val maxToRead = minOf(len.toLong(), finalAvail - finalPos).toInt().coerceAtLeast(1)
+						val n = source.read(b, off, maxToRead)
+						if (n > 0) return n
+					}
+					return -1 // real EOF
+				}
 
-                val pos = channel.position()
-                if (pos < avail) {
-                    // We have data available. Cap the read to the available
-                    // window so the underlying channel never returns -1
-                    // prematurely (which would make CipherInputStream finalize
-                    // the cipher).
-                    val maxToRead = minOf(len.toLong(), avail - pos).toInt().coerceAtLeast(1)
-                    val n = source.read(b, off, maxToRead)
-                    if (n > 0) return n
-                    // n <= 0 — unexpected (we knew data was available). Fall
-                    // through to the wait/recheck logic below.
-                }
+				// Download still in flight — wait for more data.
+				if (System.currentTimeMillis() > deadline) {
+					throw IOException(
+						"Timeout waiting for download: stuck at pos $pos, " +
+							"available $avail, after ${WAIT_TIMEOUT_MS}ms",
+					)
+				}
+				// Log every 2 seconds so the user can see progress via logcat
+				val now = System.currentTimeMillis()
+				if (now - lastLog > 2000L) {
+					lastLog = now
+					android.util.Log.i(
+						"RcloneDiag",
+						"[VideoStream] BlockingInputStream: waiting at pos=$pos available=$avail (download in progress)",
+					)
+				}
+				try {
+					Thread.sleep(WAIT_POLL_INTERVAL_MS)
+				} catch (e: InterruptedException) {
+					Thread.currentThread().interrupt()
+					throw IOException("Interrupted while waiting for download", e)
+				}
+			}
+		}
+	}
 
-                // pos >= avail — at end of available data.
-                if (downloadComplete()) {
-                    // Download is done. Re-check once more in case the
-                    // available-bytes watermark advanced between the check
-                    // above and now (race with the writer).
-                    val finalAvail = availableBytes()
-                    val finalPos = channel.position()
-                    if (finalPos < finalAvail) {
-                        val maxToRead = minOf(len.toLong(), finalAvail - finalPos).toInt().coerceAtLeast(1)
-                        val n = source.read(b, off, maxToRead)
-                        if (n > 0) return n
-                    }
-                    return -1 // real EOF
-                }
+	companion object {
+		/**
+		 * How long to block waiting for more download data before giving up.
+		 * 10 minutes — generous enough for slow connections (500kbps downloading
+		 * 30MB takes ~500s). Old value (30s) was too short — ExoPlayer timed
+		 * out seeking to MOOV atom at end of MP4 and gave up entirely.
+		 */
+		private const val WAIT_TIMEOUT_MS = 600_000L
 
-                // Download still in flight — wait for more data.
-                if (System.currentTimeMillis() > deadline) {
-                    throw IOException(
-                        "Timeout waiting for download: stuck at pos $pos, " +
-                            "available $avail, after ${WAIT_TIMEOUT_MS}ms",
-                    )
-                }
-                // Log every 2 seconds so the user can see progress via logcat
-                val now = System.currentTimeMillis()
-                if (now - lastLog > 2000L) {
-                    lastLog = now
-                    android.util.Log.i("RcloneDiag",
-                        "[VideoStream] BlockingInputStream: waiting at pos=$pos available=$avail (download in progress)")
-                }
-                try {
-                    Thread.sleep(WAIT_POLL_INTERVAL_MS)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    throw IOException("Interrupted while waiting for download", e)
-                }
-            }
-        }
-    }
-
-    companion object {
-        /**
-         * How long to block waiting for more download data before giving up.
-         * 10 minutes — generous enough for slow connections (500kbps downloading
-         * 30MB takes ~500s). Old value (30s) was too short — ExoPlayer timed
-         * out seeking to MOOV atom at end of MP4 and gave up entirely.
-         */
-        private const val WAIT_TIMEOUT_MS = 600_000L
-
-        /**
-         * Poll interval for the wait loops. 50ms is responsive enough that
-         * playback starts within ~1 frame of the data arriving, without
-         * burning CPU.
-         */
-        private const val WAIT_POLL_INTERVAL_MS = 50L
-    }
+		/**
+		 * Poll interval for the wait loops. 50ms is responsive enough that
+		 * playback starts within ~1 frame of the data arriving, without
+		 * burning CPU.
+		 */
+		private const val WAIT_POLL_INTERVAL_MS = 50L
+	}
 }

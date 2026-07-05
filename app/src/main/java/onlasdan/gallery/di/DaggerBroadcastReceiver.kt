@@ -31,5 +31,8 @@ import android.content.Intent
  * @author PhotoZ
  */
 abstract class DaggerBroadcastReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {}
+	override fun onReceive(
+		context: Context?,
+		intent: Intent?,
+	) {}
 }

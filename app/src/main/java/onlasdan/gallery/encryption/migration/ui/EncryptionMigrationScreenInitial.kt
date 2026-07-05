@@ -17,7 +17,6 @@
 package onlasdan.gallery.encryption.migration.ui
 
 import android.Manifest
-import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,285 +72,286 @@ import onlasdan.gallery.settings.ui.compose.createBackupFilename
 import onlasdan.gallery.ui.components.AppName
 import onlasdan.gallery.ui.theme.AppTheme
 
-
 @Composable
 fun EncryptionMigrationScreenInitial(
-    uiState: LegacyEncryptionMigrationUiState.Initial,
-    handleUiEvent: (LegacyEncryptionMigrationUiEvent) -> Unit,
+	uiState: LegacyEncryptionMigrationUiState.Initial,
+	handleUiEvent: (LegacyEncryptionMigrationUiEvent) -> Unit,
 ) {
-    val context = LocalContext.current
-    val activity = LocalActivity.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
+	val lifecycleOwner = LocalLifecycleOwner.current
+	val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
 
-    LaunchedEffect(lifecycleState) {
-        if (lifecycleState == Lifecycle.State.RESUMED) {
-            if (context.areNotificationsEnabled() && uiState.stage == InitialSubStage.PERMISSION) {
-                handleUiEvent(SwitchStage(InitialSubStage.READY))
-            }
-        }
-    }
+	LaunchedEffect(lifecycleState) {
+		if (lifecycleState == Lifecycle.State.RESUMED) {
+			if (context.areNotificationsEnabled() && uiState.stage == InitialSubStage.PERMISSION) {
+				handleUiEvent(SwitchStage(InitialSubStage.READY))
+			}
+		}
+	}
 
-    val createBackupLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) {
-            it ?: return@rememberLauncherForActivityResult
-            if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
+	val createBackupLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) {
+			it ?: return@rememberLauncherForActivityResult
+			if (activity !is AppCompatActivity) return@rememberLauncherForActivityResult
 
-            BackupBottomSheetDialogFragment(
-                uri = it,
-                strategy = BackupStrategy.Name.Legacy,
-            ).show(activity.supportFragmentManager)
+			BackupBottomSheetDialogFragment(
+				uri = it,
+				strategy = BackupStrategy.Name.Legacy,
+			).show(activity.supportFragmentManager)
 
-            if (context.areNotificationsEnabled()) {
-                handleUiEvent(SwitchStage(InitialSubStage.READY))
-            } else {
-                handleUiEvent(SwitchStage(InitialSubStage.PERMISSION))
-            }
-        }
+			if (context.areNotificationsEnabled()) {
+				handleUiEvent(SwitchStage(InitialSubStage.READY))
+			} else {
+				handleUiEvent(SwitchStage(InitialSubStage.PERMISSION))
+			}
+		}
 
-    val permissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                handleUiEvent(SwitchStage(InitialSubStage.READY))
-            }
-        }
+	val permissionLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+			if (granted) {
+				handleUiEvent(SwitchStage(InitialSubStage.READY))
+			}
+		}
 
-    Scaffold { contentPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .padding(horizontal = 12.dp),
-        ) {
+	Scaffold { contentPadding ->
+		Box(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.padding(contentPadding)
+					.padding(horizontal = 12.dp),
+		) {
+			Column(
+				modifier =
+					Modifier
+						.verticalScroll(rememberScrollState())
+						.align(Alignment.Center)
+						.padding(horizontal = 12.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+			) {
+				AnimatedVisibility(uiState.stage == InitialSubStage.INITIAL) {
+					Text(text = stringResource(R.string.migration_initial_title_welcome))
+				}
 
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .align(Alignment.Center)
-                    .padding(horizontal = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+				Spacer(Modifier.height(24.dp))
 
-                AnimatedVisibility(uiState.stage == InitialSubStage.INITIAL) {
-                    Text(text = stringResource(R.string.migration_initial_title_welcome))
-                }
+				AppName()
 
-                Spacer(Modifier.height(24.dp))
+				Spacer(Modifier.height(24.dp))
 
+				AnimatedVisibility(uiState.stage == InitialSubStage.INITIAL) {
+					Text(
+						text = stringResource(R.string.migration_initial_explaination),
+						textAlign = TextAlign.Center,
+					)
+				}
 
-                AppName()
+				AnimatedVisibility(uiState.stage != InitialSubStage.INITIAL) {
+					Column(
+						horizontalAlignment = Alignment.Start,
+						verticalArrangement = Arrangement.spacedBy(8.dp),
+					) {
+						AnimatedContent(
+							targetState = uiState.stage.value,
+							transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+						) {
+							val icon: Painter
+							val color: Color
 
-                Spacer(Modifier.height(24.dp))
+							if (it > InitialSubStage.BACKUP.value) {
+								icon = painterResource(R.drawable.ic_check)
+								color = MaterialTheme.colorScheme.primary
+							} else {
+								icon = painterResource(R.drawable.ic_close)
+								color = MaterialTheme.colorScheme.outline
+							}
 
-                AnimatedVisibility(uiState.stage == InitialSubStage.INITIAL) {
-                    Text(
-                        text = stringResource(R.string.migration_initial_explaination),
-                        textAlign = TextAlign.Center,
-                    )
-                }
+							Row(
+								verticalAlignment = Alignment.CenterVertically,
+								horizontalArrangement = Arrangement.spacedBy(8.dp),
+							) {
+								Icon(
+									painter = icon,
+									contentDescription = null,
+									tint = color,
+								)
+								Text(
+									text = stringResource(R.string.migration_initial_stage_backup_checklist),
+									color = color,
+								)
+							}
+						}
 
-                AnimatedVisibility(uiState.stage != InitialSubStage.INITIAL) {
-                    Column(
-                        horizontalAlignment = Alignment.Start,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        AnimatedContent(
-                            targetState = uiState.stage.value,
-                            transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-                        ) {
-                            val icon: Painter
-                            val color: Color
+						AnimatedContent(
+							targetState = uiState.stage.value,
+							transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+						) {
+							val icon: Painter
+							val color: Color
 
-                            if (it > InitialSubStage.BACKUP.value) {
-                                icon = painterResource(R.drawable.ic_check)
-                                color = MaterialTheme.colorScheme.primary
-                            } else {
-                                icon = painterResource(R.drawable.ic_close)
-                                color = MaterialTheme.colorScheme.outline
-                            }
+							if (it > InitialSubStage.PERMISSION.value) {
+								icon = painterResource(R.drawable.ic_check)
+								color = MaterialTheme.colorScheme.primary
+							} else {
+								icon = painterResource(R.drawable.ic_close)
+								color = MaterialTheme.colorScheme.outline
+							}
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    painter = icon,
-                                    contentDescription = null,
-                                    tint = color,
-                                )
-                                Text(
-                                    text = stringResource(R.string.migration_initial_stage_backup_checklist),
-                                    color = color,
-                                )
-                            }
-                        }
+							Row(
+								verticalAlignment = Alignment.CenterVertically,
+								horizontalArrangement = Arrangement.spacedBy(8.dp),
+							) {
+								Icon(
+									painter = icon,
+									contentDescription = null,
+									tint = color,
+								)
+								Text(
+									text = stringResource(R.string.migration_initial_stage_permission_checklist),
+									color = color,
+								)
+							}
+						}
+					}
+				}
 
-                        AnimatedContent(
-                            targetState = uiState.stage.value,
-                            transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-                        ) {
-                            val icon: Painter
-                            val color: Color
+				Spacer(Modifier.height(24.dp))
 
-                            if (it > InitialSubStage.PERMISSION.value) {
-                                icon = painterResource(R.drawable.ic_check)
-                                color = MaterialTheme.colorScheme.primary
-                            } else {
-                                icon = painterResource(R.drawable.ic_close)
-                                color = MaterialTheme.colorScheme.outline
-                            }
+				AnimatedContent(
+					targetState = uiState.stage,
+					transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+				) {
+					val text =
+						when (it) {
+							InitialSubStage.INITIAL -> null
+							InitialSubStage.BACKUP -> R.string.migration_initial_stage_backup_explanation
+							InitialSubStage.PERMISSION -> R.string.migration_initial_stage_permission_explanation
+							InitialSubStage.READY -> R.string.migration_initial_stage_ready_explanation
+						}
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    painter = icon,
-                                    contentDescription = null,
-                                    tint = color,
-                                )
-                                Text(
-                                    text = stringResource(R.string.migration_initial_stage_permission_checklist),
-                                    color = color,
-                                )
-                            }
-                        }
-                    }
-                }
+					if (text != null) {
+						Text(
+							text = stringResource(text),
+							textAlign = TextAlign.Center,
+						)
+					}
+				}
 
-                Spacer(Modifier.height(24.dp))
+				Spacer(Modifier.height(24.dp))
 
-                AnimatedContent(
-                    targetState = uiState.stage,
-                    transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-                ) {
-                    val text = when (it) {
-                        InitialSubStage.INITIAL -> null
-                        InitialSubStage.BACKUP -> R.string.migration_initial_stage_backup_explanation
-                        InitialSubStage.PERMISSION -> R.string.migration_initial_stage_permission_explanation
-                        InitialSubStage.READY -> R.string.migration_initial_stage_ready_explanation
-                    }
+				AnimatedContent(
+					targetState = uiState.stage,
+					transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+				) {
+					when (it) {
+						InitialSubStage.INITIAL ->
+							Button(
+								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+								onClick = {
+									handleUiEvent(
+										SwitchStage(
+											InitialSubStage.BACKUP,
+										),
+									)
+								},
+							) {
+								Text(stringResource(R.string.migration_initial_button))
+							}
 
-                    if (text != null) {
-                        Text(
-                            text = stringResource(text),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+						InitialSubStage.BACKUP ->
+							Button(
+								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+								onClick = {
+									createBackupLauncher.launchAndIgnoreTimer(
+										input = createBackupFilename(),
+										activity = activity,
+									)
+								},
+							) {
+								Text(stringResource(R.string.migration_initial_stage_backup_button))
+							}
 
-                Spacer(Modifier.height(24.dp))
+						InitialSubStage.PERMISSION ->
+							Button(
+								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+								onClick = {
+									activity ?: return@Button
 
+									if (activity.requestInSettings(Manifest.permission.POST_NOTIFICATIONS)) {
+										activity.openNotificationSettings()
+									} else {
+										permissionLauncher.launchAndIgnoreTimer(
+											Manifest.permission.POST_NOTIFICATIONS,
+											activity,
+										)
+									}
+								},
+							) {
+								Text(stringResource(R.string.migration_initial_stage_permission_button))
+							}
 
-
-                AnimatedContent(
-                    targetState = uiState.stage,
-                    transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-                ) {
-                    when (it) {
-                        InitialSubStage.INITIAL -> Button(
-                            modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-                            onClick = {
-                                handleUiEvent(
-                                    SwitchStage(
-                                        InitialSubStage.BACKUP
-                                    )
-                                )
-                            }
-                        ) {
-                            Text(stringResource(R.string.migration_initial_button))
-                        }
-
-                        InitialSubStage.BACKUP -> Button(
-                            modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-                            onClick = {
-                                createBackupLauncher.launchAndIgnoreTimer(
-                                    input = createBackupFilename(),
-                                    activity = activity,
-                                )
-                            }
-                        ) {
-                            Text(stringResource(R.string.migration_initial_stage_backup_button))
-                        }
-
-                        InitialSubStage.PERMISSION -> Button(
-                            modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-                            onClick = {
-                                activity ?: return@Button
-
-                                if (activity.requestInSettings(Manifest.permission.POST_NOTIFICATIONS)) {
-                                    activity.openNotificationSettings()
-                                } else {
-                                    permissionLauncher.launchAndIgnoreTimer(
-                                        Manifest.permission.POST_NOTIFICATIONS,
-                                        activity
-                                    )
-                                }
-                            }
-                        ) {
-                            Text(stringResource(R.string.migration_initial_stage_permission_button))
-                        }
-
-                        InitialSubStage.READY -> Button(
-                            modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-                            onClick = {
-                                handleUiEvent(
-                                    StartMigration(
-                                        context
-                                    )
-                                )
-                            }
-                        ) {
-                            Text(stringResource(R.string.migration_initial_stage_ready_button))
-                        }
-                    }
-                }
-            }
-        }
-    }
+						InitialSubStage.READY ->
+							Button(
+								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+								onClick = {
+									handleUiEvent(
+										StartMigration(
+											context,
+										),
+									)
+								},
+							) {
+								Text(stringResource(R.string.migration_initial_stage_ready_button))
+							}
+					}
+				}
+			}
+		}
+	}
 }
 
 @Preview
 @Composable
 private fun PreviewInitial() {
-    AppTheme {
-        EncryptionMigrationScreenInitial(
-            uiState = LegacyEncryptionMigrationUiState.Initial(),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenInitial(
+			uiState = LegacyEncryptionMigrationUiState.Initial(),
+			handleUiEvent = {},
+		)
+	}
 }
 
 @Preview
 @Composable
 private fun PreviewInitialBackpup() {
-    AppTheme {
-        EncryptionMigrationScreenInitial(
-            uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.BACKUP),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenInitial(
+			uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.BACKUP),
+			handleUiEvent = {},
+		)
+	}
 }
 
 @Preview
 @Composable
 private fun PreviewInitialPermission() {
-    AppTheme {
-        EncryptionMigrationScreenInitial(
-            uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.PERMISSION),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenInitial(
+			uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.PERMISSION),
+			handleUiEvent = {},
+		)
+	}
 }
 
 @Preview
 @Composable
 private fun PreviewInitialReady() {
-    AppTheme {
-        EncryptionMigrationScreenInitial(
-            uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.READY),
-            handleUiEvent = {},
-        )
-    }
+	AppTheme {
+		EncryptionMigrationScreenInitial(
+			uiState = LegacyEncryptionMigrationUiState.Initial(stage = InitialSubStage.READY),
+			handleUiEvent = {},
+		)
+	}
 }

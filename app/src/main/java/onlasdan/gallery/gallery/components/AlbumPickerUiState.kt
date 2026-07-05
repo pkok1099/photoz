@@ -19,5 +19,5 @@ package onlasdan.gallery.gallery.components
 import onlasdan.gallery.gallery.albums.ui.compose.AlbumItem
 
 data class AlbumPickerUiState(
-    val albums: List<AlbumItem> = emptyList(),
+	val albums: List<AlbumItem> = emptyList(),
 )

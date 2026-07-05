@@ -26,41 +26,47 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class Signal {
-    OnboardingFinished,
-    SetupCompleted,
+	OnboardingFinished,
+	SetupCompleted,
 }
 
 @Singleton
-class TelemetryService @Inject constructor(
-    private val config: Config,
-    @ApplicationContext private val context: Context,
-) {
-    fun setup() {
-        val telemetryDeckAppId = BuildConfig.TELEMETRY_DECK_APP_ID
+class TelemetryService
+	@Inject
+	constructor(
+		private val config: Config,
+		@ApplicationContext private val context: Context,
+	) {
+		fun setup() {
+			val telemetryDeckAppId = BuildConfig.TELEMETRY_DECK_APP_ID
 
-        if (config.telemetryEnabled && telemetryDeckAppId.isNotBlank()) {
-            val builder = TelemetryDeck.Builder()
-                .appID(telemetryDeckAppId)
-                .addProvider(
-                    DefaultParameterProvider(
-                        mapOf(
-                            "flavor" to BuildConfig.FLAVOR,
-                            "usesBiometricAuthentication" to config.biometricAuthenticationEnabled.toString(),
-                        )
-                    )
-                )
-                .showDebugLogs(BuildConfig.DEBUG)
+			if (config.telemetryEnabled && telemetryDeckAppId.isNotBlank()) {
+				val builder =
+					TelemetryDeck
+						.Builder()
+						.appID(telemetryDeckAppId)
+						.addProvider(
+							DefaultParameterProvider(
+								mapOf(
+									"flavor" to BuildConfig.FLAVOR,
+									"usesBiometricAuthentication" to config.biometricAuthenticationEnabled.toString(),
+								),
+							),
+						).showDebugLogs(BuildConfig.DEBUG)
 
-            TelemetryDeck.start(context, builder)
-        } else {
-            TelemetryDeck.stop()
-        }
-    }
+				TelemetryDeck.start(context, builder)
+			} else {
+				TelemetryDeck.stop()
+			}
+		}
 
-    fun signal(signal: Signal, params: Map<String, String> = emptyMap()) {
-        TelemetryDeck.signal(
-            signalName = signal.name,
-            params = params,
-        )
-    }
-}
+		fun signal(
+			signal: Signal,
+			params: Map<String, String> = emptyMap(),
+		) {
+			TelemetryDeck.signal(
+				signalName = signal.name,
+				params = params,
+			)
+		}
+	}

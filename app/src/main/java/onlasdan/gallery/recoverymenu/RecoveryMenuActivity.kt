@@ -26,27 +26,25 @@ import onlasdan.gallery.uicomponnets.bindings.BindableActivity
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class RecoveryMenuActivity :
-    BindableActivity<ActivityRecoveryMenuBinding>(R.layout.activity_recovery_menu) {
+class RecoveryMenuActivity : BindableActivity<ActivityRecoveryMenuBinding>(R.layout.activity_recovery_menu) {
+	@Inject
+	override lateinit var config: Config
 
-    @Inject
-    override lateinit var config: Config
+	@Inject
+	lateinit var navigator: RecoveryMenuNavigator
 
-    @Inject
-    lateinit var navigator: RecoveryMenuNavigator
+	private val viewModel: RecoveryMenuViewModel by viewModels()
 
-    private val viewModel: RecoveryMenuViewModel by viewModels()
+	override fun onCreate(savedInstanceState: Bundle?) {
+		super.onCreate(savedInstanceState)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+		viewModel.navigationEvent.observe(this) {
+			navigator.navigate(it, this)
+		}
+	}
 
-        viewModel.navigationEvent.observe(this) {
-            navigator.navigate(it, this)
-        }
-    }
-
-    override fun bind(binding: ActivityRecoveryMenuBinding) {
-        super.bind(binding)
-        binding.viewModel = viewModel
-    }
+	override fun bind(binding: ActivityRecoveryMenuBinding) {
+		super.bind(binding)
+		binding.viewModel = viewModel
+	}
 }

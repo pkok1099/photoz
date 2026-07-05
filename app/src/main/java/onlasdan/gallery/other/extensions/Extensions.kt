@@ -25,21 +25,23 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.core.app.ActivityOptionsCompat
 
 fun <I> ActivityResultLauncher<I>.launchAndIgnoreTimer(
-    input: I,
-    activity: Activity?,
-    options: ActivityOptionsCompat? = null,
+	input: I,
+	activity: Activity?,
+	options: ActivityOptionsCompat? = null,
 ) {
-    launch(input, options)
-    activity?.getBaseApplication()?.ignoreNextTimeout()
+	launch(input, options)
+	activity?.getBaseApplication()?.ignoreNextTimeout()
 }
 
-fun Context.startActivityAndIgnoreTimer(intent: Intent, activity: Activity?) {
-    startActivity(intent)
-    activity?.getBaseApplication()?.ignoreNextTimeout()
-
+fun Context.startActivityAndIgnoreTimer(
+	intent: Intent,
+	activity: Activity?,
+) {
+	startActivity(intent)
+	activity?.getBaseApplication()?.ignoreNextTimeout()
 }
 
 fun Context.areBiometricsAvailable(): Boolean {
-    val biometricManager = BiometricManager.from(this)
-    return biometricManager.canAuthenticate(BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+	val biometricManager = BiometricManager.from(this)
+	return biometricManager.canAuthenticate(BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
 }

@@ -30,12 +30,12 @@ https://github.com/google/accompanist/blob/main/systemuicontroller/src/main/java
 
 @Composable
 fun findWindow(): Window? =
-    (LocalView.current.parent as? DialogWindowProvider)?.window
-        ?: LocalView.current.context.findWindow()
+	(LocalView.current.parent as? DialogWindowProvider)?.window
+		?: LocalView.current.context.findWindow()
 
 private tailrec fun Context.findWindow(): Window? =
-    when (this) {
-        is Activity -> window
-        is ContextWrapper -> baseContext.findWindow()
-        else -> null
-    }
+	when (this) {
+		is Activity -> window
+		is ContextWrapper -> baseContext.findWindow()
+		else -> null
+	}

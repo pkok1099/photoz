@@ -25,52 +25,57 @@ import onlasdan.gallery.model.database.ref.AlbumPhotoCrossRefTable
 import onlasdan.gallery.model.database.ref.AlbumWithPhotos
 
 // Nullable is a safety mechanism for race condition when deleting album from detail view
-fun AlbumWithPhotos?.toDomain(): Album = this?.run {
-    Album(
-        uuid = album.uuid,
-        name = album.name,
-        modifiedAt = album.modifiedAt,
-        files = photos,
-    )
-} ?: Album(name = "", modifiedAt = System.currentTimeMillis(), files = emptyList())
+fun AlbumWithPhotos?.toDomain(): Album =
+	this?.run {
+		Album(
+			uuid = album.uuid,
+			name = album.name,
+			modifiedAt = album.modifiedAt,
+			files = photos,
+		)
+	} ?: Album(name = "", modifiedAt = System.currentTimeMillis(), files = emptyList())
 
-fun AlbumTable.toDomain(): Album = Album(
-    uuid = uuid,
-    name = name,
-    modifiedAt = modifiedAt,
-    files = emptyList(),
-)
+fun AlbumTable.toDomain(): Album =
+	Album(
+		uuid = uuid,
+		name = name,
+		modifiedAt = modifiedAt,
+		files = emptyList(),
+	)
 
-fun Album.toData(): AlbumTable = AlbumTable(
-    name = name,
-    modifiedAt = modifiedAt,
-    uuid = uuid,
-)
+fun Album.toData(): AlbumTable =
+	AlbumTable(
+		name = name,
+		modifiedAt = modifiedAt,
+		uuid = uuid,
+	)
 
-fun Album.toUi(): AlbumItem = AlbumItem(
-    id = uuid,
-    name = name,
-    itemCount = files.size,
-    albumCover = files.firstOrNull()?.let { firstPhoto ->
-        AlbumCover(
-            filename = firstPhoto.internalThumbnailFileName,
-            mimeType = firstPhoto.type.mimeType
-        )
-    }
-)
+fun Album.toUi(): AlbumItem =
+	AlbumItem(
+		id = uuid,
+		name = name,
+		itemCount = files.size,
+		albumCover =
+			files.firstOrNull()?.let { firstPhoto ->
+				AlbumCover(
+					filename = firstPhoto.internalThumbnailFileName,
+					mimeType = firstPhoto.type.mimeType,
+				)
+			},
+	)
 
 fun AlbumPhotoCrossRefTable.toDomain(): AlbumPhotoRef =
-    AlbumPhotoRef(
-        albumUUID = albumUUID,
-        photoUUID = photoUUID,
-        linkedAt = linkedAt,
-        pinned = pinned,
-    )
+	AlbumPhotoRef(
+		albumUUID = albumUUID,
+		photoUUID = photoUUID,
+		linkedAt = linkedAt,
+		pinned = pinned,
+	)
 
 fun AlbumPhotoRef.toData(): AlbumPhotoCrossRefTable =
-    AlbumPhotoCrossRefTable(
-        albumUUID = albumUUID,
-        photoUUID = photoUUID,
-        linkedAt = linkedAt,
-        pinned = pinned,
-    )
+	AlbumPhotoCrossRefTable(
+		albumUUID = albumUUID,
+		photoUUID = photoUUID,
+		linkedAt = linkedAt,
+		pinned = pinned,
+	)

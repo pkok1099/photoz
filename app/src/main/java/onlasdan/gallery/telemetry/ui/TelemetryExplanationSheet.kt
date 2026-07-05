@@ -45,90 +45,95 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TelemetryExplanationSheet(visible: Boolean, onDismissRequest: () -> Unit) {
-    if (visible) {
-        val viewModel: TelemetryViewModel = hiltViewModel()
-        val enabledState by viewModel.enabled.collectAsStateWithLifecycle()
+fun TelemetryExplanationSheet(
+	visible: Boolean,
+	onDismissRequest: () -> Unit,
+) {
+	if (visible) {
+		val viewModel: TelemetryViewModel = hiltViewModel()
+		val enabledState by viewModel.enabled.collectAsStateWithLifecycle()
 
-        SheetContent(
-            enabled = enabledState,
-            updateEnabled = viewModel::updateTelemetryEnabled,
-            onDismissRequest = onDismissRequest,
-        )
-    }
+		SheetContent(
+			enabled = enabledState,
+			updateEnabled = viewModel::updateTelemetryEnabled,
+			onDismissRequest = onDismissRequest,
+		)
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SheetContent(
-    enabled: Boolean,
-    updateEnabled: (Boolean) -> Unit,
-    onDismissRequest: () -> Unit,
+	enabled: Boolean,
+	updateEnabled: (Boolean) -> Unit,
+	onDismissRequest: () -> Unit,
 ) {
-    val state = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
-    )
+	val state =
+		rememberModalBottomSheetState(
+			skipPartiallyExpanded = true,
+		)
 
-    ModalBottomSheet(
-        sheetState = state,
-        onDismissRequest = onDismissRequest,
-        dragHandle = null,
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.telemetry_sheet_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
+	ModalBottomSheet(
+		sheetState = state,
+		onDismissRequest = onDismissRequest,
+		dragHandle = null,
+	) {
+		Column(
+			verticalArrangement = Arrangement.spacedBy(12.dp),
+			modifier =
+				Modifier
+					.verticalScroll(rememberScrollState())
+					.padding(20.dp),
+		) {
+			Text(
+				text = stringResource(R.string.telemetry_sheet_title),
+				style = MaterialTheme.typography.titleLarge,
+			)
 
-            Text(
-                text = stringResource(R.string.telemetry_sheet_paragraph_1),
-            )
+			Text(
+				text = stringResource(R.string.telemetry_sheet_paragraph_1),
+			)
 
-            Text(
-                text = stringResource(R.string.telemetry_sheet_paragraph_2),
-            )
+			Text(
+				text = stringResource(R.string.telemetry_sheet_paragraph_2),
+			)
 
-            val context = LocalContext.current
-            val ppUrl = stringResource(R.string.about_privacy_policy_url)
+			val context = LocalContext.current
+			val ppUrl = stringResource(R.string.about_privacy_policy_url)
 
-            TextButton(
-                onClick = {
-                    context.openUrl(ppUrl)
-                }
-            ) {
-                Text(stringResource(R.string.telemetry_learn_more))
-            }
+			TextButton(
+				onClick = {
+					context.openUrl(ppUrl)
+				},
+			) {
+				Text(stringResource(R.string.telemetry_learn_more))
+			}
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.telemetry_toggle),
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = { updateEnabled(it) }
-                )
-            }
-        }
-    }
+			Row(
+				verticalAlignment = Alignment.CenterVertically,
+				horizontalArrangement = Arrangement.spacedBy(6.dp),
+			) {
+				Text(
+					text = stringResource(R.string.telemetry_toggle),
+					modifier = Modifier.weight(1f),
+				)
+				Switch(
+					checked = enabled,
+					onCheckedChange = { updateEnabled(it) },
+				)
+			}
+		}
+	}
 }
 
 @Preview
 @Composable
 private fun Preview() {
-    AppTheme {
-        SheetContent(
-            enabled = true,
-            updateEnabled = {},
-            onDismissRequest = {},
-        )
-    }
+	AppTheme {
+		SheetContent(
+			enabled = true,
+			updateEnabled = {},
+			onDismissRequest = {},
+		)
+	}
 }

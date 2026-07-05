@@ -51,88 +51,91 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun RenameAlbumDialog(
-    show: Boolean,
-    onDismiss: () -> Unit,
-    currentName: String,
-    onRename: (String) -> Unit,
+	show: Boolean,
+	onDismiss: () -> Unit,
+	currentName: String,
+	onRename: (String) -> Unit,
 ) {
-    val focusRequester = remember {
-        FocusRequester()
-    }
+	val focusRequester =
+		remember {
+			FocusRequester()
+		}
 
-    if (show) {
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-        }
+	if (show) {
+		LaunchedEffect(Unit) {
+			focusRequester.requestFocus()
+		}
 
-        Dialog(onDismissRequest = onDismiss) {
-            Card(
-                shape = MaterialTheme.shapes.extraLarge,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    var albumName by remember { mutableStateOf(currentName) }
+		Dialog(onDismissRequest = onDismiss) {
+			Card(
+				shape = MaterialTheme.shapes.extraLarge,
+			) {
+				Column(
+					horizontalAlignment = Alignment.CenterHorizontally,
+					verticalArrangement = Arrangement.spacedBy(12.dp),
+					modifier = Modifier.padding(16.dp),
+				) {
+					var albumName by remember { mutableStateOf(currentName) }
 
-                    Text(
-                        stringResource(R.string.gallery_albums_rename_title),
-                        style = MaterialTheme.typography.headlineSmall
-                    )
+					Text(
+						stringResource(R.string.gallery_albums_rename_title),
+						style = MaterialTheme.typography.headlineSmall,
+					)
 
-                    OutlinedTextField(
-                        value = albumName,
-                        onValueChange = { albumName = it },
-                        placeholder = { Text(stringResource(R.string.gallery_albums_create_placeholder)) },
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Words,
-                            autoCorrect = true,
-                            keyboardType = KeyboardType.Text,
-                            imeAction = ImeAction.Done,
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                onDismiss()
-                                onRename(albumName.trim())
-                            }
-                        ),
-                        maxLines = 1,
-                        modifier = Modifier.focusRequester(focusRequester)
-                    )
+					OutlinedTextField(
+						value = albumName,
+						onValueChange = { albumName = it },
+						placeholder = { Text(stringResource(R.string.gallery_albums_create_placeholder)) },
+						keyboardOptions =
+							KeyboardOptions(
+								capitalization = KeyboardCapitalization.Words,
+								autoCorrect = true,
+								keyboardType = KeyboardType.Text,
+								imeAction = ImeAction.Done,
+							),
+						keyboardActions =
+							KeyboardActions(
+								onDone = {
+									onDismiss()
+									onRename(albumName.trim())
+								},
+							),
+						maxLines = 1,
+						modifier = Modifier.focusRequester(focusRequester),
+					)
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        TextButton(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_cancel))
-                        }
-                        Button(
-                            onClick = {
-                                onDismiss()
-                                onRename(albumName.trim())
-                            },
-                            enabled = albumName.isNotEmpty()
-                        ) {
-                            Text(stringResource(R.string.common_rename))
-                        }
-                    }
-                }
-            }
-        }
-    }
+					Row(
+						modifier = Modifier.fillMaxWidth(),
+						horizontalArrangement = Arrangement.SpaceBetween,
+					) {
+						TextButton(onClick = onDismiss) {
+							Text(stringResource(R.string.common_cancel))
+						}
+						Button(
+							onClick = {
+								onDismiss()
+								onRename(albumName.trim())
+							},
+							enabled = albumName.isNotEmpty(),
+						) {
+							Text(stringResource(R.string.common_rename))
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 @Preview
 @Composable
 private fun RenameAlbumDialogPreview() {
-    AppTheme {
-        RenameAlbumDialog(
-            show = true,
-            onDismiss = {},
-            currentName = "previous name",
-            onRename = {}
-        )
-    }
+	AppTheme {
+		RenameAlbumDialog(
+			show = true,
+			onDismiss = {},
+			currentName = "previous name",
+			onRename = {},
+		)
+	}
 }

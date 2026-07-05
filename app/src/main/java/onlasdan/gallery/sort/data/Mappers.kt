@@ -19,18 +19,16 @@ package onlasdan.gallery.sort.data
 import onlasdan.gallery.sort.data.db.model.SortTable
 import onlasdan.gallery.sort.domain.Sort
 
-fun Sort.toData(albumUuid: String?): SortTable {
-    return SortTable(
-        id = 0,
-        albumUuid = albumUuid,
-        field = field,
-        order = order,
-    )
-}
+fun Sort.toData(albumUuid: String?): SortTable =
+	SortTable(
+		id = 0,
+		albumUuid = albumUuid,
+		field = field,
+		order = order,
+	)
 
-fun SortTable.toDomain(): Sort {
-    return Sort(
-        field = field,
-        order = order,
-    )
-}
+fun SortTable.toDomain(): Sort =
+	Sort(
+		field = field,
+		order = order,
+	)

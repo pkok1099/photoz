@@ -16,6 +16,11 @@
 
 package onlasdan.gallery.encryption.integration
 
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runTest
 import onlasdan.gallery.encryption.domain.RecoveryPhraseStore
 import onlasdan.gallery.encryption.domain.crypto.Bip39MnemonicGenerator
 import onlasdan.gallery.encryption.domain.crypto.Bip39WordCount
@@ -25,11 +30,6 @@ import onlasdan.gallery.encryption.domain.models.CreateRequest
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.encryption.domain.models.UnlockRequest
 import onlasdan.gallery.encryption.domain.models.VaultSession
-import io.mockk.every
-import io.mockk.mockk
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -43,71 +43,80 @@ import org.robolectric.RobolectricTestRunner
  */
 @RunWith(RobolectricTestRunner::class)
 class RecoveryPhraseLifecycleTest {
+	private val keyGen = KeyGen()
+	private val fixedPhrase = RecoveryPhrase(List(12) { "abandon" } + listOf("about"))
 
-    private val keyGen = KeyGen()
-    private val fixedPhrase = RecoveryPhrase(List(12) { "abandon" } + listOf("about"))
+	private val mockMnemonicGenerator = mockk<Bip39MnemonicGenerator>()
+	private val noopStore =
+		object : RecoveryPhraseStore {
+			override fun store(
+				phrase: RecoveryPhrase,
+				session: VaultSession,
+			) = Unit
 
-    private val mockMnemonicGenerator = mockk<Bip39MnemonicGenerator>()
-    private val noopStore = object : RecoveryPhraseStore {
-        override fun store(phrase: RecoveryPhrase, session: VaultSession) = Unit
-        override fun observe(session: VaultSession): Flow<RecoveryPhrase?> = emptyFlow()
-        override fun clear() = Unit
-    }
+			override fun observe(session: VaultSession): Flow<RecoveryPhrase?> = emptyFlow()
 
-    private val handler = RecoveryPhraseVaultProtectionHandler(keyGen, mockMnemonicGenerator, noopStore)
+			override fun clear() = Unit
+		}
 
-    @Before
-    fun setup() {
-        every { mockMnemonicGenerator.generate(any()) } returns fixedPhrase.words
-    }
+	private val handler = RecoveryPhraseVaultProtectionHandler(keyGen, mockMnemonicGenerator, noopStore)
 
-    /**
-     * Creating a protection and unlocking with the same phrase must return the original VMK.
-     * This is the core recovery guarantee: the phrase must restore access to all encrypted files.
-     */
-    @Test
-    fun `correct phrase unlocks vault and recovers original VMK`() = runTest {
-        val vmk = keyGen.generateVaultMasterKey()
-        val session = VaultSession(vmk)
+	@Before
+	fun setup() {
+		every { mockMnemonicGenerator.generate(any()) } returns fixedPhrase.words
+	}
 
-        val protection = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
-        val recovered = handler.unlock(UnlockRequest.RecoveryPhrase(fixedPhrase), protection)
+	/**
+	 * Creating a protection and unlocking with the same phrase must return the original VMK.
+	 * This is the core recovery guarantee: the phrase must restore access to all encrypted files.
+	 */
+	@Test
+	fun `correct phrase unlocks vault and recovers original VMK`() =
+		runTest {
+			val vmk = keyGen.generateVaultMasterKey()
+			val session = VaultSession(vmk)
 
-        assertArrayEquals(
-            "Correct phrase must recover the exact original VMK",
-            vmk.encoded,
-            recovered.encoded,
-        )
-    }
+			val protection = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+			val recovered = handler.unlock(UnlockRequest.RecoveryPhrase(fixedPhrase), protection)
 
-    /**
-     * Two create() calls with the same phrase must produce different wrappedVMK blobs
-     * (each call uses a fresh random salt and IV).
-     */
-    @Test
-    fun `each create produces unique salt and IV`() = runTest {
-        val session = VaultSession(keyGen.generateVaultMasterKey())
+			assertArrayEquals(
+				"Correct phrase must recover the exact original VMK",
+				vmk.encoded,
+				recovered.encoded,
+			)
+		}
 
-        val p1 = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
-        val p2 = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+	/**
+	 * Two create() calls with the same phrase must produce different wrappedVMK blobs
+	 * (each call uses a fresh random salt and IV).
+	 */
+	@Test
+	fun `each create produces unique salt and IV`() =
+		runTest {
+			val session = VaultSession(keyGen.generateVaultMasterKey())
 
-        assertTrue("Salt must differ between create calls", p1.params.salt != p2.params.salt)
-        assertTrue("IV must differ between create calls", p1.params.iv != p2.params.iv)
-    }
+			val p1 = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+			val p2 = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
 
-    /**
-     * A wrong phrase must never unlock the vault — it must always fail.
-     */
-    @Test
-    fun `wrong phrase cannot unlock vault`() = runTest {
-        val session = VaultSession(keyGen.generateVaultMasterKey())
-        val protection = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+			assertTrue("Salt must differ between create calls", p1.params.salt != p2.params.salt)
+			assertTrue("IV must differ between create calls", p1.params.iv != p2.params.iv)
+		}
 
-        val wrongPhrase = RecoveryPhrase(List(12) { "zoo" })
-        val result = runCatching {
-            handler.unlock(UnlockRequest.RecoveryPhrase(wrongPhrase), protection)
-        }
+	/**
+	 * A wrong phrase must never unlock the vault — it must always fail.
+	 */
+	@Test
+	fun `wrong phrase cannot unlock vault`() =
+		runTest {
+			val session = VaultSession(keyGen.generateVaultMasterKey())
+			val protection = handler.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
 
-        assertTrue("Wrong phrase must fail to unlock the vault", result.isFailure)
-    }
+			val wrongPhrase = RecoveryPhrase(List(12) { "zoo" })
+			val result =
+				runCatching {
+					handler.unlock(UnlockRequest.RecoveryPhrase(wrongPhrase), protection)
+				}
+
+			assertTrue("Wrong phrase must fail to unlock the vault", result.isFailure)
+		}
 }

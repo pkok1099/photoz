@@ -47,47 +47,52 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class OnBoardingFragment : Fragment() {
+	@Inject
+	lateinit var config: Config
 
-    @Inject
-    lateinit var config: Config
+	@Inject
+	lateinit var telemetryService: TelemetryService
 
-    @Inject
-    lateinit var telemetryService: TelemetryService
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View =
+		ComposeView(requireContext()).apply {
+			setContent {
+				AppTheme {
+					OnBoardingScreen(
+						onFinish = { finish() },
+					)
+				}
+			}
+		}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppTheme {
-                    OnBoardingScreen(
-                        onFinish = { finish() },
-                    )
-                }
-            }
-        }
-    }
+	override fun onViewCreated(
+		view: View,
+		savedInstanceState: Bundle?,
+	) {
+		super.onViewCreated(view, savedInstanceState)
+		finishOnBackWhileStarted()
+	}
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        finishOnBackWhileStarted()
-    }
+	/**
+	 * Navigate to repo setup (remote config + repo register/login) and set
+	 * first start to false.
+	 */
+	fun finish() {
+		telemetryService.signal(Signal.OnboardingFinished)
 
-    /**
-     * Navigate to repo setup (remote config + repo register/login) and set
-     * first start to false.
-     */
-    fun finish() {
-        telemetryService.signal(Signal.OnboardingFinished)
+		android.util.Log.e(
+			"RcloneDiag",
+			"OnBoardingFragment.finish: setting systemFirstStart=false (was=${config.systemFirstStart})",
+		)
+		config.systemFirstStart = false
+		android.util.Log.e(
+			"RcloneDiag",
+			"OnBoardingFragment.finish: systemFirstStart is now ${config.systemFirstStart}",
+		)
 
-        android.util.Log.e("RcloneDiag",
-            "OnBoardingFragment.finish: setting systemFirstStart=false (was=${config.systemFirstStart})")
-        config.systemFirstStart = false
-        android.util.Log.e("RcloneDiag",
-            "OnBoardingFragment.finish: systemFirstStart is now ${config.systemFirstStart}")
-
-        findNavController().navigate(R.id.action_onBoardingFragment_to_repoSetupFragment)
-    }
+		findNavController().navigate(R.id.action_onBoardingFragment_to_repoSetupFragment)
+	}
 }

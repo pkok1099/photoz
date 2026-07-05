@@ -27,32 +27,33 @@ private const val SHA_256 = "SHA-256"
 private const val AES = "AES"
 private const val AES_ALGORITHM = "AES/GCM/NoPadding"
 
-class LegacyEncryption @Inject constructor() {
+class LegacyEncryption
+	@Inject
+	constructor() {
+		fun obtainSession(password: String): LegacySession {
+			val key = genSecKey(password)
+			val iv = genLegacyIv(password)
 
-    fun obtainSession(password: String): LegacySession {
-        val key = genSecKey(password)
-        val iv = genLegacyIv(password)
+			return LegacySession(
+				key = key,
+				iv = iv,
+			)
+		}
 
-        return LegacySession(
-            key = key,
-            iv = iv,
-        )
-    }
+		private fun genSecKey(password: String): SecretKeySpec {
+			val md = MessageDigest.getInstance(SHA_256)
+			val bytes = md.digest(password.toByteArray(StandardCharsets.UTF_8))
+			return SecretKeySpec(bytes, AES)
+		}
 
-    private fun genSecKey(password: String): SecretKeySpec {
-        val md = MessageDigest.getInstance(SHA_256)
-        val bytes = md.digest(password.toByteArray(StandardCharsets.UTF_8))
-        return SecretKeySpec(bytes, AES)
-    }
+		private fun genLegacyIv(password: String): IvParameterSpec {
+			val iv = ByteArray(16)
+			val charArray = password.toCharArray()
+			val firstChars = charArray.take(16)
+			for (i in firstChars.indices) {
+				iv[i] = firstChars[i].toByte()
+			}
 
-    private fun genLegacyIv(password: String): IvParameterSpec {
-        val iv = ByteArray(16)
-        val charArray = password.toCharArray()
-        val firstChars = charArray.take(16)
-        for (i in firstChars.indices) {
-            iv[i] = firstChars[i].toByte()
-        }
-
-        return IvParameterSpec(iv)
-    }
-}
+			return IvParameterSpec(iv)
+		}
+	}

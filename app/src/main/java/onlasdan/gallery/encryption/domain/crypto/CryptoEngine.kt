@@ -38,19 +38,19 @@ import java.io.OutputStream
  * @since v15 — TODO #2 chunked streaming encryption
  */
 interface CryptoEngine {
-    fun createEncryptStream(
-        output: OutputStream,
-        session: Session,
-        /**
-         * When `true` (default), the engine writes chunked GCM (version 0x04).
-         * When `false`, it writes version-2 CBC — required for files that will
-         * be streamed via [AesCbcRandomAccessDataSource] (video originals).
-         */
-        useGcm: Boolean = true,
-    ): OutputStream?
+	fun createEncryptStream(
+		output: OutputStream,
+		session: Session,
+		/**
+		 * When `true` (default), the engine writes chunked GCM (version 0x04).
+		 * When `false`, it writes version-2 CBC — required for files that will
+		 * be streamed via [AesCbcRandomAccessDataSource] (video originals).
+		 */
+		useGcm: Boolean = true,
+	): OutputStream?
 
-    fun createDecryptStream(
-        input: InputStream,
-        session: Session,
-    ): InputStream?
+	fun createDecryptStream(
+		input: InputStream,
+		session: Session,
+	): InputStream?
 }

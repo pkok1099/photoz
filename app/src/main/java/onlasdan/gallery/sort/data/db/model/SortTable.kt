@@ -23,27 +23,26 @@ import androidx.room.PrimaryKey
 import onlasdan.gallery.model.database.entity.AlbumTable
 import onlasdan.gallery.sort.domain.Sort
 
-
 @Entity(
-    tableName = SortTable.TABLE_NAME,
-    foreignKeys = [
-        ForeignKey(
-            entity = AlbumTable::class,
-            parentColumns = arrayOf(AlbumTable.ALBUM_UUID),
-            childColumns = arrayOf(AlbumTable.ALBUM_UUID),
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ]
+	tableName = SortTable.TABLE_NAME,
+	foreignKeys = [
+		ForeignKey(
+			entity = AlbumTable::class,
+			parentColumns = arrayOf(AlbumTable.ALBUM_UUID),
+			childColumns = arrayOf(AlbumTable.ALBUM_UUID),
+			onDelete = ForeignKey.CASCADE,
+		),
+	],
 )
 data class SortTable(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long,
-    @ColumnInfo(name = AlbumTable.ALBUM_UUID, index = true)
-    val albumUuid: String? = null,
-    val field: Sort.Field,
-    val order: Sort.Order,
+	@PrimaryKey(autoGenerate = true)
+	val id: Long,
+	@ColumnInfo(name = AlbumTable.ALBUM_UUID, index = true)
+	val albumUuid: String? = null,
+	val field: Sort.Field,
+	val order: Sort.Order,
 ) {
-    companion object {
-        const val TABLE_NAME = "sort"
-    }
+	companion object {
+		const val TABLE_NAME = "sort"
+	}
 }

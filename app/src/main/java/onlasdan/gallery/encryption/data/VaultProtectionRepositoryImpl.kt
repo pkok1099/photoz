@@ -16,42 +16,50 @@
 
 package onlasdan.gallery.encryption.data
 
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.withContext
 import onlasdan.gallery.encryption.domain.VaultProtectionRepository
 import onlasdan.gallery.encryption.domain.models.VaultProtection
 import onlasdan.gallery.encryption.domain.models.VaultProtectionType
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-class VaultProtectionRepositoryImpl @Inject constructor(
-    private val dao: VaultProtectionDao,
-) : VaultProtectionRepository {
+class VaultProtectionRepositoryImpl
+	@Inject
+	constructor(
+		private val dao: VaultProtectionDao,
+	) : VaultProtectionRepository {
+		override suspend fun getProtection(type: VaultProtectionType): VaultProtection? =
+			withContext(IO) {
+				dao.getVaultProtection(type)?.toDomain()
+			}
 
-    override suspend fun getProtection(type: VaultProtectionType): VaultProtection? = withContext(IO) {
-        dao.getVaultProtection(type)?.toDomain()
-    }
+		override suspend fun getAllProtections(type: VaultProtectionType): List<VaultProtection> =
+			withContext(IO) {
+				dao.getAllByType(type).map { it.toDomain() }
+			}
 
-    override suspend fun getAllProtections(type: VaultProtectionType): List<VaultProtection> = withContext(IO) {
-        dao.getAllByType(type).map { it.toDomain() }
-    }
+		override suspend fun countProtections(type: VaultProtectionType): Int =
+			withContext(IO) {
+				dao.countByType(type)
+			}
 
-    override suspend fun countProtections(type: VaultProtectionType): Int = withContext(IO) {
-        dao.countByType(type)
-    }
+		override suspend fun createProtection(protection: VaultProtection) =
+			withContext(IO) {
+				dao.insert(protection.toData())
+			}
 
-    override suspend fun createProtection(protection: VaultProtection) = withContext(IO) {
-        dao.insert(protection.toData())
-    }
+		override suspend fun removeProtection(type: VaultProtectionType) =
+			withContext(IO) {
+				dao.delete(type)
+			}
 
-    override suspend fun removeProtection(type: VaultProtectionType) = withContext(IO) {
-        dao.delete(type)
-    }
+		override suspend fun removeProtectionById(id: String) =
+			withContext(IO) {
+				dao.deleteById(id)
+			}
 
-    override suspend fun removeProtectionById(id: String) = withContext(IO) {
-        dao.deleteById(id)
-    }
-
-    override suspend fun updateProtection(protection: VaultProtection) = withContext(IO) {
-        dao.update(protection.toData())
-    }
-}
+		override suspend fun updateProtection(protection: VaultProtection) =
+			withContext(IO) {
+				dao.update(protection.toData())
+			}
+	}

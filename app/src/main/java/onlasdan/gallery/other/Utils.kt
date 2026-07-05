@@ -23,7 +23,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
@@ -42,60 +41,61 @@ import timber.log.Timber
 import java.io.ByteArrayInputStream
 
 data class FileMetaData(
-    val fileName: String?,
-    val mimeType: String?,
-    val size: Long?,
-    val lastModified: Long?,
-    val relativePath: String? = null,
+	val fileName: String?,
+	val mimeType: String?,
+	val size: Long?,
+	val lastModified: Long?,
+	val relativePath: String? = null,
 )
 
 fun ContentResolver.getMetadataFor(uri: Uri): FileMetaData {
-    val mimeType: String? = this.getType(uri)
+	val mimeType: String? = this.getType(uri)
 
-    var fileName: String? = null
-    var size: Long? = null
-    var lastModified: Long? = null
-    var relativePath: String? = null
+	var fileName: String? = null
+	var size: Long? = null
+	var lastModified: Long? = null
+	var relativePath: String? = null
 
-    val cursor = try {
-        query(uri, null, null, null, null)
-    } catch (e: Exception) {
-        Timber.e("Could not get metadata for $uri $e")
-        null
-    }
+	val cursor =
+		try {
+			query(uri, null, null, null, null)
+		} catch (e: Exception) {
+			Timber.e("Could not get metadata for $uri $e")
+			null
+		}
 
-    cursor?.use {
-        try {
-            val fileNameColIndex = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-            val sizeColIndex = it.getColumnIndex(MediaStore.MediaColumns.SIZE)
-            val dateModifiedColIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-            // RELATIVE_PATH is available on MediaStore URIs (API 29+).
-            // For SAF URIs it may not exist — that's fine, relativePath stays null.
-            val relativePathColIndex = it.getColumnIndex("relative_path")
+	cursor?.use {
+		try {
+			val fileNameColIndex = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+			val sizeColIndex = it.getColumnIndex(MediaStore.MediaColumns.SIZE)
+			val dateModifiedColIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+			// RELATIVE_PATH is available on MediaStore URIs (API 29+).
+			// For SAF URIs it may not exist — that's fine, relativePath stays null.
+			val relativePathColIndex = it.getColumnIndex("relative_path")
 
-            if (!it.moveToFirst()) return@use
+			if (!it.moveToFirst()) return@use
 
-            if (fileNameColIndex != -1) fileName = it.getString(fileNameColIndex)
-            if (sizeColIndex != -1) size = it.getLong(sizeColIndex)
-            if (dateModifiedColIndex != -1) lastModified = it.getLong(dateModifiedColIndex)
-            if (relativePathColIndex != -1) relativePath = it.getString(relativePathColIndex)
-        } catch (e: Exception) {
-            Timber.e("Could not get metadata for $uri $e")
-        }
-    }
+			if (fileNameColIndex != -1) fileName = it.getString(fileNameColIndex)
+			if (sizeColIndex != -1) size = it.getLong(sizeColIndex)
+			if (dateModifiedColIndex != -1) lastModified = it.getLong(dateModifiedColIndex)
+			if (relativePathColIndex != -1) relativePath = it.getString(relativePathColIndex)
+		} catch (e: Exception) {
+			Timber.e("Could not get metadata for $uri $e")
+		}
+	}
 
-    // 0 is likely also not correct and would be shown as 1970
-    if (lastModified == 0L) {
-        lastModified = -1L
-    }
+	// 0 is likely also not correct and would be shown as 1970
+	if (lastModified == 0L) {
+		lastModified = -1L
+	}
 
-    return FileMetaData(
-        fileName = fileName,
-        mimeType = mimeType,
-        size = size,
-        lastModified = lastModified,
-        relativePath = relativePath,
-    )
+	return FileMetaData(
+		fileName = fileName,
+		mimeType = mimeType,
+		size = size,
+		lastModified = lastModified,
+		relativePath = relativePath,
+	)
 }
 
 /**
@@ -107,28 +107,29 @@ fun onMain(operation: () -> Unit) = Handler(Looper.getMainLooper()).post(operati
  * Update the app design.
  */
 fun setAppDesign(design: SystemDesignEnum) {
-    val nightMode = when (design) {
-        SystemDesignEnum.System -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-        SystemDesignEnum.Light -> AppCompatDelegate.MODE_NIGHT_NO
-        SystemDesignEnum.Dark -> AppCompatDelegate.MODE_NIGHT_YES
-    }
+	val nightMode =
+		when (design) {
+			SystemDesignEnum.System -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+			SystemDesignEnum.Light -> AppCompatDelegate.MODE_NIGHT_NO
+			SystemDesignEnum.Dark -> AppCompatDelegate.MODE_NIGHT_YES
+		}
 
-    AppCompatDelegate.setDefaultNightMode(nightMode)
+	AppCompatDelegate.setDefaultNightMode(nightMode)
 }
 
 fun Fragment.openUrl(url: String?) {
-    url ?: return
-    val intent = Intent(Intent.ACTION_VIEW)
-    intent.data = Uri.parse(url)
-    startActivity(intent)
+	url ?: return
+	val intent = Intent(Intent.ACTION_VIEW)
+	intent.data = Uri.parse(url)
+	startActivity(intent)
 }
 
 fun Context.openUrl(url: String?) {
-    url ?: return
+	url ?: return
 
-    val intent = Intent(Intent.ACTION_VIEW)
-    intent.data = Uri.parse(url)
-    startActivity(intent)
+	val intent = Intent(Intent.ACTION_VIEW)
+	intent.data = Uri.parse(url)
+	startActivity(intent)
 }
 
 /**
@@ -136,77 +137,82 @@ fun Context.openUrl(url: String?) {
  * and displaying photos with exif data properly.
  */
 fun normalizeExifOrientation(bytesWithExif: ByteArray?): Bitmap? {
-    bytesWithExif ?: return null
-    val bitmap = BitmapFactory.decodeByteArray(bytesWithExif, 0, bytesWithExif.size)
-    val orientation = ExifInterface(ByteArrayInputStream(bytesWithExif)).getAttributeInt(
-        ExifInterface.TAG_ORIENTATION,
-        ExifInterface.ORIENTATION_NORMAL
-    )
-    val matrix = Matrix()
-    when (orientation) {
-        ExifInterface.ORIENTATION_NORMAL -> return bitmap
+	bytesWithExif ?: return null
+	val bitmap = BitmapFactory.decodeByteArray(bytesWithExif, 0, bytesWithExif.size)
+	val orientation =
+		ExifInterface(ByteArrayInputStream(bytesWithExif)).getAttributeInt(
+			ExifInterface.TAG_ORIENTATION,
+			ExifInterface.ORIENTATION_NORMAL,
+		)
+	val matrix = Matrix()
+	when (orientation) {
+		ExifInterface.ORIENTATION_NORMAL -> return bitmap
 
-        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
-        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
-        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+		ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+		ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+		ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
 
-        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
-        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
-            matrix.setRotate(180f)
-            matrix.postScale(-1f, 1f)
-        }
+		ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+		ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+			matrix.setRotate(180f)
+			matrix.postScale(-1f, 1f)
+		}
 
-        ExifInterface.ORIENTATION_TRANSPOSE -> {
-            matrix.setRotate(90f)
-            matrix.postScale(-1f, 1f)
-        }
+		ExifInterface.ORIENTATION_TRANSPOSE -> {
+			matrix.setRotate(90f)
+			matrix.postScale(-1f, 1f)
+		}
 
-        ExifInterface.ORIENTATION_TRANSVERSE -> {
-            matrix.setRotate(-90f)
-            matrix.postScale(-1f, 1f)
-        }
+		ExifInterface.ORIENTATION_TRANSVERSE -> {
+			matrix.setRotate(-90f)
+			matrix.postScale(-1f, 1f)
+		}
 
-        else -> return bitmap
-    }
-    return try {
-        val bmRotated: Bitmap = Bitmap.createBitmap(
-            bitmap,
-            0,
-            0,
-            bitmap.width,
-            bitmap.height,
-            matrix,
-            true
-        )
-        bitmap.recycle()
-        bmRotated
-    } catch (e: OutOfMemoryError) {
-        Timber.e(e)
-        bitmap
-    }
+		else -> return bitmap
+	}
+	return try {
+		val bmRotated: Bitmap =
+			Bitmap.createBitmap(
+				bitmap,
+				0,
+				0,
+				bitmap.width,
+				bitmap.height,
+				matrix,
+				true,
+			)
+		bitmap.recycle()
+		bmRotated
+	} catch (e: OutOfMemoryError) {
+		Timber.e(e)
+		bitmap
+	}
 }
 
-operator fun PaddingValues.plus(other: PaddingValues): PaddingValues = PaddingValues(
-    start = this.calculateStartPadding(LayoutDirection.Ltr) +
-            other.calculateStartPadding(LayoutDirection.Ltr),
-    top = this.calculateTopPadding() + other.calculateTopPadding(),
-    end = this.calculateEndPadding(LayoutDirection.Ltr) +
-            other.calculateEndPadding(LayoutDirection.Ltr),
-    bottom = this.calculateBottomPadding() + other.calculateBottomPadding(),
-)
+operator fun PaddingValues.plus(other: PaddingValues): PaddingValues =
+	PaddingValues(
+		start =
+			this.calculateStartPadding(LayoutDirection.Ltr) +
+				other.calculateStartPadding(LayoutDirection.Ltr),
+		top = this.calculateTopPadding() + other.calculateTopPadding(),
+		end =
+			this.calculateEndPadding(LayoutDirection.Ltr) +
+				other.calculateEndPadding(LayoutDirection.Ltr),
+		bottom = this.calculateBottomPadding() + other.calculateBottomPadding(),
+	)
 
 fun View.statusBarPadding() {
-    setOnApplyWindowInsetsListener { v, insets ->
-        v.setPadding(0, insets.top(), 0, 0)
-        insets
-    }
+	setOnApplyWindowInsetsListener { v, insets ->
+		v.setPadding(0, insets.top(), 0, 0)
+		insets
+	}
 }
 
 fun View.systemBarsPadding() {
-    setOnApplyWindowInsetsListener { v, insets ->
-        v.setPadding(0, insets.top(), 0, insets.bottom())
-        insets
-    }
+	setOnApplyWindowInsetsListener { v, insets ->
+		v.setPadding(0, insets.top(), 0, insets.bottom())
+		insets
+	}
 }
 
 /**
@@ -214,8 +220,6 @@ fun View.systemBarsPadding() {
  *
  * https://github.com/mozilla-mobile/android-components/pull/9680/files#diff-9d900219329132b059f18f83b6e2952c5509bcfbf063a571ee5d647f76fa6554
  */
-fun WindowInsets.top(): Int =
-    this.getInsets(WindowInsets.Type.systemBars()).top
+fun WindowInsets.top(): Int = this.getInsets(WindowInsets.Type.systemBars()).top
 
-fun WindowInsets.bottom(): Int =
-    this.getInsets(WindowInsets.Type.systemBars()).bottom
+fun WindowInsets.bottom(): Int = this.getInsets(WindowInsets.Type.systemBars()).bottom

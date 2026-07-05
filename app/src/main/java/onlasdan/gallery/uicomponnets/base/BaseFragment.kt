@@ -27,14 +27,16 @@ import androidx.fragment.app.Fragment
  * @author PhotoZ
  */
 abstract class BaseFragment : Fragment() {
+	/**
+	 * Set the action toolbar for the activity.
+	 */
+	internal fun setToolbar(
+		toolbar: Toolbar,
+		showTitle: Boolean = false,
+	) {
+		val activity = (requireActivity() as AppCompatActivity)
+		activity.setSupportActionBar(toolbar)
 
-    /**
-     * Set the action toolbar for the activity.
-     */
-    internal fun setToolbar(toolbar: Toolbar, showTitle: Boolean = false) {
-        val activity = (requireActivity() as AppCompatActivity)
-        activity.setSupportActionBar(toolbar)
-
-        activity.supportActionBar?.setDisplayShowTitleEnabled(showTitle)
-    }
+		activity.supportActionBar?.setDisplayShowTitleEnabled(showTitle)
+	}
 }

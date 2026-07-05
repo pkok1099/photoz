@@ -16,4 +16,4 @@
 
 package onlasdan.gallery.telemetry.domain
 
-const val TelemetryEnabledByDefault = false
+const val TELEMETRY_ENABLED_BY_DEFAULT = false

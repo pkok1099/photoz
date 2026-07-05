@@ -57,15 +57,18 @@ import javax.inject.Singleton
  * @since v14 — Sprint 9 / L6 on-device semantic search
  */
 interface TagExtractor {
-    /**
-     * Extract semantic tags from a photo.
-     *
-     * @param context needed to open the URI stream.
-     * @param uri the source photo URI.
-     * @return comma-separated tags (e.g. "beach,sunset,ocean"), or null
-     *   when extraction fails or is disabled.
-     */
-    fun extractTags(context: Context, uri: Uri): String?
+	/**
+	 * Extract semantic tags from a photo.
+	 *
+	 * @param context needed to open the URI stream.
+	 * @param uri the source photo URI.
+	 * @return comma-separated tags (e.g. "beach,sunset,ocean"), or null
+	 *   when extraction fails or is disabled.
+	 */
+	fun extractTags(
+		context: Context,
+		uri: Uri,
+	): String?
 }
 
 /**
@@ -76,9 +79,14 @@ interface TagExtractor {
  * @since v14 — Sprint 9 / L6 on-device semantic search
  */
 @Singleton
-class StubTagExtractor @Inject constructor() : TagExtractor {
-    override fun extractTags(context: Context, uri: Uri): String? {
-        Timber.d("StubTagExtractor: semantic search not yet active — returning null for %s", uri)
-        return null
-    }
-}
+class StubTagExtractor
+	@Inject
+	constructor() : TagExtractor {
+		override fun extractTags(
+			context: Context,
+			uri: Uri,
+		): String? {
+			Timber.d("StubTagExtractor: semantic search not yet active — returning null for %s", uri)
+			return null
+		}
+	}

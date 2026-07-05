@@ -47,64 +47,65 @@ import timber.log.Timber
 
 @Composable
 fun QRCodeImage(
-    text: String,
-    modifier: Modifier = Modifier,
-    foregroundColor: Color = LocalContentColor.current,
-    backgroundColor: Color = MaterialTheme.colorScheme.background,
-    size: Int = 512,
+	text: String,
+	modifier: Modifier = Modifier,
+	foregroundColor: Color = LocalContentColor.current,
+	backgroundColor: Color = MaterialTheme.colorScheme.background,
+	size: Int = 512,
 ) {
-    var retryCount by remember { mutableIntStateOf(0) }
-    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+	var retryCount by remember { mutableIntStateOf(0) }
+	var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+	var isLoading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(text, size, retryCount) {
-        if (text.isNotBlank()) {
-            isLoading = true
-            try {
-                val bitmap = QRCodeGenerator.generateQRCode(
-                    text = text,
-                    size = size,
-                    foregroundColor = foregroundColor.toArgb(),
-                    backgroundColor = backgroundColor.toArgb(),
-                    errorCorrectionLevel = ErrorCorrectionLevel.M
-                )
-                qrBitmap = bitmap
-                if (bitmap == null) {
-                    Timber.d("Failed to generate QR code")
-                }
-            } catch (e: Exception) {
-                Timber.d("Error generating QR code: ${e.message}")
-            } finally {
-                isLoading = false
-            }
-        }
-    }
+	LaunchedEffect(text, size, retryCount) {
+		if (text.isNotBlank()) {
+			isLoading = true
+			try {
+				val bitmap =
+					QRCodeGenerator.generateQRCode(
+						text = text,
+						size = size,
+						foregroundColor = foregroundColor.toArgb(),
+						backgroundColor = backgroundColor.toArgb(),
+						errorCorrectionLevel = ErrorCorrectionLevel.M,
+					)
+				qrBitmap = bitmap
+				if (bitmap == null) {
+					Timber.d("Failed to generate QR code")
+				}
+			} catch (e: Exception) {
+				Timber.d("Error generating QR code: ${e.message}")
+			} finally {
+				isLoading = false
+			}
+		}
+	}
 
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        when {
-            isLoading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(36.dp).align(Alignment.Center),
-                )
-            }
-            qrBitmap != null -> {
-                Image(
-                    bitmap = qrBitmap!!.asImageBitmap(),
-                    contentDescription = "QR Code: $text",
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.keepScreenOn()
-                )
-            }
-            else -> {
-                TextButton(
-                    onClick = { retryCount++ },
-                ) {
-                    Text(stringResource(R.string.common_try_again))
-                }
-            }
-        }
-    }
+	Box(
+		modifier = modifier,
+		contentAlignment = Alignment.Center,
+	) {
+		when {
+			isLoading -> {
+				CircularProgressIndicator(
+					modifier = Modifier.size(36.dp).align(Alignment.Center),
+				)
+			}
+			qrBitmap != null -> {
+				Image(
+					bitmap = qrBitmap!!.asImageBitmap(),
+					contentDescription = "QR Code: $text",
+					contentScale = ContentScale.FillBounds,
+					modifier = Modifier.keepScreenOn(),
+				)
+			}
+			else -> {
+				TextButton(
+					onClick = { retryCount++ },
+				) {
+					Text(stringResource(R.string.common_try_again))
+				}
+			}
+		}
+	}
 }

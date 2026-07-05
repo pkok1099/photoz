@@ -16,13 +16,10 @@
 
 package onlasdan.gallery.gallery.ui.compose
 
-import android.content.res.Configuration.UI_MODE_NIGHT_YES
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,73 +36,70 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import onlasdan.gallery.R
-import onlasdan.gallery.gallery.ui.GalleryUiEvent
 import onlasdan.gallery.gallery.components.ImportMenuBottomSheet
+import onlasdan.gallery.gallery.ui.GalleryUiEvent
 import onlasdan.gallery.ui.components.MagicFab
 import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun GalleryPlaceholder(
-    handleUiEvent: (GalleryUiEvent) -> Unit,
-    modifier: Modifier = Modifier,
+	handleUiEvent: (GalleryUiEvent) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+	Box(modifier = modifier.fillMaxSize()) {
+		var importMenuBottomSheetVisible by remember { mutableStateOf(false) }
 
-        var importMenuBottomSheetVisible by remember { mutableStateOf(false) }
+		Column(
+			horizontalAlignment = Alignment.CenterHorizontally,
+			verticalArrangement = Arrangement.spacedBy(12.dp),
+			modifier = Modifier.align(BiasAlignment(horizontalBias = 0f, verticalBias = -0.1f)),
+		) {
+			Icon(
+				painter = painterResource(R.drawable.ic_image_prints),
+				contentDescription = null,
+				tint = MaterialTheme.colorScheme.primary,
+				modifier = Modifier.size(92.dp).alpha(0.5f),
+			)
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.align(BiasAlignment(horizontalBias = 0f, verticalBias = -0.1f))
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_image_prints),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(92.dp).alpha(0.5f)
-            )
+			Text(
+				stringResource(R.string.gallery_placeholder),
+				style = MaterialTheme.typography.titleLarge,
+				textAlign = TextAlign.Center,
+			)
+		}
 
-            Text(
-                stringResource(R.string.gallery_placeholder),
-                style = MaterialTheme.typography.titleLarge,
-                textAlign = TextAlign.Center,
-            )
-        }
+		MagicFab(
+			label = stringResource(R.string.import_menu_fab_label),
+			onClick = {
+				importMenuBottomSheetVisible = true
+			},
+		)
 
-        MagicFab(
-            label = stringResource(R.string.import_menu_fab_label),
-            onClick = {
-                importMenuBottomSheetVisible = true
-            }
-        )
-
-        ImportMenuBottomSheet(
-            open = importMenuBottomSheetVisible,
-            onDismissRequest = {
-                importMenuBottomSheetVisible = false
-            },
-            albumName = null,
-            onImportChoice = {
-                handleUiEvent(GalleryUiEvent.OnImportChoice(it))
-            }
-        )
-    }
+		ImportMenuBottomSheet(
+			open = importMenuBottomSheetVisible,
+			onDismissRequest = {
+				importMenuBottomSheetVisible = false
+			},
+			albumName = null,
+			onImportChoice = {
+				handleUiEvent(GalleryUiEvent.OnImportChoice(it))
+			},
+		)
+	}
 }
 
 @PreviewLightDark
 @Composable
 private fun GalleryPlaceholderPreview() {
-    AppTheme {
-        Surface() {
-            GalleryPlaceholder(
-                handleUiEvent = {}
-            )
-        }
-    }
+	AppTheme {
+		Surface {
+			GalleryPlaceholder(
+				handleUiEvent = {},
+			)
+		}
+	}
 }

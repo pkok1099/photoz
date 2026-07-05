@@ -21,9 +21,9 @@ import onlasdan.gallery.encryption.domain.models.Session
 import java.util.zip.ZipInputStream
 
 interface RestoreBackupStrategy<T : BackupMetaData> {
-    suspend fun restore(
-        metaData: T,
-        stream: ZipInputStream,
-        session: Session,
-    ): RestoreResult
+	suspend fun restore(
+		metaData: T,
+		stream: ZipInputStream,
+		session: Session,
+	): RestoreResult
 }

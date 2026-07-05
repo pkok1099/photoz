@@ -17,11 +17,11 @@
 package onlasdan.gallery.encryption.domain.models
 
 data class VaultProtectionParams(
-    val salt: String?,
-    val iv: String,
-    val kdf: Kdf?,
-    val kdfIterations: Int?,
-    val algorithm: Algorithm,
-    val keySize: Int,
-    val version: Int = 1,
+	val salt: String?,
+	val iv: String,
+	val kdf: Kdf?,
+	val kdfIterations: Int?,
+	val algorithm: Algorithm,
+	val keySize: Int,
+	val version: Int = 1,
 )

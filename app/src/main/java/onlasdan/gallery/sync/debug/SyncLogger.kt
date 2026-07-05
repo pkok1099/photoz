@@ -41,125 +41,141 @@ import java.util.concurrent.atomic.AtomicLong
  * @since PR1 sync debug — false-success diagnosis
  */
 object SyncLogger {
+	private const val MAX_FILE_BYTES: Long = 500L * 1024L
+	private val seq = AtomicLong(0L)
+	private lateinit var filesDir: File
 
-    private const val MAX_FILE_BYTES: Long = 500L * 1024L
-    private val seq = AtomicLong(0L)
-    private lateinit var filesDir: File
+	fun init(app: Application) {
+		filesDir = app.filesDir
+	}
 
-    fun init(app: Application) {
-        filesDir = app.filesDir
-    }
+	/**
+	 * Log an rc call. Called from [onlasdan.gallery.sync.rclone.RcloneController.invokeRc]
+	 * for every HTTP request to rcd.
+	 */
+	fun logRcCall(
+		op: String,
+		params: JsonObject,
+		httpStatus: Int,
+		responseBody: String,
+	) {
+		runCatching {
+			if (!::filesDir.isInitialized) return@runCatching
+			val file = File(filesDir, "sync_log.txt")
+			val now = Instant.now()
+			val seqNum = seq.incrementAndGet()
 
-    /**
-     * Log an rc call. Called from [onlasdan.gallery.sync.rclone.RcloneController.invokeRc]
-     * for every HTTP request to rcd.
-     */
-    fun logRcCall(op: String, params: JsonObject, httpStatus: Int, responseBody: String) {
-        runCatching {
-            if (!::filesDir.isInitialized) return@runCatching
-            val file = File(filesDir, "sync_log.txt")
-            val now = Instant.now()
-            val seqNum = seq.incrementAndGet()
+			val entry =
+				buildString {
+					append("\n--- RC CALL #")
+					append(seqNum)
+					append(" at ")
+					append(now)
+					append(" ---\n")
+					append("op: ")
+					append(op)
+					append('\n')
+					append("params: ")
+					append(params)
+					append('\n')
+					append("HTTP status: ")
+					append(httpStatus)
+					append('\n')
+					append("response body: ")
+					append(responseBody.take(2000)) // cap response to 2KB per entry
+					append('\n')
+				}
 
-            val entry = buildString {
-                append("\n--- RC CALL #")
-                append(seqNum)
-                append(" at ")
-                append(now)
-                append(" ---\n")
-                append("op: ")
-                append(op)
-                append('\n')
-                append("params: ")
-                append(params)
-                append('\n')
-                append("HTTP status: ")
-                append(httpStatus)
-                append('\n')
-                append("response body: ")
-                append(responseBody.take(2000)) // cap response to 2KB per entry
-                append('\n')
-            }
+			trimIfNeeded(file, entry.length.toLong())
+			file.appendText(entry)
+		}.onFailure { e ->
+			try {
+				android.util.Log.e("SyncLogger", "FAILED to write sync log", e)
+			} catch (_: Throwable) {
+			}
+		}
+	}
 
-            trimIfNeeded(file, entry.length.toLong())
-            file.appendText(entry)
-        }.onFailure { e ->
-            try {
-                android.util.Log.e("SyncLogger", "FAILED to write sync log", e)
-            } catch (_: Throwable) {
-            }
-        }
-    }
+	/**
+	 * Log a sync state transition (e.g. LOCAL_ONLY → UPLOAD_PENDING → UPLOADED).
+	 */
+	fun logStateTransition(
+		uuid: String,
+		from: String,
+		to: String,
+		context: String = "",
+	) {
+		runCatching {
+			if (!::filesDir.isInitialized) return@runCatching
+			val file = File(filesDir, "sync_log.txt")
+			val now = Instant.now()
+			val seqNum = seq.incrementAndGet()
 
-    /**
-     * Log a sync state transition (e.g. LOCAL_ONLY → UPLOAD_PENDING → UPLOADED).
-     */
-    fun logStateTransition(uuid: String, from: String, to: String, context: String = "") {
-        runCatching {
-            if (!::filesDir.isInitialized) return@runCatching
-            val file = File(filesDir, "sync_log.txt")
-            val now = Instant.now()
-            val seqNum = seq.incrementAndGet()
+			val entry =
+				buildString {
+					append("\n--- STATE #")
+					append(seqNum)
+					append(" at ")
+					append(now)
+					append(" ---\n")
+					append("photo: ")
+					append(uuid)
+					append('\n')
+					append("transition: ")
+					append(from)
+					append(" → ")
+					append(to)
+					append('\n')
+					if (context.isNotEmpty()) {
+						append("context: ")
+						append(context)
+						append('\n')
+					}
+				}
 
-            val entry = buildString {
-                append("\n--- STATE #")
-                append(seqNum)
-                append(" at ")
-                append(now)
-                append(" ---\n")
-                append("photo: ")
-                append(uuid)
-                append('\n')
-                append("transition: ")
-                append(from)
-                append(" → ")
-                append(to)
-                append('\n')
-                if (context.isNotEmpty()) {
-                    append("context: ")
-                    append(context)
-                    append('\n')
-                }
-            }
+			trimIfNeeded(file, entry.length.toLong())
+			file.appendText(entry)
+		}.onFailure { }
+	}
 
-            trimIfNeeded(file, entry.length.toLong())
-            file.appendText(entry)
-        }.onFailure { }
-    }
+	private fun trimIfNeeded(
+		file: File,
+		newEntrySize: Long,
+	) {
+		if (!file.exists()) return
+		val currentSize = file.length()
+		val projected = currentSize + newEntrySize
+		if (projected <= MAX_FILE_BYTES) return
 
-    private fun trimIfNeeded(file: File, newEntrySize: Long) {
-        if (!file.exists()) return
-        val currentSize = file.length()
-        val projected = currentSize + newEntrySize
-        if (projected <= MAX_FILE_BYTES) return
+		val content = file.readText()
+		val blocks = content.split("(?=\n--- )".toRegex()).filter { it.isNotBlank() }
+		if (blocks.isEmpty()) {
+			val keep = content.takeLast((MAX_FILE_BYTES / 2).toInt())
+			file.writeText(keep)
+			return
+		}
 
-        val content = file.readText()
-        val blocks = content.split("(?=\n--- )".toRegex()).filter { it.isNotBlank() }
-        if (blocks.isEmpty()) {
-            val keep = content.takeLast((MAX_FILE_BYTES / 2).toInt())
-            file.writeText(keep)
-            return
-        }
+		var kept = blocks.toMutableList()
+		var keptSize = kept.sumOf { it.length }
+		while (keptSize + newEntrySize > MAX_FILE_BYTES && kept.size > 1) {
+			kept.removeAt(0)
+			keptSize = kept.sumOf { it.length }
+		}
+		file.writeText(kept.joinToString(separator = ""))
+	}
 
-        var kept = blocks.toMutableList()
-        var keptSize = kept.sumOf { it.length }
-        while (keptSize + newEntrySize > MAX_FILE_BYTES && kept.size > 1) {
-            kept.removeAt(0)
-            keptSize = kept.sumOf { it.length }
-        }
-        file.writeText(kept.joinToString(separator = ""))
-    }
+	fun read(): String =
+		runCatching {
+			if (!::filesDir.isInitialized) return "(SyncLogger not initialized)"
+			val file = File(filesDir, "sync_log.txt")
+			if (!file.exists()) return "(no sync log yet)"
+			file.readText()
+		}.getOrDefault("(failed to read sync log)")
 
-    fun read(): String = runCatching {
-        if (!::filesDir.isInitialized) return "(SyncLogger not initialized)"
-        val file = File(filesDir, "sync_log.txt")
-        if (!file.exists()) return "(no sync log yet)"
-        file.readText()
-    }.getOrDefault("(failed to read sync log)")
-
-    fun clear() = runCatching {
-        if (!::filesDir.isInitialized) return@runCatching
-        File(filesDir, "sync_log.txt").delete()
-        Timber.i("SyncLogger: log cleared")
-    }.onFailure { }
+	fun clear() =
+		runCatching {
+			if (!::filesDir.isInitialized) return@runCatching
+			File(filesDir, "sync_log.txt").delete()
+			Timber.i("SyncLogger: log cleared")
+		}.onFailure { }
 }

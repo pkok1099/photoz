@@ -25,44 +25,51 @@ import java.io.InputStream
 import java.io.OutputStream
 import javax.inject.Inject
 
-class VaultFileStorage @Inject constructor(
-    private val sessionRepository: SessionRepository,
-    private val cryptoEngine: CryptoEngine,
-    private val app: Application,
-) {
-    fun openEncryptedInput(filename: String): InputStream? = try {
-        val session = sessionRepository.require()
-        val input = app.openFileInput(filename)
-        cryptoEngine.createDecryptStream(input, session)
-    } catch (e: Exception) {
-        Timber.e(e)
-        null
-    }
+class VaultFileStorage
+	@Inject
+	constructor(
+		private val sessionRepository: SessionRepository,
+		private val cryptoEngine: CryptoEngine,
+		private val app: Application,
+	) {
+		fun openEncryptedInput(filename: String): InputStream? =
+			try {
+				val session = sessionRepository.require()
+				val input = app.openFileInput(filename)
+				cryptoEngine.createDecryptStream(input, session)
+			} catch (e: Exception) {
+				Timber.e(e)
+				null
+			}
 
-    fun openEncryptedOutput(
-        fileName: String,
-        useGcm: Boolean = true,
-    ): OutputStream? = try {
-        val session = sessionRepository.require()
-        val output = app.openFileOutput(fileName, Context.MODE_PRIVATE)
-        cryptoEngine.createEncryptStream(output, session, useGcm = useGcm)
-    } catch (e: Exception) {
-        Timber.e(e)
-        null
-    }
+		fun openEncryptedOutput(
+			fileName: String,
+			useGcm: Boolean = true,
+		): OutputStream? =
+			try {
+				val session = sessionRepository.require()
+				val output = app.openFileOutput(fileName, Context.MODE_PRIVATE)
+				cryptoEngine.createEncryptStream(output, session, useGcm = useGcm)
+			} catch (e: Exception) {
+				Timber.e(e)
+				null
+			}
 
-    fun deleteEncryptedFile(fileName: String): Boolean {
-        val success = app.deleteFile(fileName)
-        if (!success) {
-            Timber.e("Error deleting internal file: $fileName")
-        }
+		fun deleteEncryptedFile(fileName: String): Boolean {
+			val success = app.deleteFile(fileName)
+			if (!success) {
+				Timber.e("Error deleting internal file: $fileName")
+			}
 
-        return success
-    }
+			return success
+		}
 
-    fun renameEncryptedFile(currentFileName: String, newFileName: String): Boolean {
-        val currentFile = app.getFileStreamPath(currentFileName)
-        val newFile = app.getFileStreamPath(newFileName)
-        return currentFile.renameTo(newFile)
-    }
-}
+		fun renameEncryptedFile(
+			currentFileName: String,
+			newFileName: String,
+		): Boolean {
+			val currentFile = app.getFileStreamPath(currentFileName)
+			val newFile = app.getFileStreamPath(newFileName)
+			return currentFile.renameTo(newFile)
+		}
+	}

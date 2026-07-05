@@ -41,64 +41,67 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class BackupViewModel @Inject constructor(
-    app: Application,
-    private val photoRepository: PhotoRepository,
-    private val io: IO,
-    private val defaultBackupStrategy: BackupStrategyImpl,
-    private val legacyBackupStrategy: LegacyBackupStrategyImpl,
-    private val vaultProtectionRepository: VaultProtectionRepository,
-) : BaseProcessViewModel<Photo>(app) {
+class BackupViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val photoRepository: PhotoRepository,
+		private val io: IO,
+		private val defaultBackupStrategy: BackupStrategyImpl,
+		private val legacyBackupStrategy: LegacyBackupStrategyImpl,
+		private val vaultProtectionRepository: VaultProtectionRepository,
+	) : BaseProcessViewModel<Photo>(app) {
+		lateinit var uri: Uri
 
-    lateinit var uri: Uri
+		lateinit var strategyName: BackupStrategy.Name
 
-    lateinit var strategyName: BackupStrategy.Name
+		private val strategy: BackupStrategy by lazy {
+			when (strategyName) {
+				BackupStrategy.Name.Default -> defaultBackupStrategy
+				BackupStrategy.Name.Legacy -> legacyBackupStrategy
+			}
+		}
 
-    private val strategy: BackupStrategy by lazy {
-        when (strategyName) {
-            BackupStrategy.Name.Default -> defaultBackupStrategy
-            BackupStrategy.Name.Legacy -> legacyBackupStrategy
-        }
-    }
+		private lateinit var zipOutputStream: ZipOutputStream
 
-    private lateinit var zipOutputStream: ZipOutputStream
+		override suspend fun preProcess() {
+			items = photoRepository.findAllPhotosByImportDateDesc()
+			elementsToProcess = items.size
+			zipOutputStream = io.zip.openZipOutput(uri)
 
-    override suspend fun preProcess() {
-        items = photoRepository.findAllPhotosByImportDateDesc()
-        elementsToProcess = items.size
-        zipOutputStream = io.zip.openZipOutput(uri)
+			// Should not happen because of unlock before create backup
+			val protection = vaultProtectionRepository.getProtection(VaultProtectionType.Password)
+			if (protection == null) {
+				failuresOccurred = true
+				cancel()
+				return
+			}
 
-        // Should not happen because of unlock before create backup
-        val protection = vaultProtectionRepository.getProtection(VaultProtectionType.Password)
-        if (protection == null) {
-            failuresOccurred = true
-            cancel()
-            return
-        }
+			strategy.preBackup()
+			super.preProcess()
+		}
 
-        strategy.preBackup()
-        super.preProcess()
-    }
+		override suspend fun processItem(item: Photo) {
+			strategy
+				.writePhotoToBackup(item, zipOutputStream)
+				.onFailure {
+					Timber.e(it, "Error writing photo to backup")
+					failuresOccurred = true
+				}
+		}
 
-    override suspend fun processItem(item: Photo) {
-        strategy.writePhotoToBackup(item, zipOutputStream)
-            .onFailure {
-                Timber.e(it, "Error writing photo to backup")
-                failuresOccurred = true
-            }
-    }
+		override suspend fun postProcess() {
+			if (failuresOccurred.not()) {
+				strategy
+					.createMetaFileInBackup(zipOutputStream)
+					.onFailure {
+						Timber.e(it, "Error writing meta file to backup")
+						failuresOccurred = true
+					}
+			}
 
-    override suspend fun postProcess() {
-        if (failuresOccurred.not()) {
-            strategy.createMetaFileInBackup(zipOutputStream)
-                .onFailure {
-                    Timber.e(it, "Error writing meta file to backup")
-                    failuresOccurred = true
-                }
-        }
-
-        zipOutputStream.lazyClose()
-        strategy.postBackup()
-        super.postProcess()
-    }
-}
+			zipOutputStream.lazyClose()
+			strategy.postBackup()
+			super.postProcess()
+		}
+	}

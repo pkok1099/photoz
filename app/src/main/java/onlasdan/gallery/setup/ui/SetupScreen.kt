@@ -73,162 +73,170 @@ import onlasdan.gallery.ui.theme.AppTheme
  */
 @Composable
 fun SetupScreen(
-    loading: Boolean,
-    onSetup: (String) -> Unit,
+	loading: Boolean,
+	onSetup: (String) -> Unit,
 ) {
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    val keyboard = LocalSoftwareKeyboardController.current
+	var password by remember { mutableStateOf("") }
+	var confirmPassword by remember { mutableStateOf("") }
+	val keyboard = LocalSoftwareKeyboardController.current
 
-    val strength = StrongPasswordPolicy.strength(password)
-    val showConfirm = StrongPasswordPolicy.isAcceptable(password)
-    val passwordsMatch = password == confirmPassword && password.isNotEmpty()
-    val canSubmit = passwordsMatch && !loading
+	val strength = StrongPasswordPolicy.strength(password)
+	val showConfirm = StrongPasswordPolicy.isAcceptable(password)
+	val passwordsMatch = password == confirmPassword && password.isNotEmpty()
+	val canSubmit = passwordsMatch && !loading
 
-    val (strengthLabel, strengthColor) = when (strength) {
-        PasswordStrength.EMPTY,
-        PasswordStrength.TOO_SHORT,
-        PasswordStrength.PIN_REJECTED,
-        PasswordStrength.COMMON,
-        PasswordStrength.WEAK -> stringResource(R.string.setup_password_strength_weak) to MaterialTheme.colorScheme.error
-        PasswordStrength.MODERATE -> stringResource(R.string.setup_password_strength_moderate) to MaterialTheme.colorScheme.tertiary
-        PasswordStrength.STRONG -> stringResource(R.string.setup_password_strength_strong) to MaterialTheme.colorScheme.primary
-    }
+	val (strengthLabel, strengthColor) =
+		when (strength) {
+			PasswordStrength.EMPTY,
+			PasswordStrength.TOO_SHORT,
+			PasswordStrength.PIN_REJECTED,
+			PasswordStrength.COMMON,
+			PasswordStrength.WEAK,
+			-> stringResource(R.string.setup_password_strength_weak) to MaterialTheme.colorScheme.error
+			PasswordStrength.MODERATE -> stringResource(R.string.setup_password_strength_moderate) to MaterialTheme.colorScheme.tertiary
+			PasswordStrength.STRONG -> stringResource(R.string.setup_password_strength_strong) to MaterialTheme.colorScheme.primary
+		}
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // App title (lobster font, 62sp)
-            Text(
-                text = stringResource(R.string.app_name),
-                fontSize = 62.sp,
-                fontFamily = FontFamily.Cursive,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 20.dp, bottom = 30.dp),
-            )
+	Box(modifier = Modifier.fillMaxSize()) {
+		Column(
+			modifier =
+				Modifier
+					.fillMaxSize()
+					.statusBarsPadding(),
+			horizontalAlignment = Alignment.CenterHorizontally,
+		) {
+			// App title (lobster font, 62sp)
+			Text(
+				text = stringResource(R.string.app_name),
+				fontSize = 62.sp,
+				fontFamily = FontFamily.Cursive,
+				color = MaterialTheme.colorScheme.onBackground,
+				textAlign = TextAlign.Center,
+				modifier = Modifier.padding(top = 20.dp, bottom = 30.dp),
+			)
 
-            // "Setup" subtitle
-            Text(
-                text = stringResource(R.string.setupSetup),
-                fontSize = 20.sp,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 30.dp),
-            )
+			// "Setup" subtitle
+			Text(
+				text = stringResource(R.string.setupSetup),
+				fontSize = 20.sp,
+				color = MaterialTheme.colorScheme.onBackground,
+				modifier = Modifier.padding(bottom = 30.dp),
+			)
 
-            // "Create your password" heading
-            Text(
-                text = stringResource(R.string.setup_create_your_password),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier
-                    .padding(start = 20.dp)
-                    .padding(bottom = 30.dp),
-            )
+			// "Create your password" heading
+			Text(
+				text = stringResource(R.string.setup_create_your_password),
+				style = MaterialTheme.typography.headlineMedium,
+				fontWeight = FontWeight.Bold,
+				color = MaterialTheme.colorScheme.onBackground,
+				modifier =
+					Modifier
+						.padding(start = 20.dp)
+						.padding(bottom = 30.dp),
+			)
 
-            // Password + confirm fields
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // Password field
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.setup_enter_password)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Next,
-                    ),
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+			// Password + confirm fields
+			Column(
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 20.dp),
+				verticalArrangement = Arrangement.spacedBy(16.dp),
+			) {
+				// Password field
+				OutlinedTextField(
+					value = password,
+					onValueChange = { password = it },
+					label = { Text(stringResource(R.string.setup_enter_password)) },
+					singleLine = true,
+					visualTransformation = PasswordVisualTransformation(),
+					keyboardOptions =
+						androidx.compose.foundation.text.KeyboardOptions(
+							keyboardType = KeyboardType.Password,
+							imeAction = ImeAction.Next,
+						),
+					enabled = !loading,
+					modifier = Modifier.fillMaxWidth(),
+				)
 
-                // Strength indicator (visible when password not empty)
-                if (password.isNotEmpty()) {
-                    Text(
-                        text = "${stringResource(R.string.setup_password_strength_label)} $strengthLabel",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = strengthColor,
-                    )
-                }
+				// Strength indicator (visible when password not empty)
+				if (password.isNotEmpty()) {
+					Text(
+						text = "${stringResource(R.string.setup_password_strength_label)} $strengthLabel",
+						style = MaterialTheme.typography.bodySmall,
+						color = strengthColor,
+					)
+				}
 
-                // Confirm password field (only visible when password is acceptable)
-                AnimatedVisibility(visible = showConfirm) {
-                    OutlinedTextField(
-                        value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
-                        label = { Text(stringResource(R.string.setup_confirm_password)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done,
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onDone = {
-                                keyboard?.hide()
-                                if (canSubmit) onSetup(password)
-                            },
-                        ),
-                        enabled = !loading,
-                        isError = confirmPassword.isNotEmpty() && !passwordsMatch,
-                        supportingText = {
-                            if (confirmPassword.isNotEmpty() && !passwordsMatch) {
-                                Text(
-                                    text = stringResource(R.string.setup_password_match_warning),
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+				// Confirm password field (only visible when password is acceptable)
+				AnimatedVisibility(visible = showConfirm) {
+					OutlinedTextField(
+						value = confirmPassword,
+						onValueChange = { confirmPassword = it },
+						label = { Text(stringResource(R.string.setup_confirm_password)) },
+						singleLine = true,
+						visualTransformation = PasswordVisualTransformation(),
+						keyboardOptions =
+							androidx.compose.foundation.text.KeyboardOptions(
+								keyboardType = KeyboardType.Password,
+								imeAction = ImeAction.Done,
+							),
+						keyboardActions =
+							androidx.compose.foundation.text.KeyboardActions(
+								onDone = {
+									keyboard?.hide()
+									if (canSubmit) onSetup(password)
+								},
+							),
+						enabled = !loading,
+						isError = confirmPassword.isNotEmpty() && !passwordsMatch,
+						supportingText = {
+							if (confirmPassword.isNotEmpty() && !passwordsMatch) {
+								Text(
+									text = stringResource(R.string.setup_password_match_warning),
+									color = MaterialTheme.colorScheme.error,
+								)
+							}
+						},
+						modifier = Modifier.fillMaxWidth(),
+					)
+				}
+			}
 
-            // Create button
-            Button(
-                onClick = {
-                    keyboard?.hide()
-                    onSetup(password)
-                },
-                enabled = canSubmit,
-                modifier = Modifier.padding(top = 20.dp),
-            ) {
-                Text(stringResource(R.string.setup_button))
-            }
-        }
+			// Create button
+			Button(
+				onClick = {
+					keyboard?.hide()
+					onSetup(password)
+				},
+				enabled = canSubmit,
+				modifier = Modifier.padding(top = 20.dp),
+			) {
+				Text(stringResource(R.string.setup_button))
+			}
+		}
 
-        // Loading overlay
-        if (loading) {
-            Surface(
-                color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-        }
-    }
+		// Loading overlay
+		if (loading) {
+			Surface(
+				color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f),
+				modifier = Modifier.fillMaxSize(),
+			) {
+				Box(contentAlignment = Alignment.Center) {
+					CircularProgressIndicator()
+				}
+			}
+		}
+	}
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun SetupScreenPreview() {
-    AppTheme {
-        SetupScreen(
-            loading = false,
-            onSetup = {},
-        )
-    }
+	AppTheme {
+		SetupScreen(
+			loading = false,
+			onSetup = {},
+		)
+	}
 }

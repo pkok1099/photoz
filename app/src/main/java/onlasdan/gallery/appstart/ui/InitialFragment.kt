@@ -34,26 +34,25 @@ import onlasdan.gallery.R
  */
 @AndroidEntryPoint
 class InitialFragment : Fragment() {
+	private val viewModel: InitialViewModel by viewModels()
 
-    private val viewModel: InitialViewModel by viewModels()
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? {
+		viewModel.checkApplicationState {
+			when (it) {
+				AppStartState.FIRST_START -> navigate(R.id.action_initialFragment_to_onBoardingFragment)
+				AppStartState.SETUP -> navigate(R.id.action_initialFragment_to_setupFragment)
+				AppStartState.LOCKED -> navigate(R.id.action_initialFragment_to_unlockFragment)
+			}
+		}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        viewModel.checkApplicationState {
-            when (it) {
-                AppStartState.FIRST_START -> navigate(R.id.action_initialFragment_to_onBoardingFragment)
-                AppStartState.SETUP -> navigate(R.id.action_initialFragment_to_setupFragment)
-                AppStartState.LOCKED -> navigate(R.id.action_initialFragment_to_unlockFragment)
-            }
-        }
+		return super.onCreateView(inflater, container, savedInstanceState)
+	}
 
-        return super.onCreateView(inflater, container, savedInstanceState)
-    }
-
-    private fun navigate(fragment: Int) {
-        findNavController().navigate(fragment)
-    }
+	private fun navigate(fragment: Int) {
+		findNavController().navigate(fragment)
+	}
 }

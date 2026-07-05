@@ -23,8 +23,8 @@ import javax.crypto.spec.IvParameterSpec
 sealed interface Session
 
 data class LegacySession(
-    val key: SecretKey,
-    val iv: IvParameterSpec,
+	val key: SecretKey,
+	val iv: IvParameterSpec,
 ) : Session
 
 /**
@@ -65,37 +65,36 @@ data class LegacySession(
  * @since v11 — Sprint 2 / M7 multi-vault
  */
 data class VaultSession(
-    val vmk: SecretKey,
+	val vmk: SecretKey,
 ) : Session {
+	/**
+	 * Lazily-computed vault_id. Computed from [vmk] on first access and
+	 * cached in-memory for the lifetime of this session (via `by lazy`).
+	 * Never persisted.
+	 *
+	 * Throws if the JCE provider rejects the VMK as an HMAC key — should
+	 * never happen because [KeyGen.generateVaultMasterKey] always produces
+	 * an AES-256 key whose `getEncoded()` returns the raw 32 bytes that
+	 * HmacSHA256 can consume.
+	 */
+	val vaultId: String by lazy { computeVaultId(vmk) }
 
-    /**
-     * Lazily-computed vault_id. Computed from [vmk] on first access and
-     * cached in-memory for the lifetime of this session (via `by lazy`).
-     * Never persisted.
-     *
-     * Throws if the JCE provider rejects the VMK as an HMAC key — should
-     * never happen because [KeyGen.generateVaultMasterKey] always produces
-     * an AES-256 key whose `getEncoded()` returns the raw 32 bytes that
-     * HmacSHA256 can consume.
-     */
-    val vaultId: String by lazy { computeVaultId(vmk) }
+	companion object {
+		/** Domain-separation tag for vault_id derivation. */
+		private const val VAULT_ID_TAG = "photoz-vault-id-v1"
 
-    companion object {
-        /** Domain-separation tag for vault_id derivation. */
-        private const val VAULT_ID_TAG = "photoz-vault-id-v1"
-
-        /**
-         * Compute the vault_id for a given VMK.
-         *
-         * HMAC-SHA256(VMK, "photoz-vault-id-v1"), take first 16 bytes, hex-encode.
-         * 16 bytes = 32 hex chars — short enough for DB indexing, long enough
-         * to make collisions astronomically unlikely (2^128 keyspace).
-         */
-        fun computeVaultId(vmk: SecretKey): String {
-            val mac = Mac.getInstance("HmacSHA256")
-            mac.init(vmk)
-            val full = mac.doFinal(VAULT_ID_TAG.toByteArray(Charsets.US_ASCII))
-            return full.take(16).joinToString("") { "%02x".format(it) }
-        }
-    }
+		/**
+		 * Compute the vault_id for a given VMK.
+		 *
+		 * HMAC-SHA256(VMK, "photoz-vault-id-v1"), take first 16 bytes, hex-encode.
+		 * 16 bytes = 32 hex chars — short enough for DB indexing, long enough
+		 * to make collisions astronomically unlikely (2^128 keyspace).
+		 */
+		fun computeVaultId(vmk: SecretKey): String {
+			val mac = Mac.getInstance("HmacSHA256")
+			mac.init(vmk)
+			val full = mac.doFinal(VAULT_ID_TAG.toByteArray(Charsets.US_ASCII))
+			return full.take(16).joinToString("") { "%02x".format(it) }
+		}
+	}
 }

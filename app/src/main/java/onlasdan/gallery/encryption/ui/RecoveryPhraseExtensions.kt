@@ -16,9 +16,8 @@
 
 package onlasdan.gallery.encryption.ui
 
-fun String.cleanupRawInput(): String {
-    return this
-        .replace(" ", "-")
-        .replace("\n", "-")
-        .replace("--", "-")
-}
+fun String.cleanupRawInput(): String =
+	this
+		.replace(" ", "-")
+		.replace("\n", "-")
+		.replace("--", "-")

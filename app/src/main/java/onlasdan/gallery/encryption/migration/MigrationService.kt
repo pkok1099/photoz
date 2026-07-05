@@ -27,133 +27,142 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import dagger.hilt.android.AndroidEntryPoint
-import onlasdan.gallery.R
-import onlasdan.gallery.main.ui.MainActivity
-import onlasdan.gallery.notifications.NotificationChannels
-import onlasdan.gallery.notifications.createAllNotificationChannels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import onlasdan.gallery.R
+import onlasdan.gallery.main.ui.MainActivity
+import onlasdan.gallery.notifications.NotificationChannels
+import onlasdan.gallery.notifications.createAllNotificationChannels
 import javax.inject.Inject
 
 private const val SERVICE_ID = 1001
 
 @AndroidEntryPoint
 class MigrationService : Service() {
+	@Inject
+	lateinit var legacyEncryptionMigrator: LegacyEncryptionMigrator
 
-    @Inject
-    lateinit var legacyEncryptionMigrator: LegacyEncryptionMigrator
+	private val supervisorJob = Job()
 
-    private val supervisorJob = Job()
+	private val scope = CoroutineScope(supervisorJob + Dispatchers.IO)
+	private lateinit var notificationManager: NotificationManagerCompat
 
-    private val scope = CoroutineScope(supervisorJob + Dispatchers.IO)
-    private lateinit var notificationManager: NotificationManagerCompat
+	override fun onBind(intent: Intent?): IBinder? = null
 
+	override fun onCreate() {
+		super.onCreate()
+		notificationManager = NotificationManagerCompat.from(this)
+		notificationManager.createAllNotificationChannels(this)
+	}
 
+	override fun onTimeout(startId: Int) {
+		super.onTimeout(startId)
+		val timeoutNotification = createErrorNotification()
+		postNotification(timeoutNotification)
 
-    override fun onBind(intent: Intent?): IBinder? = null
+		supervisorJob.cancel()
+		stopSelf()
+	}
 
-    override fun onCreate() {
-        super.onCreate()
-        notificationManager = NotificationManagerCompat.from(this)
-        notificationManager.createAllNotificationChannels(this)
-    }
+	@SuppressLint("InlinedApi")
+	override fun onStartCommand(
+		intent: Intent?,
+		flags: Int,
+		startId: Int,
+	): Int {
+		ServiceCompat.startForeground(
+			this@MigrationService,
+			SERVICE_ID,
+			createInitialNotification(),
+			ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+		)
 
-    override fun onTimeout(startId: Int) {
-        super.onTimeout(startId)
-        val timeoutNotification = createErrorNotification()
-        postNotification(timeoutNotification)
+		scope.launch {
+			legacyEncryptionMigrator.migrate()
 
-        supervisorJob.cancel()
-        stopSelf()
-    }
+			stopForeground(STOP_FOREGROUND_REMOVE)
+			stopSelf()
+		}
 
-    @SuppressLint("InlinedApi")
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ServiceCompat.startForeground(this@MigrationService, SERVICE_ID, createInitialNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+		scope.launch {
+			legacyEncryptionMigrator.state.collectLatest {
+				val notification =
+					when (it) {
+						is LegacyEncryptionState.Running -> createNotification(it)
+						is LegacyEncryptionState.Success -> createFinishedNotification()
+						is LegacyEncryptionState.Error -> createErrorNotification(it.error)
+						is LegacyEncryptionState.Initial -> createInitialNotification()
+					}
 
-        scope.launch {
-            legacyEncryptionMigrator.migrate()
+				postNotification(notification)
+			}
+		}
 
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
+		return START_STICKY
+	}
 
-        scope.launch {
-            legacyEncryptionMigrator.state.collectLatest {
-                val notification = when (it) {
-                    is LegacyEncryptionState.Running -> createNotification(it)
-                    is LegacyEncryptionState.Success -> createFinishedNotification()
-                    is LegacyEncryptionState.Error -> createErrorNotification(it.error)
-                    is LegacyEncryptionState.Initial -> createInitialNotification()
-                }
+	private fun postNotification(notification: Notification) {
+		if (notificationManager.areNotificationsEnabled()) {
+			notificationManager.notify(SERVICE_ID, notification)
+		}
+	}
 
-                postNotification(notification)
-            }
-        }
+	override fun onDestroy() {
+		super.onDestroy()
+		supervisorJob.cancel()
+	}
 
+	private fun createInitialNotification(): Notification {
+		val intent = Intent(this, MainActivity::class.java)
+		val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
-        return START_STICKY
-    }
+		return NotificationCompat
+			.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
+			.setContentTitle(getString(R.string.migration_running_title))
+			.setContentIntent(pendingIntent)
+			.setSmallIcon(R.drawable.ic_database)
+			.setOngoing(true)
+			.build()
+	}
 
-    private fun postNotification(notification: Notification) {
-        if (notificationManager.areNotificationsEnabled()) {
-            notificationManager.notify(SERVICE_ID, notification)
-        }
-    }
+	private fun createNotification(state: LegacyEncryptionState.Running): Notification {
+		val humanReadableProgress = ((state.processedFiles.toFloat() / state.totalFiles.toFloat()) * 100).toInt()
 
-    override fun onDestroy() {
-        super.onDestroy()
-        supervisorJob.cancel()
-    }
+		return NotificationCompat
+			.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
+			.setContentTitle(getString(R.string.migration_running_title))
+			.setContentText(getString(R.string.migration_running_progress, state.processedFiles, state.totalFiles))
+			.setSmallIcon(R.drawable.ic_database)
+			.setProgress(100, humanReadableProgress, false)
+			.setOngoing(true)
+			.setCategory(Notification.CATEGORY_SERVICE)
+			.build()
+	}
 
-    private fun createInitialNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+	private fun createFinishedNotification(): Notification =
+		NotificationCompat
+			.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
+			.setContentTitle(getString(R.string.migration_done_title))
+			.setSmallIcon(R.drawable.ic_check)
+			.setOngoing(false)
+			.setAutoCancel(true)
+			.build()
 
-        return NotificationCompat.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
-            .setContentTitle(getString(R.string.migration_running_title))
-            .setContentIntent(pendingIntent)
-            .setSmallIcon(R.drawable.ic_database)
-            .setOngoing(true)
-            .build()
-    }
+	private fun createErrorNotification(error: Throwable? = null): Notification {
+		val intent = Intent(this, MainActivity::class.java)
+		val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
-    private fun createNotification(state: LegacyEncryptionState.Running): Notification {
-        val humanReadableProgress = ((state.processedFiles.toFloat() / state.totalFiles.toFloat()) * 100).toInt()
-
-        return NotificationCompat.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
-            .setContentTitle(getString(R.string.migration_running_title))
-            .setContentText(getString(R.string.migration_running_progress, state.processedFiles, state.totalFiles))
-            .setSmallIcon(R.drawable.ic_database)
-            .setProgress(100, humanReadableProgress, false)
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
-    }
-
-    private fun createFinishedNotification(): Notification {
-        return NotificationCompat.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
-            .setContentTitle(getString(R.string.migration_done_title))
-            .setSmallIcon(R.drawable.ic_check)
-            .setOngoing(false)
-            .setAutoCancel(true)
-            .build()
-    }
-
-    private fun createErrorNotification(error: Throwable? = null): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-
-        return NotificationCompat.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
-            .setContentTitle(resources.getString(R.string.migration_error_title))
-            .setContentText(error?.message ?: resources.getString(R.string.common_error))
-            .setSmallIcon(R.drawable.ic_warning)
-            .setContentIntent(pendingIntent)
-            .setOngoing(false)
-            .setAutoCancel(true)
-            .build()
-    }
+		return NotificationCompat
+			.Builder(this, NotificationChannels.BACKGROUND_TASKS.id)
+			.setContentTitle(resources.getString(R.string.migration_error_title))
+			.setContentText(error?.message ?: resources.getString(R.string.common_error))
+			.setSmallIcon(R.drawable.ic_warning)
+			.setContentIntent(pendingIntent)
+			.setOngoing(false)
+			.setAutoCancel(true)
+			.build()
+	}
 }

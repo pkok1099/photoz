@@ -43,146 +43,153 @@ import kotlin.io.encoding.Base64
 private const val ANDROID_KEY_STORE = "AndroidKeyStore"
 private const val WRAPPING_KEY_ALIAS = "user_key_wrapper"
 
-class BiometricVaultProtectionHandler @Inject constructor(
-    private val app: Application,
-    private val resources: Resources,
-    private val unlockCipher: UnlockBiometricCipherPrompt,
-) : VaultProtectionHandler<UnlockRequest.Biometric, CreateRequest.Biometric> {
+class BiometricVaultProtectionHandler
+	@Inject
+	constructor(
+		private val app: Application,
+		private val resources: Resources,
+		private val unlockCipher: UnlockBiometricCipherPrompt,
+	) : VaultProtectionHandler<UnlockRequest.Biometric, CreateRequest.Biometric> {
+		private val prefs = app.getSharedPreferences("biometric_keys", Context.MODE_PRIVATE)
 
-    private val prefs = app.getSharedPreferences("biometric_keys", Context.MODE_PRIVATE)
+		override suspend fun unlock(
+			request: UnlockRequest.Biometric,
+			protection: VaultProtection,
+		): SecretKey {
+			val kek =
+				getOrCreateBiometricKek(
+					algorithm = protection.params.algorithm,
+					keySize = protection.params.keySize,
+				)
 
-    override suspend fun unlock(
-        request: UnlockRequest.Biometric,
-        protection: VaultProtection
-    ): SecretKey {
-        val kek = getOrCreateBiometricKek(
-            algorithm = protection.params.algorithm,
-            keySize = protection.params.keySize,
-        )
+			val iv = Base64.decode(protection.params.iv)
 
-        val iv = Base64.decode(protection.params.iv)
+			val cipher =
+				Cipher.getInstance(protection.params.algorithm.value).apply {
+					init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(iv))
+				}
 
-        val cipher = Cipher.getInstance(protection.params.algorithm.value).apply {
-            init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(iv))
-        }
+			val unlockedCipher =
+				unlockCipher(
+					fragment = request.fragment,
+					cipher = cipher,
+					title = resources.getString(R.string.biometric_unlock_title),
+					subtitle = resources.getString(R.string.biometric_unlock_subtitle),
+					negativeButtonText = resources.getString(R.string.biometric_unlock_cancel),
+				).getOrThrow()
 
-        val unlockedCipher = unlockCipher(
-            fragment = request.fragment,
-            cipher = cipher,
-            title = resources.getString(R.string.biometric_unlock_title),
-            subtitle = resources.getString(R.string.biometric_unlock_subtitle),
-            negativeButtonText = resources.getString(R.string.biometric_unlock_cancel),
-        ).getOrThrow()
+			val vmkBytes = unlockedCipher.doFinal(protection.wrappedVMK)
+			return SecretKeySpec(vmkBytes, "AES")
+		}
 
-        val vmkBytes = unlockedCipher.doFinal(protection.wrappedVMK)
-        return SecretKeySpec(vmkBytes, "AES")
-    }
+		override suspend fun create(request: CreateRequest.Biometric): VaultProtection {
+			val vmk = request.session.vmk
 
-    override suspend fun create(request: CreateRequest.Biometric): VaultProtection {
-        val vmk = request.session.vmk
+			val algorithm = Algorithm.AesCbcPkcs7Padding
+			val keySize = 256
 
-        val algorithm = Algorithm.AesCbcPkcs7Padding
-        val keySize = 256
+			val kek =
+				getOrCreateBiometricKek(
+					algorithm = algorithm,
+					keySize = keySize,
+				)
 
-        val kek = getOrCreateBiometricKek(
-            algorithm = algorithm,
-            keySize = keySize,
-        )
+			val cipher =
+				Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek)
+				}
 
-        val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek)
-        }
+			val unlockedCipher =
+				unlockCipher(
+					fragment = request.fragment,
+					cipher = cipher,
+					title = resources.getString(R.string.biometric_unlock_setup_title),
+					subtitle = resources.getString(R.string.biometric_unlock_setup_subtitle),
+					negativeButtonText = resources.getString(R.string.common_cancel),
+				).getOrThrow()
 
-        val unlockedCipher = unlockCipher(
-            fragment = request.fragment,
-            cipher = cipher,
-            title = resources.getString(R.string.biometric_unlock_setup_title),
-            subtitle = resources.getString(R.string.biometric_unlock_setup_subtitle),
-            negativeButtonText = resources.getString(R.string.common_cancel),
-        ).getOrThrow()
+			val params =
+				VaultProtectionParams(
+					salt = null,
+					iv = Base64.encode(unlockedCipher.iv),
+					kdf = null,
+					kdfIterations = null,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = 256,
+				)
 
-        val params = VaultProtectionParams(
-            salt = null,
-            iv = Base64.encode(unlockedCipher.iv),
-            kdf = null,
-            kdfIterations = null,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = 256,
-        )
+			val wrappedVmk = unlockedCipher.doFinal(vmk.encoded)
 
-        val wrappedVmk = unlockedCipher.doFinal(vmk.encoded)
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = request.protectionType,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = request.protectionType,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
+		override suspend fun canMigrate(): Boolean = prefs.contains("wrapped_user_key")
 
-    override suspend fun canMigrate(): Boolean {
-        return prefs.contains("wrapped_user_key")
-    }
+		override suspend fun migrate(request: UnlockRequest.Biometric): VaultProtection {
+			val base64 = prefs.getString("wrapped_user_key", null)!!
+			val bytes = Base64.decode(base64)
 
-    override suspend fun migrate(request: UnlockRequest.Biometric): VaultProtection {
-        val base64 = prefs.getString("wrapped_user_key", null)!!
-        val bytes = Base64.decode(base64)
+			val iv = bytes.copyOfRange(0, IV_SIZE)
+			val wrappedVmk = bytes.copyOfRange(IV_SIZE, bytes.size)
 
-        val iv = bytes.copyOfRange(0, IV_SIZE)
-        val wrappedVmk = bytes.copyOfRange(IV_SIZE, bytes.size)
+			val params =
+				VaultProtectionParams(
+					salt = null,
+					iv = Base64.encode(iv),
+					kdf = null,
+					kdfIterations = null,
+					algorithm = Algorithm.AesCbcPkcs7Padding,
+					keySize = 256,
+				)
 
-        val params = VaultProtectionParams(
-            salt = null,
-            iv = Base64.encode(iv),
-            kdf = null,
-            kdfIterations = null,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = 256,
-        )
+			return VaultProtection(
+				id = UUID.randomUUID().toString(),
+				type = request.protectionType,
+				wrappedVMK = wrappedVmk,
+				params = params,
+			)
+		}
 
-        return VaultProtection(
-            id = UUID.randomUUID().toString(),
-            type = request.protectionType,
-            wrappedVMK = wrappedVmk,
-            params = params,
-        )
-    }
+		override suspend fun onMigrationPersisted() {
+			prefs.edit { remove("wrapped_user_key") }
+		}
 
-    override suspend fun onMigrationPersisted() {
-        prefs.edit { remove("wrapped_user_key") }
-    }
-
-    override suspend fun reset() {
-        getKeyStore().deleteEntry(WRAPPING_KEY_ALIAS)
-    }
-}
+		override suspend fun reset() {
+			getKeyStore().deleteEntry(WRAPPING_KEY_ALIAS)
+		}
+	}
 
 private fun getOrCreateBiometricKek(
-    algorithm: Algorithm,
-    keySize: Int,
+	algorithm: Algorithm,
+	keySize: Int,
 ): SecretKey {
-    val keyStore = getKeyStore()
-    keyStore.getKey(WRAPPING_KEY_ALIAS, null)?.let { return it as SecretKey }
+	val keyStore = getKeyStore()
+	keyStore.getKey(WRAPPING_KEY_ALIAS, null)?.let { return it as SecretKey }
 
-    val keyGenParams = KeyGenParameterSpec.Builder(
-        WRAPPING_KEY_ALIAS,
-        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-    )
-        .setBlockModes(algorithm.blockMode)
-        .setEncryptionPaddings(algorithm.padding)
-        .setUserAuthenticationRequired(true)
-        .setKeySize(keySize)
-        .setInvalidatedByBiometricEnrollment(true)
-        .build()
+	val keyGenParams =
+		KeyGenParameterSpec
+			.Builder(
+				WRAPPING_KEY_ALIAS,
+				KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+			).setBlockModes(algorithm.blockMode)
+			.setEncryptionPaddings(algorithm.padding)
+			.setUserAuthenticationRequired(true)
+			.setKeySize(keySize)
+			.setInvalidatedByBiometricEnrollment(true)
+			.build()
 
-    val keyGenerator = KeyGenerator.getInstance(
-        KeyProperties.KEY_ALGORITHM_AES,
-        ANDROID_KEY_STORE
-    )
-    keyGenerator.init(keyGenParams)
-    return keyGenerator.generateKey()
+	val keyGenerator =
+		KeyGenerator.getInstance(
+			KeyProperties.KEY_ALGORITHM_AES,
+			ANDROID_KEY_STORE,
+		)
+	keyGenerator.init(keyGenParams)
+	return keyGenerator.generateKey()
 }
 
-private fun getKeyStore(): KeyStore {
-    return KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-}
+private fun getKeyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }

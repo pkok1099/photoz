@@ -42,125 +42,143 @@ package onlasdan.gallery.encryption.domain
  * without pulling in a 500KB library.
  */
 object StrongPasswordPolicy {
+	/** Minimum password length — enforced. */
+	const val MIN_LENGTH = 8
 
-    /** Minimum password length — enforced. */
-    const val MIN_LENGTH = 8
+	/**
+	 * Pure-digit passwords shorter than this are rejected as PINs.
+	 * 12+ digit numeric passwords (e.g. a 16-digit credit card number plus
+	 * a word) are grudgingly accepted because they're at least not 4-6 digit
+	 * phone unlock codes — but they still score poorly on the strength meter.
+	 */
+	private const val PIN_REJECT_LENGTH_THRESHOLD = 12
 
-    /**
-     * Pure-digit passwords shorter than this are rejected as PINs.
-     * 12+ digit numeric passwords (e.g. a 16-digit credit card number plus
-     * a word) are grudgingly accepted because they're at least not 4-6 digit
-     * phone unlock codes — but they still score poorly on the strength meter.
-     */
-    private const val PIN_REJECT_LENGTH_THRESHOLD = 12
+	/**
+	 * Common passwords that should be rejected even if they meet the length
+	 * and class requirements. These are the top entries from the HaveIBeenPwned
+	 * "Top 100k" list, filtered to entries that pass the 8-char + 3-class rule
+	 * (so things like "password" wouldn't make the cut — those are already
+	 * rejected by the class check). The list is intentionally short — the
+	 * goal is to catch the obvious ones without bloating the APK.
+	 */
+	private val COMMON_PASSWORDS =
+		setOf(
+			"password1",
+			"password12",
+			"password123",
+			"qwerty123",
+			"qwertyui1",
+			"abc12345",
+			"abc123456",
+			"letmein1",
+			"letmein12",
+			"welcome1",
+			"welcome12",
+			"monkey123",
+			"monkey12",
+			"dragon12",
+			"dragon123",
+			"master12",
+			"master123",
+			"football1",
+			"football12",
+			"iloveyou1",
+			"iloveyou12",
+			"sunshine1",
+			"sunshine12",
+			"princess1",
+			"princess12",
+			"admin123",
+			"admin1234",
+			"login123",
+			"login1234",
+			// PhotoZ-specific — discourage users from picking the app name
+			"photoz12",
+			"photoz123",
+			"photok12",
+			"photok123",
+		)
 
-    /**
-     * Common passwords that should be rejected even if they meet the length
-     * and class requirements. These are the top entries from the HaveIBeenPwned
-     * "Top 100k" list, filtered to entries that pass the 8-char + 3-class rule
-     * (so things like "password" wouldn't make the cut — those are already
-     * rejected by the class check). The list is intentionally short — the
-     * goal is to catch the obvious ones without bloating the APK.
-     */
-    private val COMMON_PASSWORDS = setOf(
-        "password1", "password12", "password123",
-        "qwerty123", "qwertyui1",
-        "abc12345", "abc123456",
-        "letmein1", "letmein12",
-        "welcome1", "welcome12",
-        "monkey123", "monkey12",
-        "dragon12", "dragon123",
-        "master12", "master123",
-        "football1", "football12",
-        "iloveyou1", "iloveyou12",
-        "sunshine1", "sunshine12",
-        "princess1", "princess12",
-        "admin123", "admin1234",
-        "login123", "login1234",
-        // PhotoZ-specific — discourage users from picking the app name
-        "photoz12", "photoz123", "photok12", "photok123",
-    )
+	/**
+	 * Returns `true` if [password] meets the minimum bar (length + not a PIN +
+	 * class diversity). The setup screen should refuse to enable the "Create"
+	 * button until this returns `true`.
+	 */
+	fun isAcceptable(password: String): Boolean {
+		if (password.length < MIN_LENGTH) return false
 
-    /**
-     * Returns `true` if [password] meets the minimum bar (length + not a PIN +
-     * class diversity). The setup screen should refuse to enable the "Create"
-     * button until this returns `true`.
-     */
-    fun isAcceptable(password: String): Boolean {
-        if (password.length < MIN_LENGTH) return false
+		// Reject PIN-style passwords: pure digits under the threshold.
+		if (password.all { it.isDigit() } && password.length < PIN_REJECT_LENGTH_THRESHOLD) {
+			return false
+		}
 
-        // Reject PIN-style passwords: pure digits under the threshold.
-        if (password.all { it.isDigit() } && password.length < PIN_REJECT_LENGTH_THRESHOLD) {
-            return false
-        }
+		// Reject common passwords.
+		if (password.lowercase() in COMMON_PASSWORDS) return false
 
-        // Reject common passwords.
-        if (password.lowercase() in COMMON_PASSWORDS) return false
+		// Class diversity requirement.
+		val classCount = countCharacterClasses(password)
+		val requiredClasses = if (password.length >= 12) 2 else 3
+		if (classCount < requiredClasses) return false
 
-        // Class diversity requirement.
-        val classCount = countCharacterClasses(password)
-        val requiredClasses = if (password.length >= 12) 2 else 3
-        if (classCount < requiredClasses) return false
+		return true
+	}
 
-        return true
-    }
+	/**
+	 * Compute a heuristic strength score for UI feedback. NOT used for
+	 * enforcement — [isAcceptable] is the gate. The score lets the user see
+	 * "Weak / Moderate / Strong" change as they type.
+	 */
+	fun strength(password: String): PasswordStrength {
+		if (password.isEmpty()) return PasswordStrength.EMPTY
+		if (password.length < MIN_LENGTH) return PasswordStrength.TOO_SHORT
+		if (password.all { it.isDigit() } && password.length < PIN_REJECT_LENGTH_THRESHOLD) {
+			return PasswordStrength.PIN_REJECTED
+		}
+		if (password.lowercase() in COMMON_PASSWORDS) return PasswordStrength.COMMON
 
-    /**
-     * Compute a heuristic strength score for UI feedback. NOT used for
-     * enforcement — [isAcceptable] is the gate. The score lets the user see
-     * "Weak / Moderate / Strong" change as they type.
-     */
-    fun strength(password: String): PasswordStrength {
-        if (password.isEmpty()) return PasswordStrength.EMPTY
-        if (password.length < MIN_LENGTH) return PasswordStrength.TOO_SHORT
-        if (password.all { it.isDigit() } && password.length < PIN_REJECT_LENGTH_THRESHOLD) {
-            return PasswordStrength.PIN_REJECTED
-        }
-        if (password.lowercase() in COMMON_PASSWORDS) return PasswordStrength.COMMON
+		val classCount = countCharacterClasses(password)
+		val score =
+			when {
+				password.length >= 16 && classCount >= 3 -> 4
+				password.length >= 14 && classCount >= 3 -> 3
+				password.length >= 12 && classCount >= 2 -> 3
+				password.length >= 10 && classCount >= 3 -> 2
+				password.length >= 8 && classCount >= 3 -> 2
+				password.length >= 8 && classCount >= 2 -> 1
+				else -> 0
+			}
+		return when (score) {
+			0, 1 -> PasswordStrength.WEAK
+			2 -> PasswordStrength.MODERATE
+			3, 4 -> PasswordStrength.STRONG
+			else -> PasswordStrength.WEAK
+		}
+	}
 
-        val classCount = countCharacterClasses(password)
-        val score = when {
-            password.length >= 16 && classCount >= 3 -> 4
-            password.length >= 14 && classCount >= 3 -> 3
-            password.length >= 12 && classCount >= 2 -> 3
-            password.length >= 10 && classCount >= 3 -> 2
-            password.length >= 8 && classCount >= 3 -> 2
-            password.length >= 8 && classCount >= 2 -> 1
-            else -> 0
-        }
-        return when (score) {
-            0, 1 -> PasswordStrength.WEAK
-            2 -> PasswordStrength.MODERATE
-            3, 4 -> PasswordStrength.STRONG
-            else -> PasswordStrength.WEAK
-        }
-    }
+	/**
+	 * Returns `true` if [password] is rejected specifically because it's a
+	 * pure-digit PIN (length < 12). Used by the UI to show the dedicated
+	 * "PINs are not allowed" message instead of the generic "too weak".
+	 */
+	fun isPinRejected(password: String): Boolean =
+		password.isNotEmpty() &&
+			password.all { it.isDigit() } &&
+			password.length < PIN_REJECT_LENGTH_THRESHOLD
 
-    /**
-     * Returns `true` if [password] is rejected specifically because it's a
-     * pure-digit PIN (length < 12). Used by the UI to show the dedicated
-     * "PINs are not allowed" message instead of the generic "too weak".
-     */
-    fun isPinRejected(password: String): Boolean =
-        password.isNotEmpty() &&
-            password.all { it.isDigit() } &&
-            password.length < PIN_REJECT_LENGTH_THRESHOLD
+	/**
+	 * Returns `True` if [password] is rejected specifically because it's too
+	 * short. Used by the UI to show "minimum 8 characters" hint.
+	 */
+	fun isTooShort(password: String): Boolean = password.isNotEmpty() && password.length < MIN_LENGTH
 
-    /**
-     * Returns `True` if [password] is rejected specifically because it's too
-     * short. Used by the UI to show "minimum 8 characters" hint.
-     */
-    fun isTooShort(password: String): Boolean =
-        password.isNotEmpty() && password.length < MIN_LENGTH
-
-    private fun countCharacterClasses(password: String): Int {
-        var classes = 0
-        if (password.any { it.isLowerCase() }) classes++
-        if (password.any { it.isUpperCase() }) classes++
-        if (password.any { it.isDigit() }) classes++
-        if (password.any { !it.isLetterOrDigit() }) classes++  // symbols
-        return classes
-    }
+	private fun countCharacterClasses(password: String): Int {
+		var classes = 0
+		if (password.any { it.isLowerCase() }) classes++
+		if (password.any { it.isUpperCase() }) classes++
+		if (password.any { it.isDigit() }) classes++
+		if (password.any { !it.isLetterOrDigit() }) classes++ // symbols
+		return classes
+	}
 }
 
 /**
@@ -172,12 +190,14 @@ object StrongPasswordPolicy {
  * "above the bar" states — the user can proceed, but the indicator shows the
  * score so they're nudged toward STRONG.
  */
-enum class PasswordStrength(val displayStringRes: Int) {
-    EMPTY(0),
-    TOO_SHORT(0),
-    PIN_REJECTED(0),
-    COMMON(0),
-    WEAK(0),
-    MODERATE(0),
-    STRONG(0),
+enum class PasswordStrength(
+	val displayStringRes: Int,
+) {
+	EMPTY(0),
+	TOO_SHORT(0),
+	PIN_REJECTED(0),
+	COMMON(0),
+	WEAK(0),
+	MODERATE(0),
+	STRONG(0),
 }

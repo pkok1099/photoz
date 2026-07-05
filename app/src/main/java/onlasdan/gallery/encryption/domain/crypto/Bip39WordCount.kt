@@ -18,9 +18,9 @@ package onlasdan.gallery.encryption.domain.crypto
 
 /** Supported BIP-39 phrase lengths and their corresponding entropy sizes. */
 enum class Bip39WordCount(
-    val words: Int,
-    val entropyBytes: Int,
+	val words: Int,
+	val entropyBytes: Int,
 ) {
-    Twelve(12, 16),
-    TwentyFour(24, 32),
+	Twelve(12, 16),
+	TwentyFour(24, 32),
 }

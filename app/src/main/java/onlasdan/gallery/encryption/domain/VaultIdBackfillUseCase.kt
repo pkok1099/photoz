@@ -43,42 +43,53 @@ import javax.inject.Singleton
  * @since v11 — Sprint 2 / M7 multi-vault
  */
 @Singleton
-class VaultIdBackfillUseCase @Inject constructor(
-    private val photoDao: PhotoDao,
-    private val albumDao: AlbumDao,
-    private val hashRegistryDao: HashRegistryDao,
-) : VaultIdBackfillHook {
+class VaultIdBackfillUseCase
+	@Inject
+	constructor(
+		private val photoDao: PhotoDao,
+		private val albumDao: AlbumDao,
+		private val hashRegistryDao: HashRegistryDao,
+	) : VaultIdBackfillHook {
+		override suspend fun backfillVaultId(vaultId: String) {
+			// Order matters: backfill registry first (smallest), then albums, then
+			// photos (largest). If any step fails, the remaining tables will still
+			// be backfilled on the next unlock — partial progress is preserved.
+			val registryBackfilled =
+				try {
+					hashRegistryDao.backfillVaultId(vaultId)
+				} catch (e: Exception) {
+					Timber.w(e, "VaultIdBackfill: hash_registry failed (non-fatal)")
+					0
+				}
+			val albumsBackfilled =
+				try {
+					albumDao.backfillVaultId(vaultId)
+				} catch (e: Exception) {
+					Timber.w(e, "VaultIdBackfill: album failed (non-fatal)")
+					0
+				}
+			val photosBackfilled =
+				try {
+					photoDao.backfillVaultId(vaultId)
+				} catch (e: Exception) {
+					Timber.w(e, "VaultIdBackfill: photo failed (non-fatal)")
+					0
+				}
 
-    override suspend fun backfillVaultId(vaultId: String) {
-        // Order matters: backfill registry first (smallest), then albums, then
-        // photos (largest). If any step fails, the remaining tables will still
-        // be backfilled on the next unlock — partial progress is preserved.
-        val registryBackfilled = try {
-            hashRegistryDao.backfillVaultId(vaultId)
-        } catch (e: Exception) {
-            Timber.w(e, "VaultIdBackfill: hash_registry failed (non-fatal)")
-            0
-        }
-        val albumsBackfilled = try {
-            albumDao.backfillVaultId(vaultId)
-        } catch (e: Exception) {
-            Timber.w(e, "VaultIdBackfill: album failed (non-fatal)")
-            0
-        }
-        val photosBackfilled = try {
-            photoDao.backfillVaultId(vaultId)
-        } catch (e: Exception) {
-            Timber.w(e, "VaultIdBackfill: photo failed (non-fatal)")
-            0
-        }
-
-        if (registryBackfilled + albumsBackfilled + photosBackfilled > 0) {
-            Timber.i("VaultIdBackfill: backfilled %d photos, %d albums, %d registry entries " +
-                "with vault_id=%s (one-time migration cost)",
-                photosBackfilled, albumsBackfilled, registryBackfilled, vaultId)
-            android.util.Log.e("RcloneDiag",
-                "VaultIdBackfill: backfilled $photosBackfilled photos, $albumsBackfilled albums, " +
-                    "$registryBackfilled registry entries with vault_id=$vaultId")
-        }
-    }
-}
+			if (registryBackfilled + albumsBackfilled + photosBackfilled > 0) {
+				Timber.i(
+					"VaultIdBackfill: backfilled %d photos, %d albums, %d registry entries " +
+						"with vault_id=%s (one-time migration cost)",
+					photosBackfilled,
+					albumsBackfilled,
+					registryBackfilled,
+					vaultId,
+				)
+				android.util.Log.e(
+					"RcloneDiag",
+					"VaultIdBackfill: backfilled $photosBackfilled photos, $albumsBackfilled albums, " +
+						"$registryBackfilled registry entries with vault_id=$vaultId",
+				)
+			}
+		}
+	}

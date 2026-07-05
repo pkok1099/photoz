@@ -21,36 +21,42 @@ import onlasdan.gallery.recoverymenu.RecoveryMenuActivity
 import timber.log.Timber
 import javax.inject.Inject
 
-class ForwardDialerNavigator @Inject constructor() {
+class ForwardDialerNavigator
+	@Inject
+	constructor() {
+		fun navigate(
+			navigationEvent: NavigationEvent,
+			activity: ForwardDialerActivity,
+		) {
+			when (navigationEvent) {
+				NavigationEvent.ForwardToDialer -> navigateForwardToDialer(activity)
+				NavigationEvent.OpenRecoveryMenu -> navigateOpenRecoveryMenu(activity)
+			}
+		}
 
-    fun navigate(navigationEvent: NavigationEvent, activity: ForwardDialerActivity) {
-        when (navigationEvent) {
-            NavigationEvent.ForwardToDialer -> navigateForwardToDialer(activity)
-            NavigationEvent.OpenRecoveryMenu -> navigateOpenRecoveryMenu(activity)
-        }
-    }
+		private fun navigateOpenRecoveryMenu(activity: ForwardDialerActivity) {
+			Timber.d("opening recovery menu")
+			val intent = Intent(activity, RecoveryMenuActivity::class.java)
+			activity.apply {
+				startActivity(intent)
+				finish()
+			}
+		}
 
-    private fun navigateOpenRecoveryMenu(activity: ForwardDialerActivity) {
-        Timber.d("opening recovery menu")
-        val intent = Intent(activity, RecoveryMenuActivity::class.java)
-        activity.apply {
-            startActivity(intent)
-            finish()
-        }
-    }
+		private fun navigateForwardToDialer(activity: ForwardDialerActivity) {
+			val dialIntent =
+				Intent(Intent.ACTION_DIAL).apply {
+					flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+				}
+			activity.apply {
+				startActivity(dialIntent)
+				finishAndRemoveTask()
+			}
+		}
 
-    private fun navigateForwardToDialer(activity: ForwardDialerActivity) {
-        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        activity.apply {
-            startActivity(dialIntent)
-            finishAndRemoveTask()
-        }
-    }
+		sealed class NavigationEvent {
+			object OpenRecoveryMenu : NavigationEvent()
 
-    sealed class NavigationEvent {
-        object OpenRecoveryMenu : NavigationEvent()
-        object ForwardToDialer : NavigationEvent()
-    }
-}
+			object ForwardToDialer : NavigationEvent()
+		}
+	}

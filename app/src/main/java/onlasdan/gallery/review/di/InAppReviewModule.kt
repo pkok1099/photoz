@@ -26,7 +26,6 @@ import onlasdan.gallery.review.InAppReviewImpl
 @Module
 @InstallIn(SingletonComponent::class)
 interface InAppReviewModule {
-
-    @Binds
-    fun bindInAppReview(impl: InAppReviewImpl): InAppReview
+	@Binds
+	fun bindInAppReview(impl: InAppReviewImpl): InAppReview
 }

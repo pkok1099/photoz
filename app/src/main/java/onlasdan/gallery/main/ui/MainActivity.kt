@@ -49,89 +49,93 @@ val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.s
  */
 @AndroidEntryPoint
 class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_main) {
+	private val viewModel: MainViewModel by viewModels()
 
-    private val viewModel: MainViewModel by viewModels()
+	@Inject
+	override lateinit var config: Config
 
-    @Inject
-    override lateinit var config: Config
+	var onOrientationChanged: (Int) -> Unit = {} // Init empty
 
-    var onOrientationChanged: (Int) -> Unit = {} // Init empty
+	override fun onCreate(savedInstanceState: Bundle?) {
+		enableEdgeToEdge()
+		super.onCreate(savedInstanceState)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
-        super.onCreate(savedInstanceState)
+		// ─── Sprint 1 / P4: Dynamic Color (Material You) ─────────────────────
+		// Overlays wallpaper-derived colors onto the AppTheme (which now extends
+		// Theme.Material3.DayNight.NoActionBar.Bridge). On Android 12+ (always,
+		// since minSdk=35) this pulls primary/secondary/tertiary colors from the
+		// user's wallpaper, giving PhotoZ a personalized look matching the system.
+		// Devices without dynamic color support (e.g. emulator with default
+		// wallpaper) fall back to the colorPrimary/colorAccent defined in colors.xml.
+		// Safe to call unconditionally — the API is a no-op below API 31.
+		DynamicColors.applyToActivityIfAvailable(this)
+	}
 
-        // ─── Sprint 1 / P4: Dynamic Color (Material You) ─────────────────────
-        // Overlays wallpaper-derived colors onto the AppTheme (which now extends
-        // Theme.Material3.DayNight.NoActionBar.Bridge). On Android 12+ (always,
-        // since minSdk=35) this pulls primary/secondary/tertiary colors from the
-        // user's wallpaper, giving PhotoZ a personalized look matching the system.
-        // Devices without dynamic color support (e.g. emulator with default
-        // wallpaper) fall back to the colorPrimary/colorAccent defined in colors.xml.
-        // Safe to call unconditionally — the API is a no-op below API 31.
-        DynamicColors.applyToActivityIfAvailable(this)
-    }
+	override fun onPostCreate(savedInstanceState: Bundle?) {
+		super.onPostCreate(savedInstanceState)
+		dispatchIntent()
 
-    override fun onPostCreate(savedInstanceState: Bundle?) {
-        super.onPostCreate(savedInstanceState)
-        dispatchIntent()
+		findNavController(R.id.mainNavHostFragment).let { navController ->
+			navController.addOnDestinationChangedListener { controller, destination, arguments ->
+				val showMenu = FragmentsWithMenu.contains(destination.id)
+				binding.mainMenuComposeContainer.isVisible = showMenu
 
-        findNavController(R.id.mainNavHostFragment).let { navController ->
-            navController.addOnDestinationChangedListener { controller, destination, arguments ->
-                val showMenu = FragmentsWithMenu.contains(destination.id)
-                binding.mainMenuComposeContainer.isVisible = showMenu
+				WindowCompat
+					.getInsetsController(
+						window,
+						window.decorView,
+					).isAppearanceLightStatusBars =
+					(resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
 
-                WindowCompat.getInsetsController(
-                    window, window.decorView
-                ).isAppearanceLightStatusBars = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+				viewModel.onDestinationChanged(destination.id)
+			}
+		}
+	}
 
-                viewModel.onDestinationChanged(destination.id)
-            }
+	private fun dispatchIntent() {
+		when (intent.action) {
+			Intent.ACTION_SEND ->
+				intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
+					viewModel.addUriToSharedUriStore(uri)
+				}
 
-        }
-    }
+			Intent.ACTION_SEND_MULTIPLE ->
+				intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.forEach { uri ->
+					viewModel.addUriToSharedUriStore(uri)
+				}
+		}
+	}
 
-    private fun dispatchIntent() {
-        when (intent.action) {
-            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
-                viewModel.addUriToSharedUriStore(uri)
-            }
+	override fun onConfigurationChanged(newConfig: Configuration) {
+		super.onConfigurationChanged(newConfig)
 
-            Intent.ACTION_SEND_MULTIPLE ->
-                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.forEach { uri ->
-                    viewModel.addUriToSharedUriStore(uri)
-                }
-        }
-    }
+		onOrientationChanged(newConfig.orientation)
+	}
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
+	override fun bind(binding: ActivityMainBinding) {
+		super.bind(binding)
+		binding.context = this
 
-        onOrientationChanged(newConfig.orientation)
-    }
+		binding.mainMenuComposeContainer.setContent {
+			val uiState by viewModel.mainMenuUiState.collectAsStateWithLifecycle()
 
-    override fun bind(binding: ActivityMainBinding) {
-        super.bind(binding)
-        binding.context = this
-
-        binding.mainMenuComposeContainer.setContent {
-            val uiState by viewModel.mainMenuUiState.collectAsStateWithLifecycle()
-
-            AppTheme {
-                MainMenu(uiState) {
-                    val navController = findNavController(R.id.mainNavHostFragment)
-                    if (navController.currentDestination?.id != it) {
-                        navController.navigate(
-                            resId = it,
-                            args = null,
-                            navOptions = NavOptions.Builder()
-                                .setEnterAnim(android.R.anim.fade_in)
-                                .setExitAnim(android.R.anim.fade_out)
-                                .build()
-                        )
-                    }
-                }
-            }
-        }
-    }
+			AppTheme {
+				MainMenu(uiState) {
+					val navController = findNavController(R.id.mainNavHostFragment)
+					if (navController.currentDestination?.id != it) {
+						navController.navigate(
+							resId = it,
+							args = null,
+							navOptions =
+								NavOptions
+									.Builder()
+									.setEnterAnim(android.R.anim.fade_in)
+									.setExitAnim(android.R.anim.fade_out)
+									.build(),
+						)
+					}
+				}
+			}
+		}
+	}
 }

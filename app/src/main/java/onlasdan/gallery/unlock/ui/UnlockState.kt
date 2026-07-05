@@ -23,11 +23,11 @@ package onlasdan.gallery.unlock.ui
  * @author PhotoZ
  */
 enum class UnlockState {
-    Initial,
-    PasswordError,
-    Error,
-    Loading,
-    Unlocked,
-    StartLegacyMigration,
-    ShowRecoveryPhrase,
+	Initial,
+	PasswordError,
+	Error,
+	Loading,
+	Unlocked,
+	StartLegacyMigration,
+	ShowRecoveryPhrase,
 }

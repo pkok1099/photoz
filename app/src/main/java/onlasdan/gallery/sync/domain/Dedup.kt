@@ -34,32 +34,32 @@ import onlasdan.gallery.sync.work.HashRegistryEntry
  * @since Batch 3 — extracted for testability
  */
 class Dedup(
-    private val dao: HashRegistryDao,
+	private val dao: HashRegistryDao,
 ) {
-    /**
-     * Returns `true` if [contentHash] already has a live (non-tombstoned)
-     * entry in the local registry cache — i.e. the upload should be SKIPPED.
-     *
-     * Returns `false` if:
-     *  - [contentHash] is `null` or blank (pre-v9 import, or hash computation
-     *    failed at import time — no dedup possible, upload normally).
-     *  - No entry exists for this hash (new content, upload normally).
-     */
-    suspend fun shouldSkip(contentHash: String?): Boolean {
-        if (contentHash.isNullOrBlank()) return false
-        return dao.findByHash(contentHash) != null
-    }
+	/**
+	 * Returns `true` if [contentHash] already has a live (non-tombstoned)
+	 * entry in the local registry cache — i.e. the upload should be SKIPPED.
+	 *
+	 * Returns `false` if:
+	 *  - [contentHash] is `null` or blank (pre-v9 import, or hash computation
+	 *    failed at import time — no dedup possible, upload normally).
+	 *  - No entry exists for this hash (new content, upload normally).
+	 */
+	suspend fun shouldSkip(contentHash: String?): Boolean {
+		if (contentHash.isNullOrBlank()) return false
+		return dao.findByHash(contentHash) != null
+	}
 
-    /**
-     * Returns the canonical registry entry for [contentHash], or `null` if no
-     * entry exists (new content) or [contentHash] is blank.
-     *
-     * The canonical entry's [HashRegistryEntry.uuid] is the UUID under which
-     * the original + thumbnail + video preview are stored on the remote —
-     * used by the restore flow to fetch artifacts without a separate upload.
-     */
-    suspend fun findCanonical(contentHash: String): HashRegistryEntry? {
-        if (contentHash.isBlank()) return null
-        return dao.findByHash(contentHash)
-    }
+	/**
+	 * Returns the canonical registry entry for [contentHash], or `null` if no
+	 * entry exists (new content) or [contentHash] is blank.
+	 *
+	 * The canonical entry's [HashRegistryEntry.uuid] is the UUID under which
+	 * the original + thumbnail + video preview are stored on the remote —
+	 * used by the restore flow to fetch artifacts without a separate upload.
+	 */
+	suspend fun findCanonical(contentHash: String): HashRegistryEntry? {
+		if (contentHash.isBlank()) return null
+		return dao.findByHash(contentHash)
+	}
 }

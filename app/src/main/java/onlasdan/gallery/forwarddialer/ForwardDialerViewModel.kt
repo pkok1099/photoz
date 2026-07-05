@@ -27,32 +27,33 @@ import javax.inject.Inject
 const val RECOVERY_MENU_MILLIS_THRESHOLD = 5000L
 
 @HiltViewModel
-class ForwardDialerViewModel @Inject constructor(
-    private val isAirplaneModeOn: IsAirplaneModeOnUseCase,
-    private val config: Config
-) : ViewModel() {
+class ForwardDialerViewModel
+	@Inject
+	constructor(
+		private val isAirplaneModeOn: IsAirplaneModeOnUseCase,
+		private val config: Config,
+	) : ViewModel() {
+		val navigationEvent = SingleLiveEvent<ForwardDialerNavigator.NavigationEvent>()
 
-    val navigationEvent = SingleLiveEvent<ForwardDialerNavigator.NavigationEvent>()
+		fun evaluateNavigation() =
+			if (isAirplaneModeOn()) {
+				val now = System.currentTimeMillis()
+				val lastRecoveryStart = config.timestampLastRecoveryStart
 
-    fun evaluateNavigation() = if (isAirplaneModeOn()) {
-        val now = System.currentTimeMillis()
-        val lastRecoveryStart = config.timestampLastRecoveryStart
+				val millisSinceLastRecoveryStart = now - lastRecoveryStart
 
-        val millisSinceLastRecoveryStart = now - lastRecoveryStart
+				if (millisSinceLastRecoveryStart < RECOVERY_MENU_MILLIS_THRESHOLD) {
+					navigationEvent.value = ForwardDialerNavigator.NavigationEvent.OpenRecoveryMenu
+					config.timestampLastRecoveryStart = TIMESTAMP_LAST_RECOVERY_START_DEFAULT
+				} else {
+					config.timestampLastRecoveryStart = now
+					navigateToDialer()
+				}
+			} else {
+				navigateToDialer()
+			}
 
-        if (millisSinceLastRecoveryStart < RECOVERY_MENU_MILLIS_THRESHOLD) {
-            navigationEvent.value = ForwardDialerNavigator.NavigationEvent.OpenRecoveryMenu
-            config.timestampLastRecoveryStart = TIMESTAMP_LAST_RECOVERY_START_DEFAULT
-        } else {
-            config.timestampLastRecoveryStart = now
-            navigateToDialer()
-        }
-
-    } else {
-        navigateToDialer()
-    }
-
-    private fun navigateToDialer() {
-        navigationEvent.value = ForwardDialerNavigator.NavigationEvent.ForwardToDialer
-    }
-}
+		private fun navigateToDialer() {
+			navigationEvent.value = ForwardDialerNavigator.NavigationEvent.ForwardToDialer
+		}
+	}

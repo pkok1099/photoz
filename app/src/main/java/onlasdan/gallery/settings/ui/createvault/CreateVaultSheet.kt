@@ -42,12 +42,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.PasswordStrength
 import onlasdan.gallery.encryption.domain.StrongPasswordPolicy
 import onlasdan.gallery.ui.components.DialogViewModelStoreOwner
 import onlasdan.gallery.ui.theme.AppTheme
-import kotlinx.coroutines.launch
 
 /**
  * Sprint 2 / M7 — "Create New Vault" bottom sheet.
@@ -67,171 +67,174 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateVaultSheet(
-    onDismissRequest: () -> Unit,
-) {
-    DialogViewModelStoreOwner {
-        val viewModel: CreateVaultViewModel = hiltViewModel()
+fun CreateVaultSheet(onDismissRequest: () -> Unit) {
+	DialogViewModelStoreOwner {
+		val viewModel: CreateVaultViewModel = hiltViewModel()
 
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+		val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-        SheetContent(
-            uiState = uiState,
-            strengthLabelRes = viewModel.strengthLabel(),
-            canSubmit = viewModel.canSubmit(),
-            handleUiEvent = viewModel::handleUiEvent,
-            onDismissRequest = onDismissRequest,
-        )
-    }
+		SheetContent(
+			uiState = uiState,
+			strengthLabelRes = viewModel.strengthLabel(),
+			canSubmit = viewModel.canSubmit(),
+			handleUiEvent = viewModel::handleUiEvent,
+			onDismissRequest = onDismissRequest,
+		)
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SheetContent(
-    uiState: CreateVaultUiState,
-    strengthLabelRes: Int,
-    canSubmit: Boolean,
-    handleUiEvent: (CreateVaultUiEvent) -> Unit,
-    onDismissRequest: () -> Unit,
+	uiState: CreateVaultUiState,
+	strengthLabelRes: Int,
+	canSubmit: Boolean,
+	handleUiEvent: (CreateVaultUiEvent) -> Unit,
+	onDismissRequest: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+	val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+	val context = LocalContext.current
+	val scope = rememberCoroutineScope()
 
-    LaunchedEffect(uiState.done) {
-        if (uiState.done) {
-            Toast.makeText(context, R.string.create_vault_success, Toast.LENGTH_LONG).show()
-            scope.launch {
-                sheetState.hide()
-            }.invokeOnCompletion {
-                onDismissRequest()
-            }
-        }
-    }
+	LaunchedEffect(uiState.done) {
+		if (uiState.done) {
+			Toast.makeText(context, R.string.create_vault_success, Toast.LENGTH_LONG).show()
+			scope
+				.launch {
+					sheetState.hide()
+				}.invokeOnCompletion {
+					onDismissRequest()
+				}
+		}
+	}
 
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding()
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.create_vault_title),
-                style = MaterialTheme.typography.headlineSmall,
-            )
+	ModalBottomSheet(
+		onDismissRequest = onDismissRequest,
+		sheetState = sheetState,
+	) {
+		Column(
+			modifier =
+				Modifier
+					.fillMaxWidth()
+					.padding(horizontal = 20.dp)
+					.navigationBarsPadding()
+					.padding(bottom = 16.dp),
+			verticalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			Text(
+				text = stringResource(R.string.create_vault_title),
+				style = MaterialTheme.typography.headlineSmall,
+			)
 
-            Text(
-                text = stringResource(R.string.create_vault_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+			Text(
+				text = stringResource(R.string.create_vault_description),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+			)
 
-            // ─── Password field with strength indicator ─────────────────────
-            OutlinedTextField(
-                value = uiState.password,
-                onValueChange = { handleUiEvent(CreateVaultUiEvent.PasswordChanged(it)) },
-                label = { Text(stringResource(R.string.create_vault_password_label)) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                enabled = !uiState.loading,
-                modifier = Modifier.fillMaxWidth(),
-            )
+			// ─── Password field with strength indicator ─────────────────────
+			OutlinedTextField(
+				value = uiState.password,
+				onValueChange = { handleUiEvent(CreateVaultUiEvent.PasswordChanged(it)) },
+				label = { Text(stringResource(R.string.create_vault_password_label)) },
+				singleLine = true,
+				visualTransformation = PasswordVisualTransformation(),
+				enabled = !uiState.loading,
+				modifier = Modifier.fillMaxWidth(),
+			)
 
-            // Strength indicator + contextual rejection message
-            if (uiState.password.isNotEmpty()) {
-                val strength = StrongPasswordPolicy.strength(uiState.password)
-                val strengthColor = when (strength) {
-                    PasswordStrength.EMPTY,
-                    PasswordStrength.TOO_SHORT,
-                    PasswordStrength.PIN_REJECTED,
-                    PasswordStrength.COMMON,
-                    PasswordStrength.WEAK -> MaterialTheme.colorScheme.error
-                    PasswordStrength.MODERATE -> MaterialTheme.colorScheme.tertiary
-                    PasswordStrength.STRONG -> MaterialTheme.colorScheme.primary
-                }
-                Text(
-                    text = stringResource(strengthLabelRes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = strengthColor,
-                )
-            }
+			// Strength indicator + contextual rejection message
+			if (uiState.password.isNotEmpty()) {
+				val strength = StrongPasswordPolicy.strength(uiState.password)
+				val strengthColor =
+					when (strength) {
+						PasswordStrength.EMPTY,
+						PasswordStrength.TOO_SHORT,
+						PasswordStrength.PIN_REJECTED,
+						PasswordStrength.COMMON,
+						PasswordStrength.WEAK,
+						-> MaterialTheme.colorScheme.error
+						PasswordStrength.MODERATE -> MaterialTheme.colorScheme.tertiary
+						PasswordStrength.STRONG -> MaterialTheme.colorScheme.primary
+					}
+				Text(
+					text = stringResource(strengthLabelRes),
+					style = MaterialTheme.typography.bodySmall,
+					color = strengthColor,
+				)
+			}
 
-            // ─── Confirm password field ─────────────────────────────────────
-            OutlinedTextField(
-                value = uiState.passwordConfirm,
-                onValueChange = { handleUiEvent(CreateVaultUiEvent.PasswordConfirmChanged(it)) },
-                label = { Text(stringResource(R.string.create_vault_password_confirm_label)) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                enabled = !uiState.loading,
-                isError = uiState.passwordConfirm.isNotEmpty() &&
-                    uiState.password != uiState.passwordConfirm,
-                supportingText = {
-                    if (uiState.passwordConfirm.isNotEmpty() &&
-                        uiState.password != uiState.passwordConfirm
-                    ) {
-                        Text(stringResource(R.string.create_vault_passwords_dont_match))
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
+			// ─── Confirm password field ─────────────────────────────────────
+			OutlinedTextField(
+				value = uiState.passwordConfirm,
+				onValueChange = { handleUiEvent(CreateVaultUiEvent.PasswordConfirmChanged(it)) },
+				label = { Text(stringResource(R.string.create_vault_password_confirm_label)) },
+				singleLine = true,
+				visualTransformation = PasswordVisualTransformation(),
+				enabled = !uiState.loading,
+				isError =
+					uiState.passwordConfirm.isNotEmpty() &&
+						uiState.password != uiState.passwordConfirm,
+				supportingText = {
+					if (uiState.passwordConfirm.isNotEmpty() &&
+						uiState.password != uiState.passwordConfirm
+					) {
+						Text(stringResource(R.string.create_vault_passwords_dont_match))
+					}
+				},
+				modifier = Modifier.fillMaxWidth(),
+			)
 
-            // ─── Local-only warning banner ──────────────────────────────────
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = stringResource(R.string.create_vault_warning_local_only),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(12.dp),
-                )
-            }
+			// ─── Local-only warning banner ──────────────────────────────────
+			Surface(
+				color = MaterialTheme.colorScheme.errorContainer,
+				shape = MaterialTheme.shapes.small,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				Text(
+					text = stringResource(R.string.create_vault_warning_local_only),
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.onErrorContainer,
+					modifier = Modifier.padding(12.dp),
+				)
+			}
 
-            // ─── Error message (if any) ─────────────────────────────────────
-            if (uiState.errorMessage != null) {
-                Text(
-                    text = uiState.errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+			// ─── Error message (if any) ─────────────────────────────────────
+			if (uiState.errorMessage != null) {
+				Text(
+					text = uiState.errorMessage,
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.error,
+				)
+			}
 
-            // ─── Loading indicator ──────────────────────────────────────────
-            if (uiState.loading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
+			// ─── Loading indicator ──────────────────────────────────────────
+			if (uiState.loading) {
+				LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+			}
 
-            // ─── Create button ──────────────────────────────────────────────
-            Button(
-                onClick = { handleUiEvent(CreateVaultUiEvent.CreateVault) },
-                enabled = canSubmit && !uiState.loading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.create_vault_button_create))
-            }
-        }
-    }
+			// ─── Create button ──────────────────────────────────────────────
+			Button(
+				onClick = { handleUiEvent(CreateVaultUiEvent.CreateVault) },
+				enabled = canSubmit && !uiState.loading,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				Text(stringResource(R.string.create_vault_button_create))
+			}
+		}
+	}
 }
 
 @Suppress("unused")
 @Composable
 private fun CreateVaultSheetPreview() {
-    AppTheme {
-        SheetContent(
-            uiState = CreateVaultUiState(),
-            strengthLabelRes = R.string.create_vault_strength_weak,
-            canSubmit = false,
-            handleUiEvent = {},
-            onDismissRequest = {},
-        )
-    }
+	AppTheme {
+		SheetContent(
+			uiState = CreateVaultUiState(),
+			strengthLabelRes = R.string.create_vault_strength_weak,
+			canSubmit = false,
+			handleUiEvent = {},
+			onDismissRequest = {},
+		)
+	}
 }

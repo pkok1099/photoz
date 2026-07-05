@@ -32,19 +32,20 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun CenteredScrollableColumn(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
+	modifier: Modifier = Modifier,
+	content: @Composable ColumnScope.() -> Unit,
 ) {
-    BoxWithConstraints(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .heightIn(min = maxHeight)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            content = content,
-        )
-    }
+	BoxWithConstraints(modifier = modifier) {
+		Column(
+			modifier =
+				Modifier
+					.heightIn(min = maxHeight)
+					.verticalScroll(rememberScrollState())
+					.padding(20.dp)
+					.fillMaxWidth(),
+			horizontalAlignment = Alignment.CenterHorizontally,
+			verticalArrangement = Arrangement.Center,
+			content = content,
+		)
+	}
 }

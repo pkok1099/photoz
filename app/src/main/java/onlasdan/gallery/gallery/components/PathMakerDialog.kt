@@ -52,27 +52,28 @@ import onlasdan.gallery.ui.theme.Colors
  */
 @Composable
 fun NoFolderInfoChip(modifier: Modifier = Modifier) {
-    AssistChip(
-        modifier = modifier,
-        onClick = { /* informational — no-op */ },
-        leadingIcon = {
-            Icon(
-                painter = painterResource(R.drawable.ic_warning),
-                contentDescription = null,
-            )
-        },
-        label = {
-            Text(
-                text = stringResource(R.string.import_menu_photo_picker_chip_no_path),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            leadingIconContentColor = Colors.Warning,
-            labelColor = Colors.Warning,
-        ),
-    )
+	AssistChip(
+		modifier = modifier,
+		onClick = { /* informational — no-op */ },
+		leadingIcon = {
+			Icon(
+				painter = painterResource(R.drawable.ic_warning),
+				contentDescription = null,
+			)
+		},
+		label = {
+			Text(
+				text = stringResource(R.string.import_menu_photo_picker_chip_no_path),
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		},
+		colors =
+			AssistChipDefaults.assistChipColors(
+				leadingIconContentColor = Colors.Warning,
+				labelColor = Colors.Warning,
+			),
+	)
 }
 
 /**
@@ -106,145 +107,149 @@ fun NoFolderInfoChip(modifier: Modifier = Modifier) {
  */
 @Composable
 fun PathMakerDialog(
-    photoCount: Int,
-    existingAlbums: List<String>,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit,
+	photoCount: Int,
+	existingAlbums: List<String>,
+	onConfirm: (String) -> Unit,
+	onDismiss: () -> Unit,
 ) {
-    // Default selection: the hardcoded "Picker" album.
-    var selectedMode by remember { mutableStateOf(PathMakerMode.DEFAULT) }
-    var newAlbumName by remember { mutableStateOf("") }
-    var selectedExisting by remember { mutableStateOf(existingAlbums.firstOrNull() ?: "") }
+	// Default selection: the hardcoded "Picker" album.
+	var selectedMode by remember { mutableStateOf(PathMakerMode.DEFAULT) }
+	var newAlbumName by remember { mutableStateOf("") }
+	var selectedExisting by remember { mutableStateOf(existingAlbums.firstOrNull() ?: "") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(R.string.path_maker_title))
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.path_maker_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = {
+			Text(stringResource(R.string.path_maker_title))
+		},
+		text = {
+			Column(
+				verticalArrangement = Arrangement.spacedBy(12.dp),
+			) {
+				Text(
+					text = stringResource(R.string.path_maker_description),
+					style = MaterialTheme.typography.bodyMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant,
+				)
 
-                Text(
-                    text = stringResource(R.string.path_maker_count, photoCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+				Text(
+					text = stringResource(R.string.path_maker_count, photoCount),
+					style = MaterialTheme.typography.bodySmall,
+					color = MaterialTheme.colorScheme.primary,
+				)
 
-                // ─── Warning banner ────────────────────────────────────────
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = stringResource(R.string.path_maker_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
+				// ─── Warning banner ────────────────────────────────────────
+				Surface(
+					color = MaterialTheme.colorScheme.errorContainer,
+					shape = RoundedCornerShape(8.dp),
+					modifier = Modifier.fillMaxWidth(),
+				) {
+					Text(
+						text = stringResource(R.string.path_maker_warning),
+						style = MaterialTheme.typography.bodySmall,
+						color = MaterialTheme.colorScheme.onErrorContainer,
+						modifier = Modifier.padding(12.dp),
+					)
+				}
 
-                // ─── Default "Picker" album option ────────────────────────
-                PathMakerOption(
-                    label = stringResource(R.string.path_maker_album_default),
-                    selected = selectedMode == PathMakerMode.DEFAULT,
-                    onSelect = { selectedMode = PathMakerMode.DEFAULT },
-                )
+				// ─── Default "Picker" album option ────────────────────────
+				PathMakerOption(
+					label = stringResource(R.string.path_maker_album_default),
+					selected = selectedMode == PathMakerMode.DEFAULT,
+					onSelect = { selectedMode = PathMakerMode.DEFAULT },
+				)
 
-                // ─── Existing album option (only if there are existing albums) ──
-                if (existingAlbums.isNotEmpty()) {
-                    existingAlbums.forEach { album ->
-                        PathMakerOption(
-                            label = stringResource(R.string.path_maker_album_existing, album),
-                            selected = selectedMode == PathMakerMode.EXISTING && selectedExisting == album,
-                            onSelect = {
-                                selectedMode = PathMakerMode.EXISTING
-                                selectedExisting = album
-                            },
-                        )
-                    }
-                }
+				// ─── Existing album option (only if there are existing albums) ──
+				if (existingAlbums.isNotEmpty()) {
+					existingAlbums.forEach { album ->
+						PathMakerOption(
+							label = stringResource(R.string.path_maker_album_existing, album),
+							selected = selectedMode == PathMakerMode.EXISTING && selectedExisting == album,
+							onSelect = {
+								selectedMode = PathMakerMode.EXISTING
+								selectedExisting = album
+							},
+						)
+					}
+				}
 
-                // ─── Create new album option ──────────────────────────────
-                PathMakerOption(
-                    label = stringResource(R.string.path_maker_album_new),
-                    selected = selectedMode == PathMakerMode.NEW,
-                    onSelect = { selectedMode = PathMakerMode.NEW },
-                )
-                if (selectedMode == PathMakerMode.NEW) {
-                    OutlinedTextField(
-                        value = newAlbumName,
-                        onValueChange = { newAlbumName = it.trim() },
-                        label = { Text(stringResource(R.string.path_maker_album_new_hint)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val chosen = when (selectedMode) {
-                        PathMakerMode.DEFAULT -> "Picker"
-                        PathMakerMode.EXISTING -> selectedExisting
-                        PathMakerMode.NEW -> newAlbumName.ifBlank { "Picker" }
-                    }
-                    onConfirm(chosen)
-                },
-                enabled = selectedMode != PathMakerMode.NEW || newAlbumName.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.path_maker_button_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.path_maker_button_cancel))
-            }
-        },
-    )
+				// ─── Create new album option ──────────────────────────────
+				PathMakerOption(
+					label = stringResource(R.string.path_maker_album_new),
+					selected = selectedMode == PathMakerMode.NEW,
+					onSelect = { selectedMode = PathMakerMode.NEW },
+				)
+				if (selectedMode == PathMakerMode.NEW) {
+					OutlinedTextField(
+						value = newAlbumName,
+						onValueChange = { newAlbumName = it.trim() },
+						label = { Text(stringResource(R.string.path_maker_album_new_hint)) },
+						singleLine = true,
+						modifier = Modifier.fillMaxWidth(),
+					)
+				}
+			}
+		},
+		confirmButton = {
+			TextButton(
+				onClick = {
+					val chosen =
+						when (selectedMode) {
+							PathMakerMode.DEFAULT -> "Picker"
+							PathMakerMode.EXISTING -> selectedExisting
+							PathMakerMode.NEW -> newAlbumName.ifBlank { "Picker" }
+						}
+					onConfirm(chosen)
+				},
+				enabled = selectedMode != PathMakerMode.NEW || newAlbumName.isNotBlank(),
+			) {
+				Text(stringResource(R.string.path_maker_button_confirm))
+			}
+		},
+		dismissButton = {
+			TextButton(onClick = onDismiss) {
+				Text(stringResource(R.string.path_maker_button_cancel))
+			}
+		},
+	)
 }
 
 private enum class PathMakerMode {
-    DEFAULT,
-    EXISTING,
-    NEW,
+	DEFAULT,
+	EXISTING,
+	NEW,
 }
 
 @Composable
 private fun PathMakerOption(
-    label: String,
-    selected: Boolean,
-    onSelect: () -> Unit,
+	label: String,
+	selected: Boolean,
+	onSelect: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        onClick = onSelect,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier.padding(12.dp),
-        )
-    }
+	Surface(
+		shape = RoundedCornerShape(8.dp),
+		color =
+			if (selected) {
+				MaterialTheme.colorScheme.primaryContainer
+			} else {
+				MaterialTheme.colorScheme.surfaceContainerLow
+			},
+		modifier =
+			Modifier
+				.fillMaxWidth()
+				.padding(vertical = 2.dp),
+		onClick = onSelect,
+	) {
+		Text(
+			text = label,
+			style = MaterialTheme.typography.bodyMedium,
+			color =
+				if (selected) {
+					MaterialTheme.colorScheme.onPrimaryContainer
+				} else {
+					MaterialTheme.colorScheme.onSurface
+				},
+			modifier = Modifier.padding(12.dp),
+		)
+	}
 }

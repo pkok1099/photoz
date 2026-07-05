@@ -18,38 +18,41 @@ package onlasdan.gallery.model.repositories
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
-import onlasdan.gallery.io.VaultFileStorage
-import onlasdan.gallery.model.database.entity.LEGACY_PHOTOK_FILE_EXTENSION
-import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import onlasdan.gallery.io.VaultFileStorage
+import onlasdan.gallery.model.database.entity.LEGACY_PHOTOK_FILE_EXTENSION
+import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import timber.log.Timber
 import javax.inject.Inject
 
-class CleanupDeadFilesUseCase @Inject constructor(
-    private val photoRepository: PhotoRepository,
-    @ApplicationContext private val context: Context,
-    private val vaultFileStorage: VaultFileStorage,
-) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+class CleanupDeadFilesUseCase
+	@Inject
+	constructor(
+		private val photoRepository: PhotoRepository,
+		@ApplicationContext private val context: Context,
+		private val vaultFileStorage: VaultFileStorage,
+	) {
+		private val scope = CoroutineScope(Dispatchers.IO)
 
-    operator fun invoke() {
-        scope.launch {
-            val allExisting = photoRepository.findAllPhotosByImportDateDesc()
+		operator fun invoke() {
+			scope.launch {
+				val allExisting = photoRepository.findAllPhotosByImportDateDesc()
 
-            val allFiles = context.fileList().filter {
-                it.contains(LEGACY_PHOTOK_FILE_EXTENSION) || it.contains(PHOTOK_FILE_EXTENSION)
-            }
+				val allFiles =
+					context.fileList().filter {
+						it.contains(LEGACY_PHOTOK_FILE_EXTENSION) || it.contains(PHOTOK_FILE_EXTENSION)
+					}
 
-            for (file in allFiles) {
-                val uuid  = file.substringBefore(".")
+				for (file in allFiles) {
+					val uuid = file.substringBefore(".")
 
-                if (allExisting.none { uuid == it.uuid }) {
-                    Timber.i("Deleting dead file: $file")
-                    vaultFileStorage.deleteEncryptedFile(file)
-                }
-            }
-        }
-    }
-}
+					if (allExisting.none { uuid == it.uuid }) {
+						Timber.i("Deleting dead file: $file")
+						vaultFileStorage.deleteEncryptedFile(file)
+					}
+				}
+			}
+		}
+	}

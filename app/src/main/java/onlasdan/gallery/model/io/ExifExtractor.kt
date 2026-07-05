@@ -37,14 +37,14 @@ import java.util.TimeZone
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 data class ExifMetadata(
-    /** EXIF DateTimeOriginal as epoch-ms. Null when no EXIF date. */
-    val dateTaken: Long? = null,
-    /** GPS latitude in decimal degrees. Null when no GPS. */
-    val gpsLat: Double? = null,
-    /** GPS longitude in decimal degrees. Null when no GPS. */
-    val gpsLon: Double? = null,
-    /** Camera Make + Model concatenated (e.g. "Canon EOS R6"). Null when no EXIF. */
-    val camera: String? = null,
+	/** EXIF DateTimeOriginal as epoch-ms. Null when no EXIF date. */
+	val dateTaken: Long? = null,
+	/** GPS latitude in decimal degrees. Null when no GPS. */
+	val gpsLat: Double? = null,
+	/** GPS longitude in decimal degrees. Null when no GPS. */
+	val gpsLon: Double? = null,
+	/** Camera Make + Model concatenated (e.g. "Canon EOS R6"). Null when no EXIF. */
+	val camera: String? = null,
 )
 
 /**
@@ -65,16 +65,18 @@ data class ExifMetadata(
  *
  * @since v13 — Sprint 6 / M4 EXIF search
  */
-fun extractExifMetadata(context: Context, uri: Uri): ExifMetadata {
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            parseExif(stream)
-        } ?: ExifMetadata()
-    } catch (e: Exception) {
-        Timber.w(e, "EXIF extraction failed for %s (non-fatal)", uri)
-        ExifMetadata()
-    }
-}
+fun extractExifMetadata(
+	context: Context,
+	uri: Uri,
+): ExifMetadata =
+	try {
+		context.contentResolver.openInputStream(uri)?.use { stream ->
+			parseExif(stream)
+		} ?: ExifMetadata()
+	} catch (e: Exception) {
+		Timber.w(e, "EXIF extraction failed for %s (non-fatal)", uri)
+		ExifMetadata()
+	}
 
 /**
  * Extract EXIF from an in-memory byte array. Used by the ZIP import path
@@ -82,59 +84,61 @@ fun extractExifMetadata(context: Context, uri: Uri): ExifMetadata {
  *
  * @since v13 — Sprint 6 / M4 EXIF search
  */
-fun extractExifMetadata(bytes: ByteArray): ExifMetadata {
-    return try {
-        bytes.inputStream().use { stream -> parseExif(stream) }
-    } catch (e: Exception) {
-        Timber.w(e, "EXIF extraction from bytes failed (non-fatal)")
-        ExifMetadata()
-    }
-}
+fun extractExifMetadata(bytes: ByteArray): ExifMetadata =
+	try {
+		bytes.inputStream().use { stream -> parseExif(stream) }
+	} catch (e: Exception) {
+		Timber.w(e, "EXIF extraction from bytes failed (non-fatal)")
+		ExifMetadata()
+	}
 
 private fun parseExif(stream: InputStream): ExifMetadata {
-    val exif = ExifInterface(stream)
+	val exif = ExifInterface(stream)
 
-    // ─── Date taken ───────────────────────────────────────────────────────
-    // EXIF DateTimeOriginal format: "2024:01:15 12:34:56" (note the colons
-    // between date components — EXIF is from 1990s and uses ':' not '-' or '/').
-    // We parse it to epoch-ms so the search parser can do range comparisons
-    // (e.g. `date:2024-01` matches any photo taken in January 2024).
-    val dateTaken = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-        ?.let { dateString ->
-            try {
-                val fmt = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
-                fmt.timeZone = TimeZone.getTimeZone("UTC")
-                fmt.parse(dateString)?.time
-            } catch (e: Exception) {
-                null
-            }
-        }
+	// ─── Date taken ───────────────────────────────────────────────────────
+	// EXIF DateTimeOriginal format: "2024:01:15 12:34:56" (note the colons
+	// between date components — EXIF is from 1990s and uses ':' not '-' or '/').
+	// We parse it to epoch-ms so the search parser can do range comparisons
+	// (e.g. `date:2024-01` matches any photo taken in January 2024).
+	val dateTaken =
+		exif
+			.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+			?.let { dateString ->
+				try {
+					val fmt = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+					fmt.timeZone = TimeZone.getTimeZone("UTC")
+					fmt.parse(dateString)?.time
+				} catch (e: Exception) {
+					null
+				}
+			}
 
-    // ─── GPS coordinates ──────────────────────────────────────────────────
-    // ExifInterface.getLatLong() (no-arg, added in 1.1.0) returns a
-    // double[] of size 2 (lat, lon) when GPS is present, null otherwise.
-    // The older float[] overload is deprecated and has a different signature.
-    val latLon = exif.getLatLong()
-    val gpsLat = latLon?.getOrNull(0)
-    val gpsLon = latLon?.getOrNull(1)
+	// ─── GPS coordinates ──────────────────────────────────────────────────
+	// ExifInterface.getLatLong() (no-arg, added in 1.1.0) returns a
+	// double[] of size 2 (lat, lon) when GPS is present, null otherwise.
+	// The older float[] overload is deprecated and has a different signature.
+	val latLon = exif.getLatLong()
+	val gpsLat = latLon?.getOrNull(0)
+	val gpsLon = latLon?.getOrNull(1)
 
-    // ─── Camera (Make + Model) ────────────────────────────────────────────
-    // Concatenated as "Make Model" (e.g. "Canon EOS R6", "Apple iPhone 15 Pro").
-    // Trimmed and null-coalesced so a photo with only Make (no Model) still
-    // shows up under `camera:Canon`.
-    val make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim().orEmpty()
-    val model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim().orEmpty()
-    val camera = listOf(make, model)
-        .filter { it.isNotEmpty() }
-        .joinToString(" ")
-        .ifBlank { null }
+	// ─── Camera (Make + Model) ────────────────────────────────────────────
+	// Concatenated as "Make Model" (e.g. "Canon EOS R6", "Apple iPhone 15 Pro").
+	// Trimmed and null-coalesced so a photo with only Make (no Model) still
+	// shows up under `camera:Canon`.
+	val make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim().orEmpty()
+	val model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim().orEmpty()
+	val camera =
+		listOf(make, model)
+			.filter { it.isNotEmpty() }
+			.joinToString(" ")
+			.ifBlank { null }
 
-    return ExifMetadata(
-        dateTaken = dateTaken,
-        gpsLat = gpsLat,
-        gpsLon = gpsLon,
-        camera = camera,
-    )
+	return ExifMetadata(
+		dateTaken = dateTaken,
+		gpsLat = gpsLat,
+		gpsLon = gpsLon,
+		camera = camera,
+	)
 }
 
 /**
@@ -151,7 +155,7 @@ private fun parseExif(stream: InputStream): ExifMetadata {
  * @since v13 — Sprint 6 / M4 EXIF search
  */
 fun formatDateTakenForSearch(dateTaken: Long?): String {
-    if (dateTaken == null) return ""
-    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
-        .format(Date(dateTaken))
+	if (dateTaken == null) return ""
+	return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+		.format(Date(dateTaken))
 }

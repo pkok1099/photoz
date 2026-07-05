@@ -19,5 +19,8 @@ package onlasdan.gallery.review
 import android.app.Activity
 
 interface InAppReview {
-    fun requestInAppReview(activity: Activity, trigger: ReviewTrigger)
+	fun requestInAppReview(
+		activity: Activity,
+		trigger: ReviewTrigger,
+	)
 }

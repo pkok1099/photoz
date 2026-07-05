@@ -18,7 +18,6 @@ package onlasdan.gallery.encryption.di
 
 import dagger.Binds
 import dagger.Module
-import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import onlasdan.gallery.encryption.data.RecoveryPhraseStoreImpl
@@ -41,48 +40,48 @@ import onlasdan.gallery.encryption.domain.models.UnlockRequest
 @Module
 @InstallIn(SingletonComponent::class)
 interface EncryptionBindingModule {
+	@Binds
+	fun bindVaultProtectionRepository(impl: VaultProtectionRepositoryImpl): VaultProtectionRepository
 
-    @Binds
-    fun bindVaultProtectionRepository(impl: VaultProtectionRepositoryImpl): VaultProtectionRepository
+	@Binds
+	fun bindPasswordUnlocker(impl: PasswordVaultProtectionHandler): VaultProtectionHandler<UnlockRequest.Password, CreateRequest.Password>
 
-    @Binds
-    fun bindPasswordUnlocker(impl: PasswordVaultProtectionHandler): VaultProtectionHandler<UnlockRequest.Password, CreateRequest.Password>
+	@Binds
+	fun bindBiometricUnlocker(impl: BiometricVaultProtectionHandler): VaultProtectionHandler<UnlockRequest.Biometric, CreateRequest.Biometric>
 
-    @Binds
-    fun bindBiometricUnlocker(impl: BiometricVaultProtectionHandler): VaultProtectionHandler<UnlockRequest.Biometric, CreateRequest.Biometric>
+	@Binds
+	fun bindRecoveryPhraseHandler(
+		impl: RecoveryPhraseVaultProtectionHandler,
+	): VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase>
 
-    @Binds
-    fun bindRecoveryPhraseHandler(impl: RecoveryPhraseVaultProtectionHandler): VaultProtectionHandler<UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase>
+	@Binds
+	fun bindSessionRepository(impl: SessionRepositoryImpl): SessionRepository
 
-    @Binds
-    fun bindSessionRepository(impl: SessionRepositoryImpl): SessionRepository
+	@Binds
+	fun bindCryptoEngine(impl: CbcCryptoEngine): CryptoEngine
 
-    @Binds
-    fun bindCryptoEngine(impl: CbcCryptoEngine): CryptoEngine
+	@Binds
+	fun bindRecoveryPhraseStore(impl: RecoveryPhraseStoreImpl): RecoveryPhraseStore
 
-    @Binds
-    fun bindRecoveryPhraseStore(impl: RecoveryPhraseStoreImpl): RecoveryPhraseStore
-
-    /**
-     * Binds the vault_id backfill hook — Sprint 2 / M7 multi-vault.
-     *
-     * VaultService receives this as a nullable constructor param. The binding
-     * here is non-nullable so Hilt always provides a real instance — the
-     * nullable in VaultService's signature is just for testability.
-     *
-     * @since v11 — Sprint 2 / M7 multi-vault
-     */
-    @Binds
-    fun bindVaultIdBackfillHook(impl: VaultIdBackfillUseCase): VaultIdBackfillHook
+	/**
+	 * Binds the vault_id backfill hook — Sprint 2 / M7 multi-vault.
+	 *
+	 * VaultService receives this as a nullable constructor param. The binding
+	 * here is non-nullable so Hilt always provides a real instance — the
+	 * nullable in VaultService's signature is just for testability.
+	 *
+	 * @since v11 — Sprint 2 / M7 multi-vault
+	 */
+	@Binds
+	fun bindVaultIdBackfillHook(impl: VaultIdBackfillUseCase): VaultIdBackfillHook
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 class EncryptionModule {
-
-    // VaultProtectionDao is now provided by
-    // onlasdan.gallery.di.AppModule.provideVaultProtectionDao, which
-    // sources it from the plaintext BootstrapDatabase (not PhotoZDatabase).
-    //
-    // @since v16 — Sprint 3 / TODO #6 SQLCipher
+	// VaultProtectionDao is now provided by
+	// onlasdan.gallery.di.AppModule.provideVaultProtectionDao, which
+	// sources it from the plaintext BootstrapDatabase (not PhotoZDatabase).
+	//
+	// @since v16 — Sprint 3 / TODO #6 SQLCipher
 }

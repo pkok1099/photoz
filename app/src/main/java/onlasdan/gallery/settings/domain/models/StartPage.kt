@@ -18,13 +18,15 @@ package onlasdan.gallery.settings.domain.models
 
 import onlasdan.gallery.R
 
-enum class StartPage(override val value: String, override val label: Int) : SettingsEnum {
-    AllFiles("all_files", R.string.gallery_all_photos_label),
-    Albums("albums", R.string.gallery_albums_label);
+enum class StartPage(
+	override val value: String,
+	override val label: Int,
+) : SettingsEnum {
+	AllFiles("all_files", R.string.gallery_all_photos_label),
+	Albums("albums", R.string.gallery_albums_label),
+	;
 
-    companion object {
-        fun fromValue(value: String?): StartPage {
-            return entries.find { it.value == value } ?: AllFiles
-        }
-    }
+	companion object {
+		fun fromValue(value: String?): StartPage = entries.find { it.value == value } ?: AllFiles
+	}
 }

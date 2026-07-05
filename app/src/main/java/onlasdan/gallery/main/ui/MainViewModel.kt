@@ -19,13 +19,13 @@ package onlasdan.gallery.main.ui
 import android.app.Application
 import android.net.Uri
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import onlasdan.gallery.R
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.main.ui.navigation.MainMenuUiState
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
 /**
@@ -35,18 +35,18 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @HiltViewModel
-class MainViewModel @Inject constructor(
-    app: Application,
-    private val sharedUrisStore: SharedUrisStore,
-) : ObservableViewModel(app) {
+class MainViewModel
+	@Inject
+	constructor(
+		app: Application,
+		private val sharedUrisStore: SharedUrisStore,
+	) : ObservableViewModel(app) {
+		private val _mainMenuUiState = MutableStateFlow(MainMenuUiState(R.id.galleryFragment))
+		val mainMenuUiState = _mainMenuUiState.asStateFlow()
 
-    private val _mainMenuUiState = MutableStateFlow(MainMenuUiState(R.id.galleryFragment))
-    val mainMenuUiState = _mainMenuUiState.asStateFlow()
+		fun addUriToSharedUriStore(uri: Uri) = sharedUrisStore.safeAddUri(uri)
 
-
-    fun addUriToSharedUriStore(uri: Uri) = sharedUrisStore.safeAddUri(uri)
-
-    fun onDestinationChanged(id: Int) {
-        _mainMenuUiState.update { it.copy(currentFragmentId = id) }
-    }
-}
+		fun onDestinationChanged(id: Int) {
+			_mainMenuUiState.update { it.copy(currentFragmentId = id) }
+		}
+	}

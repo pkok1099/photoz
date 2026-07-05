@@ -45,105 +45,139 @@ private const val PHRASE_KEK_SIZE = 256
  * @since Part A fix + Part B two-layer escrow
  */
 @Singleton
-class PhraseEscrowWrapper @Inject constructor(
-    private val keyGen: KeyGen,
-) {
-    data class WrappedPhrase(
-        val wrappedPhrase: ByteArray,
-        val salt: ByteArray,
-        val iv: ByteArray,
-        val kdf: Kdf,
-        val kdfIterations: Int,
-        val algorithm: Algorithm,
-        val keySize: Int,
-    ) {
-        fun toJson(): String {
-            val wpB64 = Base64.encode(wrappedPhrase)
-            val saltB64 = Base64.encode(salt)
-            val ivB64 = Base64.encode(iv)
-            return """{"wrappedPhrase":"$wpB64","salt":"$saltB64","iv":"$ivB64",""" +
-                """"kdf":"${kdf.value}","kdfIterations":$kdfIterations,""" +
-                """"algorithm":"${algorithm.value}","keySize":$keySize}"""
-        }
+class PhraseEscrowWrapper
+	@Inject
+	constructor(
+		private val keyGen: KeyGen,
+	) {
+		data class WrappedPhrase(
+			val wrappedPhrase: ByteArray,
+			val salt: ByteArray,
+			val iv: ByteArray,
+			val kdf: Kdf,
+			val kdfIterations: Int,
+			val algorithm: Algorithm,
+			val keySize: Int,
+		) {
+			fun toJson(): String {
+				val wpB64 = Base64.encode(wrappedPhrase)
+				val saltB64 = Base64.encode(salt)
+				val ivB64 = Base64.encode(iv)
+				return """{"wrappedPhrase":"$wpB64","salt":"$saltB64","iv":"$ivB64",""" +
+					""""kdf":"${kdf.value}","kdfIterations":$kdfIterations,""" +
+					""""algorithm":"${algorithm.value}","keySize":$keySize}"""
+			}
 
-        companion object {
-            fun fromJson(json: String): WrappedPhrase? {
-                return try {
-                    val wp = Regex("\"wrappedPhrase\"\\s*:\\s*\"([^\"]+)\"")
-                        .find(json)?.groupValues?.get(1) ?: return null
-                    val salt = Regex("\"salt\"\\s*:\\s*\"([^\"]+)\"")
-                        .find(json)?.groupValues?.get(1) ?: return null
-                    val iv = Regex("\"iv\"\\s*:\\s*\"([^\"]+)\"")
-                        .find(json)?.groupValues?.get(1) ?: return null
-                    val kdfStr = Regex("\"kdf\"\\s*:\\s*\"([^\"]+)\"")
-                        .find(json)?.groupValues?.get(1) ?: return null
-                    val kdfIter = Regex("\"kdfIterations\"\\s*:\\s*(\\d+)")
-                        .find(json)?.groupValues?.get(1)?.toIntOrNull() ?: return null
-                    val algStr = Regex("\"algorithm\"\\s*:\\s*\"([^\"]+)\"")
-                        .find(json)?.groupValues?.get(1) ?: return null
-                    val keySize = Regex("\"keySize\"\\s*:\\s*(\\d+)")
-                        .find(json)?.groupValues?.get(1)?.toIntOrNull() ?: return null
-                    WrappedPhrase(
-                        wrappedPhrase = Base64.decode(wp),
-                        salt = Base64.decode(salt),
-                        iv = Base64.decode(iv),
-                        kdf = Kdf.entries.first { it.value == kdfStr },
-                        kdfIterations = kdfIter,
-                        algorithm = Algorithm.entries.first { it.value == algStr },
-                        keySize = keySize,
-                    )
-                } catch (e: Exception) {
-                    null
-                }
-            }
-        }
-    }
+			companion object {
+				fun fromJson(json: String): WrappedPhrase? {
+					return try {
+						val wp =
+							Regex("\"wrappedPhrase\"\\s*:\\s*\"([^\"]+)\"")
+								.find(json)
+								?.groupValues
+								?.get(1) ?: return null
+						val salt =
+							Regex("\"salt\"\\s*:\\s*\"([^\"]+)\"")
+								.find(json)
+								?.groupValues
+								?.get(1) ?: return null
+						val iv =
+							Regex("\"iv\"\\s*:\\s*\"([^\"]+)\"")
+								.find(json)
+								?.groupValues
+								?.get(1) ?: return null
+						val kdfStr =
+							Regex("\"kdf\"\\s*:\\s*\"([^\"]+)\"")
+								.find(json)
+								?.groupValues
+								?.get(1) ?: return null
+						val kdfIter =
+							Regex("\"kdfIterations\"\\s*:\\s*(\\d+)")
+								.find(json)
+								?.groupValues
+								?.get(1)
+								?.toIntOrNull() ?: return null
+						val algStr =
+							Regex("\"algorithm\"\\s*:\\s*\"([^\"]+)\"")
+								.find(json)
+								?.groupValues
+								?.get(1) ?: return null
+						val keySize =
+							Regex("\"keySize\"\\s*:\\s*(\\d+)")
+								.find(json)
+								?.groupValues
+								?.get(1)
+								?.toIntOrNull() ?: return null
+						WrappedPhrase(
+							wrappedPhrase = Base64.decode(wp),
+							salt = Base64.decode(salt),
+							iv = Base64.decode(iv),
+							kdf = Kdf.entries.first { it.value == kdfStr },
+							kdfIterations = kdfIter,
+							algorithm = Algorithm.entries.first { it.value == algStr },
+							keySize = keySize,
+						)
+					} catch (e: Exception) {
+						null
+					}
+				}
+			}
+		}
 
-    fun wrapPhrase(phrase: RecoveryPhrase, password: String): WrappedPhrase {
-        val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
-        val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-        val kek = keyGen.derivePasswordKeyEncryptionKey(
-            password = password,
-            salt = salt,
-            kdf = Kdf.PBKDF2WithHmacSHA256,
-            kdfIterations = PHRASE_KEK_ITERATIONS,
-            keySize = PHRASE_KEK_SIZE,
-        )
-        val cipher = Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
-            init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
-        }
-        val wrapped = cipher.doFinal(phrase.toMnemonicString().toByteArray(Charsets.UTF_8))
-        return WrappedPhrase(
-            wrappedPhrase = wrapped,
-            salt = salt,
-            iv = iv,
-            kdf = Kdf.PBKDF2WithHmacSHA256,
-            kdfIterations = PHRASE_KEK_ITERATIONS,
-            algorithm = Algorithm.AesCbcPkcs7Padding,
-            keySize = PHRASE_KEK_SIZE,
-        )
-    }
+		fun wrapPhrase(
+			phrase: RecoveryPhrase,
+			password: String,
+		): WrappedPhrase {
+			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
+			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
+			val kek =
+				keyGen.derivePasswordKeyEncryptionKey(
+					password = password,
+					salt = salt,
+					kdf = Kdf.PBKDF2WithHmacSHA256,
+					kdfIterations = PHRASE_KEK_ITERATIONS,
+					keySize = PHRASE_KEK_SIZE,
+				)
+			val cipher =
+				Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
+					init(Cipher.ENCRYPT_MODE, kek, IvParameterSpec(iv))
+				}
+			val wrapped = cipher.doFinal(phrase.toMnemonicString().toByteArray(Charsets.UTF_8))
+			return WrappedPhrase(
+				wrappedPhrase = wrapped,
+				salt = salt,
+				iv = iv,
+				kdf = Kdf.PBKDF2WithHmacSHA256,
+				kdfIterations = PHRASE_KEK_ITERATIONS,
+				algorithm = Algorithm.AesCbcPkcs7Padding,
+				keySize = PHRASE_KEK_SIZE,
+			)
+		}
 
-    /**
-     * Unwrap the phrase using the password. Returns null on wrong password
-     * (decryption produces a padding error → caught → null).
-     */
-    fun unwrapPhrase(wrapped: WrappedPhrase, password: String): RecoveryPhrase? {
-        return try {
-            val kek = keyGen.derivePasswordKeyEncryptionKey(
-                password = password,
-                salt = wrapped.salt,
-                kdf = wrapped.kdf,
-                kdfIterations = wrapped.kdfIterations,
-                keySize = wrapped.keySize,
-            )
-            val cipher = Cipher.getInstance(wrapped.algorithm.value).apply {
-                init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(wrapped.iv))
-            }
-            val plaintext = cipher.doFinal(wrapped.wrappedPhrase)
-            RecoveryPhrase.from(String(plaintext, Charsets.UTF_8))
-        } catch (e: Exception) {
-            null // wrong password → padding error → null
-        }
-    }
-}
+		/**
+		 * Unwrap the phrase using the password. Returns null on wrong password
+		 * (decryption produces a padding error → caught → null).
+		 */
+		fun unwrapPhrase(
+			wrapped: WrappedPhrase,
+			password: String,
+		): RecoveryPhrase? =
+			try {
+				val kek =
+					keyGen.derivePasswordKeyEncryptionKey(
+						password = password,
+						salt = wrapped.salt,
+						kdf = wrapped.kdf,
+						kdfIterations = wrapped.kdfIterations,
+						keySize = wrapped.keySize,
+					)
+				val cipher =
+					Cipher.getInstance(wrapped.algorithm.value).apply {
+						init(Cipher.DECRYPT_MODE, kek, IvParameterSpec(wrapped.iv))
+					}
+				val plaintext = cipher.doFinal(wrapped.wrappedPhrase)
+				RecoveryPhrase.from(String(plaintext, Charsets.UTF_8))
+			} catch (e: Exception) {
+				null // wrong password → padding error → null
+			}
+	}

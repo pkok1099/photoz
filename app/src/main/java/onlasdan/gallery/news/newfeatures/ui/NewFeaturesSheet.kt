@@ -61,41 +61,40 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.R
 import onlasdan.gallery.other.openUrl
 import onlasdan.gallery.settings.ui.compose.LocalConfig
 import onlasdan.gallery.ui.components.AppName
 import onlasdan.gallery.ui.theme.AppTheme
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
 
 enum class NewFeature(
-    val image: Int,
-    val title: Int,
-    val summary: Int
+	val image: Int,
+	val title: Int,
+	val summary: Int,
 ) {
-    NewFeature1(
-        image = R.drawable.ic_key,
-        title = R.string.release_title_1,
-        summary = R.string.release_summary_1,
-    ),
-    NewFeature2(
-        image = R.drawable.ic_pin,
-        title = R.string.release_title_2,
-        summary = R.string.release_summary_2,
-    ),
-    NewFeature3(
-        image = R.drawable.ic_png,
-        title = R.string.release_title_3,
-        summary = R.string.release_summary_3,
-    ),
-    NewFeature4(
-        image = R.drawable.ic_settings,
-        title = R.string.release_title_4,
-        summary = R.string.release_summary_4,
-    ),
+	NewFeature1(
+		image = R.drawable.ic_key,
+		title = R.string.release_title_1,
+		summary = R.string.release_summary_1,
+	),
+	NewFeature2(
+		image = R.drawable.ic_pin,
+		title = R.string.release_title_2,
+		summary = R.string.release_summary_2,
+	),
+	NewFeature3(
+		image = R.drawable.ic_png,
+		title = R.string.release_title_3,
+		summary = R.string.release_summary_3,
+	),
+	NewFeature4(
+		image = R.drawable.ic_settings,
+		title = R.string.release_title_4,
+		summary = R.string.release_summary_4,
+	),
 }
 
 /**
@@ -106,155 +105,162 @@ const val FEATURE_VERSION_CODE = 13
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewFeaturesSheet(overrideShow: Boolean = false, onDismissOverride: () -> Unit = {}) {
-    val config = LocalConfig.current
+fun NewFeaturesSheet(
+	overrideShow: Boolean = false,
+	onDismissOverride: () -> Unit = {},
+) {
+	val config = LocalConfig.current
 
-    var visible by remember { mutableStateOf(false) }
+	var visible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        config ?: return@LaunchedEffect
+	LaunchedEffect(Unit) {
+		config ?: return@LaunchedEffect
 
-        if (config.systemLastFeatureVersionCode < FEATURE_VERSION_CODE) {
-            delay(300)
-            visible = true
-            config.systemLastFeatureVersionCode = FEATURE_VERSION_CODE
-        }
-    }
+		if (config.systemLastFeatureVersionCode < FEATURE_VERSION_CODE) {
+			delay(300)
+			visible = true
+			config.systemLastFeatureVersionCode = FEATURE_VERSION_CODE
+		}
+	}
 
-    if (visible || overrideShow) {
-        val state = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-        )
+	if (visible || overrideShow) {
+		val state =
+			rememberModalBottomSheetState(
+				skipPartiallyExpanded = true,
+			)
 
-        ModalBottomSheet(
-            sheetState = state,
-            onDismissRequest = {
-                visible = false
-                onDismissOverride()
-            },
-            dragHandle = null,
-            sheetGesturesEnabled = false,
-            containerColor = Color.Transparent,
-            contentWindowInsets = { WindowInsets() }
-        ) {
-            Surface(
-                shape = BottomSheetDefaults.ExpandedShape,
-                color = BottomSheetDefaults.ContainerColor,
-                modifier = Modifier.statusBarsPadding()
-            ) {
-                Box(
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .padding(20.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(bottom = 100.dp)
-                    ) {
-                        Image(
-                            painterResource(R.drawable.app_icon),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(80.dp)
-                        )
+		ModalBottomSheet(
+			sheetState = state,
+			onDismissRequest = {
+				visible = false
+				onDismissOverride()
+			},
+			dragHandle = null,
+			sheetGesturesEnabled = false,
+			containerColor = Color.Transparent,
+			contentWindowInsets = { WindowInsets() },
+		) {
+			Surface(
+				shape = BottomSheetDefaults.ExpandedShape,
+				color = BottomSheetDefaults.ContainerColor,
+				modifier = Modifier.statusBarsPadding(),
+			) {
+				Box(
+					modifier = Modifier.navigationBarsPadding(),
+				) {
+					Column(
+						horizontalAlignment = Alignment.CenterHorizontally,
+						modifier =
+							Modifier
+								.padding(20.dp)
+								.verticalScroll(rememberScrollState())
+								.padding(bottom = 100.dp),
+					) {
+						Image(
+							painterResource(R.drawable.app_icon),
+							contentDescription = null,
+							modifier =
+								Modifier
+									.size(80.dp),
+						)
 
-                        AppName()
+						AppName()
 
-                        Text(
-                            text = BuildConfig.VERSION_NAME,
-                            style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+						Text(
+							text = BuildConfig.VERSION_NAME,
+							style = MaterialTheme.typography.titleLarge,
+							maxLines = 1,
+							overflow = TextOverflow.Ellipsis,
+						)
 
-                        Spacer(modifier = Modifier.height(20.dp))
+						Spacer(modifier = Modifier.height(20.dp))
 
-                        for (feature in NewFeature.entries) {
-                            NewFeatureRow(
-                                feature = feature,
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-                    }
+						for (feature in NewFeature.entries) {
+							NewFeatureRow(
+								feature = feature,
+							)
+							Spacer(modifier = Modifier.height(10.dp))
+						}
+					}
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .background(BottomSheetDefaults.ContainerColor)
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        val context = LocalContext.current
-                        val changelogUrl = stringResource(R.string.news_changelog_url)
+					Column(
+						horizontalAlignment = Alignment.CenterHorizontally,
+						modifier =
+							Modifier
+								.align(Alignment.BottomCenter)
+								.background(BottomSheetDefaults.ContainerColor)
+								.padding(horizontal = 20.dp),
+					) {
+						val context = LocalContext.current
+						val changelogUrl = stringResource(R.string.news_changelog_url)
 
-                        TextButton(
-                            onClick = { context.openUrl(changelogUrl) }
-                        ) {
-                            Text(
-                                text = stringResource(R.string.news_view_changelog)
-                            )
-                        }
+						TextButton(
+							onClick = { context.openUrl(changelogUrl) },
+						) {
+							Text(
+								text = stringResource(R.string.news_view_changelog),
+							)
+						}
 
-                        val scope = rememberCoroutineScope()
+						val scope = rememberCoroutineScope()
 
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    state.hide()
-                                }.invokeOnCompletion {
-                                    visible = false
-                                    onDismissOverride()
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = stringResource(R.string.common_continue)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+						Button(
+							onClick = {
+								scope
+									.launch {
+										state.hide()
+									}.invokeOnCompletion {
+										visible = false
+										onDismissOverride()
+									}
+							},
+							modifier = Modifier.fillMaxWidth(),
+						) {
+							Text(
+								text = stringResource(R.string.common_continue),
+							)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 @Composable
 private fun NewFeatureRow(
-    feature: NewFeature,
-    modifier: Modifier = Modifier,
+	feature: NewFeature,
+	modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Icon(
-            painter = painterResource(feature.image),
-            contentDescription = null,
-        )
+	Row(
+		modifier = modifier.fillMaxWidth(),
+	) {
+		Icon(
+			painter = painterResource(feature.image),
+			contentDescription = null,
+		)
 
-        Spacer(modifier = Modifier.width(10.dp))
+		Spacer(modifier = Modifier.width(10.dp))
 
-        Column() {
-            Text(
-                text = stringResource(feature.title),
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = stringResource(feature.summary),
-                color = MaterialTheme.colorScheme.outline,
-                fontSize = 15.sp,
-            )
-        }
-    }
-
+		Column {
+			Text(
+				text = stringResource(feature.title),
+				fontWeight = FontWeight.Bold,
+			)
+			Text(
+				text = stringResource(feature.summary),
+				color = MaterialTheme.colorScheme.outline,
+				fontSize = 15.sp,
+			)
+		}
+	}
 }
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @PreviewScreenSizes
 @Composable
 private fun Preview() {
-    AppTheme() {
-        NewFeaturesSheet(overrideShow = true)
-    }
+	AppTheme {
+		NewFeaturesSheet(overrideShow = true)
+	}
 }

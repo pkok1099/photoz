@@ -66,104 +66,110 @@ import onlasdan.gallery.ui.theme.AppTheme
  */
 @Composable
 fun MultiSelectionMenu(
-    multiSelectionState: MultiSelectionState,
-    modifier: Modifier = Modifier,
-    barActions: (@Composable RowScope.() -> Unit)? = null,
-    actions: @Composable (ColumnScope.() -> Unit),
+	multiSelectionState: MultiSelectionState,
+	modifier: Modifier = Modifier,
+	barActions: (@Composable RowScope.() -> Unit)? = null,
+	actions: @Composable (ColumnScope.() -> Unit),
 ) {
-    AnimatedVisibility(
-        modifier = modifier,
-        visible = multiSelectionState.isActive.value,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it },
-    ) {
-        Card(
-            shape = CircleShape,
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-        ) {
-            Box {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = { multiSelectionState.cancelSelection() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_close),
-                            contentDescription = stringResource(R.string.process_close),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Text(
-                        text = stringResource(
-                            R.string.menu_ms_info,
-                            multiSelectionState.selectedItems.value.size
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    // @since batch-operations feature — one-tap icons for the
-                    //   most common batch actions, surfaced directly on the
-                    //   bar instead of hidden behind the More dropdown.
-                    if (barActions != null) {
-                        barActions()
-                    }
-                    IconButton(onClick = { multiSelectionState.showMore() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_more_vert),
-                            contentDescription = stringResource(R.string.common_more),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+	AnimatedVisibility(
+		modifier = modifier,
+		visible = multiSelectionState.isActive.value,
+		enter = slideInVertically { it },
+		exit = slideOutVertically { it },
+	) {
+		Card(
+			shape = CircleShape,
+			elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+			modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+		) {
+			Box {
+				Row(
+					modifier =
+						Modifier
+							.fillMaxWidth()
+							.padding(horizontal = 12.dp),
+					horizontalArrangement = Arrangement.SpaceBetween,
+					verticalAlignment = Alignment.CenterVertically,
+				) {
+					IconButton(onClick = { multiSelectionState.cancelSelection() }) {
+						Icon(
+							painter = painterResource(R.drawable.ic_close),
+							contentDescription = stringResource(R.string.process_close),
+							tint = MaterialTheme.colorScheme.onSurface,
+						)
+					}
+					Text(
+						text =
+							stringResource(
+								R.string.menu_ms_info,
+								multiSelectionState.selectedItems.value.size,
+							),
+						color = MaterialTheme.colorScheme.onSurface,
+					)
+					// @since batch-operations feature — one-tap icons for the
+					//   most common batch actions, surfaced directly on the
+					//   bar instead of hidden behind the More dropdown.
+					if (barActions != null) {
+						barActions()
+					}
+					IconButton(onClick = { multiSelectionState.showMore() }) {
+						Icon(
+							painter = painterResource(R.drawable.ic_more_vert),
+							contentDescription = stringResource(R.string.common_more),
+							tint = MaterialTheme.colorScheme.onSurface,
+						)
+					}
+				}
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .matchParentSize()
-                ) {
-                    RoundedDropdownMenu(
-                        expanded = multiSelectionState.showMore.value,
-                        onDismissRequest = {
-                            multiSelectionState.dismissMore()
-                        },
-                        content = {
-                            actions()
-                        }
-                    )
-                }
-            }
-        }
-    }
+				Box(
+					modifier =
+						Modifier
+							.align(Alignment.TopEnd)
+							.matchParentSize(),
+				) {
+					RoundedDropdownMenu(
+						expanded = multiSelectionState.showMore.value,
+						onDismissRequest = {
+							multiSelectionState.dismissMore()
+						},
+						content = {
+							actions()
+						},
+					)
+				}
+			}
+		}
+	}
 }
 
 @Preview
 @Composable
 private fun MultiSelectionMenuPreview() {
-    AppTheme {
-        MultiSelectionMenu(
-            multiSelectionState = MultiSelectionState(emptyList()).apply {
-                isActive.value = true
-                selectedItems.value = listOf("", "")
-                showMore.value = false
-            },
-            actions = {},
-        )
-    }
+	AppTheme {
+		MultiSelectionMenu(
+			multiSelectionState =
+				MultiSelectionState(emptyList()).apply {
+					isActive.value = true
+					selectedItems.value = listOf("", "")
+					showMore.value = false
+				},
+			actions = {},
+		)
+	}
 }
+
 @Preview
 @Composable
 private fun MultiSelectionMenuPreviewOptions() {
-    AppTheme {
-        MultiSelectionMenu(
-            multiSelectionState = MultiSelectionState(emptyList()).apply {
-                isActive.value = true
-                selectedItems.value = listOf("", "")
-                showMore.value = true
-            },
-            actions = {},
-        )
-    }
+	AppTheme {
+		MultiSelectionMenu(
+			multiSelectionState =
+				MultiSelectionState(emptyList()).apply {
+					isActive.value = true
+					selectedItems.value = listOf("", "")
+					showMore.value = true
+				},
+			actions = {},
+		)
+	}
 }

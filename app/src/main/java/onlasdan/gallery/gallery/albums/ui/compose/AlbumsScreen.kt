@@ -39,46 +39,47 @@ import onlasdan.gallery.ui.theme.AppTheme
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumsScreen(viewModel: AlbumsViewModel) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    AppTheme {
-        Scaffold(
-            topBar = {
-                LargeTopAppBar(
-                    title = { Text(stringResource(R.string.gallery_albums_label)) },
-                    scrollBehavior = scrollBehavior,
-                )
-            },
-            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        ) { contentPadding ->
-            val modifier = Modifier.padding(top = contentPadding.calculateTopPadding())
+	AppTheme {
+		Scaffold(
+			topBar = {
+				LargeTopAppBar(
+					title = { Text(stringResource(R.string.gallery_albums_label)) },
+					scrollBehavior = scrollBehavior,
+				)
+			},
+			modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+		) { contentPadding ->
+			val modifier = Modifier.padding(top = contentPadding.calculateTopPadding())
 
-            when (uiState) {
-                is AlbumsUiState.Empty -> AlbumsPlaceholder(
-                    handleUiEvent = { viewModel.handleUiEvent(it) },
-                    modifier = modifier,
+			when (uiState) {
+				is AlbumsUiState.Empty ->
+					AlbumsPlaceholder(
+						handleUiEvent = { viewModel.handleUiEvent(it) },
+						modifier = modifier,
+					)
 
-                    )
+				is AlbumsUiState.Content ->
+					AlbumsContent(
+						content = uiState as AlbumsUiState.Content,
+						handleUiEvent = { viewModel.handleUiEvent(it) },
+						modifier = modifier,
+					)
+			}
 
-                is AlbumsUiState.Content -> AlbumsContent(
-                    content = uiState as AlbumsUiState.Content,
-                    handleUiEvent = { viewModel.handleUiEvent(it) },
-                    modifier = modifier,
-                )
-            }
+			CreateAlbumDialog(
+				show = uiState.showCreateDialog,
+				onDismissRequest = {
+					viewModel.handleUiEvent(AlbumsUiEvent.HideCreateDialog)
+				},
+			)
 
-            CreateAlbumDialog(
-                show = uiState.showCreateDialog,
-                onDismissRequest = {
-                    viewModel.handleUiEvent(AlbumsUiEvent.HideCreateDialog)
-                },
-            )
+			ImportSharedDialog()
+		}
 
-            ImportSharedDialog()
-        }
-
-        NewFeaturesSheet()
-        TelemetryOptInQuestionSheet()
-    }
+		NewFeaturesSheet()
+		TelemetryOptInQuestionSheet()
+	}
 }

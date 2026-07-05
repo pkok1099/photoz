@@ -39,49 +39,51 @@ import timber.log.Timber
  * different code is seen — allowing the user to retry after an invalid scan.
  */
 class QrCodeAnalyzer(
-    private val onQrCodeDecoded: (String) -> Unit,
+	private val onQrCodeDecoded: (String) -> Unit,
 ) : ImageAnalysis.Analyzer {
+	private val reader =
+		MultiFormatReader().apply {
+			setHints(
+				mapOf(
+					DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+					DecodeHintType.TRY_HARDER to true,
+				),
+			)
+		}
 
-    private val reader = MultiFormatReader().apply {
-        setHints(
-            mapOf(
-                DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                DecodeHintType.TRY_HARDER to true,
-            )
-        )
-    }
+	@Volatile private var lastDecodedText: String? = null
 
-    @Volatile private var lastDecodedText: String? = null
+	override fun analyze(image: ImageProxy) {
+		try {
+			val plane = image.planes[0]
+			val bytes = ByteArray(plane.buffer.remaining())
+			plane.buffer.get(bytes)
 
-    override fun analyze(image: ImageProxy) {
-        try {
-            val plane = image.planes[0]
-            val bytes = ByteArray(plane.buffer.remaining())
-            plane.buffer.get(bytes)
+			val source =
+				PlanarYUVLuminanceSource(
+					bytes,
+					image.width,
+					image.height,
+					0,
+					0,
+					image.width,
+					image.height,
+					false,
+				)
 
-            val source = PlanarYUVLuminanceSource(
-                bytes,
-                image.width,
-                image.height,
-                0, 0,
-                image.width,
-                image.height,
-                false,
-            )
+			val bitmap = BinaryBitmap(HybridBinarizer(source))
+			val result = reader.decode(bitmap)
 
-            val bitmap = BinaryBitmap(HybridBinarizer(source))
-            val result = reader.decode(bitmap)
-
-            if (result.text != lastDecodedText) {
-                lastDecodedText = result.text
-                onQrCodeDecoded(result.text)
-            }
-        } catch (_: NotFoundException) {
-            // No QR code in this frame — expected, ignore silently.
-        } catch (e: Exception) {
-            Timber.e(e, "QR code analysis failed")
-        } finally {
-            image.close()
-        }
-    }
+			if (result.text != lastDecodedText) {
+				lastDecodedText = result.text
+				onQrCodeDecoded(result.text)
+			}
+		} catch (_: NotFoundException) {
+			// No QR code in this frame — expected, ignore silently.
+		} catch (e: Exception) {
+			Timber.e(e, "QR code analysis failed")
+		} finally {
+			image.close()
+		}
+	}
 }

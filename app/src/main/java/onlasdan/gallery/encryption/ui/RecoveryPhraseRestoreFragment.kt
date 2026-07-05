@@ -32,32 +32,30 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class RecoveryPhraseRestoreFragment : Fragment() {
+	@Inject
+	lateinit var navigateToGallery: NavigateToGallery
 
-    @Inject
-    lateinit var navigateToGallery: NavigateToGallery
+	@Inject
+	lateinit var inAppReview: InAppReview
 
-    @Inject
-    lateinit var inAppReview: InAppReview
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        return ComposeView(inflater.context).apply {
-            setContent {
-                AppTheme {
-                    RecoveryPhraseRestoreScreen(
-                        onUnlocked = {
-                            inAppReview.requestInAppReview(requireActivity(), ReviewTrigger.RecoveryPhraseUsed)
-                            navigateToGallery(findNavController())
-                        },
-                        onBack = {
-                            findNavController().navigateUp()
-                        }
-                    )
-                }
-            }
-        }
-    }
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? =
+		ComposeView(inflater.context).apply {
+			setContent {
+				AppTheme {
+					RecoveryPhraseRestoreScreen(
+						onUnlocked = {
+							inAppReview.requestInAppReview(requireActivity(), ReviewTrigger.RecoveryPhraseUsed)
+							navigateToGallery(findNavController())
+						},
+						onBack = {
+							findNavController().navigateUp()
+						},
+					)
+				}
+			}
+		}
 }

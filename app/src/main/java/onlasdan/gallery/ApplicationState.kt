@@ -23,6 +23,6 @@ package onlasdan.gallery
  * @author Leon Latshc
  */
 enum class ApplicationState {
-    LOCKED,
-    UNLOCKED
+	LOCKED,
+	UNLOCKED,
 }

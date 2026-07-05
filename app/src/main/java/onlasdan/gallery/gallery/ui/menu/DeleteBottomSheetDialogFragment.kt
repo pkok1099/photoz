@@ -31,12 +31,11 @@ import onlasdan.gallery.uicomponnets.base.processdialogs.BaseProcessBottomSheetD
  */
 @AndroidEntryPoint
 class DeleteBottomSheetDialogFragment(
-    photos: List<Photo>
+	photos: List<Photo>,
 ) : BaseProcessBottomSheetDialogFragment<Photo>(
-    photos,
-    R.string.delete_deleting,
-    true
-) {
-
-    override val viewModel: DeleteViewModel by viewModels()
+		photos,
+		R.string.delete_deleting,
+		true,
+	) {
+	override val viewModel: DeleteViewModel by viewModels()
 }

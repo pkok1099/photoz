@@ -36,48 +36,47 @@ import onlasdan.gallery.transcoding.domain.ImageStorage
 @Module
 @InstallIn(SingletonComponent::class)
 object ImageLoadingModule {
+	@Provides
+	@EncryptedImageLoader
+	fun provideEncryptedImageLoader(
+		@ApplicationContext context: Context,
+		encryptedImageFetcherFactory: EncryptedImageFetcherFactory,
+	): ImageLoader =
+		ImageLoader
+			.Builder(context)
+			.components {
+				add(encryptedImageFetcherFactory)
+			}.diskCachePolicy(CachePolicy.DISABLED)
+			.diskCache(null)
+			.memoryCachePolicy(CachePolicy.READ_ONLY)
+			.memoryCache {
+				MemoryCache
+					.Builder(context)
+					.maxSizePercent(0.25)
+					.build()
+			}.apply {
+				if (BuildConfig.DEBUG) {
+					logger(DebugLogger())
+				}
+			}.build()
 
-    @Provides
-    @EncryptedImageLoader
-    fun provideEncryptedImageLoader(
-        @ApplicationContext context: Context,
-        encryptedImageFetcherFactory: EncryptedImageFetcherFactory
-    ): ImageLoader = ImageLoader.Builder(context)
-        .components {
-            add(encryptedImageFetcherFactory)
-        }
-        .diskCachePolicy(CachePolicy.DISABLED)
-        .diskCache(null)
-        .memoryCachePolicy(CachePolicy.READ_ONLY)
-        .memoryCache {
-            MemoryCache.Builder(context)
-                .maxSizePercent(0.25)
-                .build()
-        }
-        .apply {
-            if (BuildConfig.DEBUG) {
-                logger(DebugLogger())
-            }
-        }
-        .build()
-
-    @Provides
-    fun provideDefaultImageLoader(
-        @ApplicationContext context: Context,
-    ): ImageLoader = ImageLoader.Builder(context)
-        .components { add(VideoFrameDecoder.Factory()) }
-        .diskCachePolicy(CachePolicy.DISABLED)
-        .diskCache(null)
-        .memoryCachePolicy(CachePolicy.DISABLED)
-        .memoryCache(null)
-        .build()
+	@Provides
+	fun provideDefaultImageLoader(
+		@ApplicationContext context: Context,
+	): ImageLoader =
+		ImageLoader
+			.Builder(context)
+			.components { add(VideoFrameDecoder.Factory()) }
+			.diskCachePolicy(CachePolicy.DISABLED)
+			.diskCache(null)
+			.memoryCachePolicy(CachePolicy.DISABLED)
+			.memoryCache(null)
+			.build()
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 interface ImageLoadingBindingModule {
-    @Binds
-    fun bindImageStorage(
-        impl: ImageStorageImpl
-    ): ImageStorage
+	@Binds
+	fun bindImageStorage(impl: ImageStorageImpl): ImageStorage
 }

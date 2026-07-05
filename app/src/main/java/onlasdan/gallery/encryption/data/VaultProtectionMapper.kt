@@ -18,20 +18,18 @@ package onlasdan.gallery.encryption.data
 
 import onlasdan.gallery.encryption.domain.models.VaultProtection
 
-fun VaultProtectionTable.toDomain(): VaultProtection {
-    return VaultProtection(
-        id = id,
-        type = type,
-        wrappedVMK = wrappedVMK,
-        params = params,
-    )
-}
+fun VaultProtectionTable.toDomain(): VaultProtection =
+	VaultProtection(
+		id = id,
+		type = type,
+		wrappedVMK = wrappedVMK,
+		params = params,
+	)
 
-fun VaultProtection.toData(): VaultProtectionTable {
-    return VaultProtectionTable(
-        id = id,
-        type = type,
-        wrappedVMK = wrappedVMK,
-        params = params,
-    )
-}
+fun VaultProtection.toData(): VaultProtectionTable =
+	VaultProtectionTable(
+		id = id,
+		type = type,
+		wrappedVMK = wrappedVMK,
+		params = params,
+	)

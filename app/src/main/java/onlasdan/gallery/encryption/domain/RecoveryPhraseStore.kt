@@ -16,13 +16,17 @@
 
 package onlasdan.gallery.encryption.domain
 
+import kotlinx.coroutines.flow.Flow
 import onlasdan.gallery.encryption.domain.models.RecoveryPhrase
 import onlasdan.gallery.encryption.domain.models.VaultSession
-import kotlinx.coroutines.flow.Flow
 
 interface RecoveryPhraseStore {
+	fun store(
+		phrase: RecoveryPhrase,
+		session: VaultSession,
+	)
 
-    fun store(phrase: RecoveryPhrase, session: VaultSession)
-    fun observe(session: VaultSession): Flow<RecoveryPhrase?>
-    fun clear()
+	fun observe(session: VaultSession): Flow<RecoveryPhrase?>
+
+	fun clear()
 }

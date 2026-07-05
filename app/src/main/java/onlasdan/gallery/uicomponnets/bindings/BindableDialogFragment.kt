@@ -35,29 +35,29 @@ import onlasdan.gallery.uicomponnets.base.BaseDialogFragment
  * @author PhotoZ
  */
 abstract class BindableDialogFragment<BindingType : ViewDataBinding>(
-    @LayoutRes private val layout: Int
-) : BaseDialogFragment(), Bindable<BindingType> {
+	@LayoutRes private val layout: Int,
+) : BaseDialogFragment(),
+	Bindable<BindingType> {
+	final override lateinit var binding: BindingType
 
-    final override lateinit var binding: BindingType
+	override fun onCreateView(
+		inflater: LayoutInflater,
+		container: ViewGroup?,
+		savedInstanceState: Bundle?,
+	): View? {
+		binding = DataBindingUtil.inflate(inflater, layout, container, false)
+		bind(binding)
+		return binding.root
+	}
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        binding = DataBindingUtil.inflate(inflater, layout, container, false)
-        bind(binding)
-        return binding.root
-    }
+	/**
+	 * When called, this fragment will call setup() on its viewModel
+	 */
+	fun useViewModel(viewModel: ObservableViewModel) {
+		viewModel.setup()
+	}
 
-    /**
-     * When called, this fragment will call setup() on its viewModel
-     */
-    fun useViewModel(viewModel: ObservableViewModel) {
-        viewModel.setup()
-    }
-
-    override fun bind(binding: BindingType) {
-        binding.lifecycleOwner = viewLifecycleOwner
-    }
+	override fun bind(binding: BindingType) {
+		binding.lifecycleOwner = viewLifecycleOwner
+	}
 }

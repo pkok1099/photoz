@@ -29,47 +29,47 @@ import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
 fun ConfirmationDialog(
-    show: Boolean,
-    onDismissRequest: () -> Unit,
-    text: String,
-    onConfirm: () -> Unit,
-    modifier: Modifier = Modifier,
+	show: Boolean,
+	onDismissRequest: () -> Unit,
+	text: String,
+	onConfirm: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-    if (show) {
-        AlertDialog(
-            modifier = modifier,
-            onDismissRequest = onDismissRequest,
-            dismissButton = {
-                TextButton(onClick = { onDismissRequest() }) {
-                    Text(text = stringResource(R.string.common_no))
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onConfirm()
-                        onDismissRequest()
-                    }
-                ) {
-                    Text(text = stringResource(R.string.common_yes))
-                }
-            },
-            text = {
-                Text(text = text)
-            }
-        )
-    }
+	if (show) {
+		AlertDialog(
+			modifier = modifier,
+			onDismissRequest = onDismissRequest,
+			dismissButton = {
+				TextButton(onClick = { onDismissRequest() }) {
+					Text(text = stringResource(R.string.common_no))
+				}
+			},
+			confirmButton = {
+				Button(
+					onClick = {
+						onConfirm()
+						onDismissRequest()
+					},
+				) {
+					Text(text = stringResource(R.string.common_yes))
+				}
+			},
+			text = {
+				Text(text = text)
+			},
+		)
+	}
 }
 
 @Preview
 @Composable
 private fun ConfirmationDialogPreview() {
-    AppTheme {
-        ConfirmationDialog(
-            show = true,
-            onDismissRequest = { /*TODO*/ },
-            text = "This is a simple example",
-            onConfirm = { /*TODO*/ }
-        )
-    }
+	AppTheme {
+		ConfirmationDialog(
+			show = true,
+			onDismissRequest = { /*TODO*/ },
+			text = "This is a simple example",
+			onConfirm = { /*TODO*/ },
+		)
+	}
 }
