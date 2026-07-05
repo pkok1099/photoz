@@ -1,0 +1,165 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "schedule:weekly"],
+  "description": "Renovate config for PhotoZ — augments Dependabot with auto-merge + granular grouping. See https://docs.renovatebot.com/configuration-options/",
+
+  "schedule": ["before 6am on Monday"],
+
+  "timezone": "Asia/Jakarta",
+
+  "labels": ["dependencies"],
+
+  "rangeStrategy": "bump",
+
+  "commitMessagePrefix": "deps:",
+  "commitMessageTopic": "{{depName}}",
+
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on Monday"]
+  },
+
+  "groups": {
+    "kotlin": {
+      "description": "Kotlin + Kotlin Gradle Plugin updates",
+      "packageNames": [
+        "org.jetbrains.kotlin:*",
+        "org.jetbrains.kotlin:kotlin-gradle-plugin",
+        "org.jetbrains.kotlin:kotlin-serialization",
+        "org.jetbrains.kotlin:kotlin-stdlib*"
+      ]
+    },
+    "compose": {
+      "description": "Jetpack Compose updates",
+      "packageNames": [
+        "androidx.compose.*:compose-bom",
+        "androidx.compose.material3:material3",
+        "androidx.compose.ui:ui-tooling",
+        "org.jetbrains.kotlin.plugin.compose"
+      ]
+    },
+    "androidx": {
+      "description": "AndroidX libraries (non-Compose)",
+      "packageNames": [
+        "androidx.activity:*",
+        "androidx.appcompat:*",
+        "androidx.biometric:*",
+        "androidx.constraintlayout:*",
+        "androidx.core:*",
+        "androidx.exifinterface:*",
+        "androidx.hilt:*",
+        "androidx.lifecycle:*",
+        "androidx.navigation:*",
+        "androidx.room:*",
+        "androidx.viewpager2:*",
+        "androidx.work:*",
+        "androidx.sqlite:*"
+      ]
+    },
+    "hilt": {
+      "description": "Dagger Hilt updates",
+      "packageNames": [
+        "com.google.dagger:*"
+      ]
+    },
+    "media3": {
+      "description": "Media3 / ExoPlayer updates",
+      "packageNames": [
+        "androidx.media3:*"
+      ]
+    },
+    "coil": {
+      "description": "Coil image loading",
+      "packageNames": [
+        "io.coil-kt:*"
+      ]
+    },
+    "coroutines": {
+      "description": "Kotlin Coroutines",
+      "packageNames": [
+        "org.jetbrains.kotlinx:kotlinx-coroutines-*"
+      ]
+    },
+    "serialization": {
+      "description": "Kotlin Serialization",
+      "packageNames": [
+        "org.jetbrains.kotlinx:kotlinx-serialization-*"
+      ]
+    },
+    "testing": {
+      "description": "Test dependencies",
+      "packageNames": [
+        "junit:junit",
+        "org.robolectric:*",
+        "io.mockk:*",
+        "androidx.test:*",
+        "androidx.test.ext:*",
+        "androidx.test.espresso:*"
+      ]
+    }
+  },
+
+  "packageRules": [
+    {
+      "description": "Auto-merge patch + minor updates for stable dependencies",
+      "matchUpdateTypes": ["patch", "minor"],
+      "matchPackagePatterns": [
+        "androidx.*",
+        "com.google.android.material:*",
+        "io.coil-kt:*",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-*",
+        "org.jetbrains.kotlinx:kotlinx-serialization-*",
+        "junit:junit",
+        "org.robolectric:*",
+        "io.mockk:*"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Never auto-merge major updates — always require review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge Kotlin Gradle Plugin — requires Kotlin version match",
+      "matchPackageNames": [
+        "org.jetbrains.kotlin:kotlin-gradle-plugin",
+        "org.jetbrains.kotlin:kotlin-serialization",
+        "org.jetbrains.kotlin.plugin.compose"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge Hilt — annotation processor changes can break build",
+      "matchPackageNames": ["com.google.dagger:*"],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge Room — schema changes need manual migration review",
+      "matchPackageNames": ["androidx.room:*"],
+      "automerge": false
+    },
+    {
+      "description": "Pin SQLCipher + Bouncy Castle — security-critical, manual review",
+      "matchPackageNames": [
+        "net.zetetic:android-database-sqlcipher",
+        "org.bouncycastle:*"
+      ],
+      "automerge": false
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+
+  "ignoreDeps": [
+    "com.android.tools.build:gradle"
+  ]
+}
