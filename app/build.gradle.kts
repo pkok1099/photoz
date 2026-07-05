@@ -110,8 +110,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = "1.8"
+    // Migrated from deprecated kotlinOptions { jvmTarget } to compilerOptions DSL.
+    // Required for AGP 9.0+ (built-in Kotlin). The old kotlinOptions block
+    // is deprecated and causes ScriptCompilationError on CI with newer AGP.
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
 
     lint {
