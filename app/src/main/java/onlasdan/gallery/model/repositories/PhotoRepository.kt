@@ -87,6 +87,11 @@ class PhotoRepository @Inject constructor(
      * run after the user has unlocked).
      */
     private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
+    /**
+     * TODO #1 — QtFastStart: MP4 MOOV relocation for progressive video streaming.
+     * Runs on plaintext before encryption. Non-fatal if it fails.
+     */
+    private val fastStartUseCase: onlasdan.gallery.model.io.FastStartUseCase,
 ) {
 
     // region DATABASE
@@ -194,6 +199,32 @@ class PhotoRepository @Inject constructor(
         val sha256 = runCatching { MessageDigest.getInstance("SHA-256") }.getOrNull()
 
         val inputStream = io.openFileInput(sourceUri)
+
+        // TODO #1 — QtFastStart: relocate MOOV atom for MP4/MOV videos
+        // so ExoPlayer can start playback before full download (progressive
+        // streaming). Runs on the PLAINTEXT before encryption.
+        //
+        // If faststart is needed and succeeds, we use the faststarted temp
+        // file as the encryption source instead of the original URI.
+        // If it fails or isn't needed, we use the original — non-fatal.
+        var fastStartTempFile: java.io.File? = null
+        var effectiveInputStream: java.io.InputStream? = inputStream
+        var effectiveSize: Long? = metaData.size
+
+        if (type.isVideo && fastStartUseCase.isFastStartCandidate(metaData.mimeType)) {
+            try {
+                val fastStartedFile = fastStartUseCase.fastStart(sourceUri)
+                if (fastStartedFile != null) {
+                    fastStartTempFile = fastStartedFile
+                    effectiveInputStream = java.io.FileInputStream(fastStartedFile)
+                    effectiveSize = fastStartedFile.length()
+                    android.util.Log.i("RcloneDiag",
+                        "[FastStart] Using faststarted file for import (${fastStartedFile.length()} bytes)")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "FastStart: integration failed (non-fatal) — using original")
+            }
+        }
         // Sprint 6 / M4 — extract EXIF metadata at import time.
         // For non-image types (video, PDF, audio) EXIF will be null/empty —
         // that's fine, the columns are nullable. The gallery search parser
@@ -209,7 +240,7 @@ class PhotoRepository @Inject constructor(
             importedAt = System.currentTimeMillis(),
             lastModified = metaData.lastModified,
             type = type,
-            size = metaData.size ?: 0,
+            size = effectiveSize ?: metaData.size ?: 0,
             // ─── Path-consistency metadata (v8) ───────────────────────────────
             // Capture the photo's original local-origin provenance for the user's
             // reference. The vault is its own managed encrypted storage — this field
@@ -253,8 +284,12 @@ class PhotoRepository @Inject constructor(
             exifCamera = exif.camera,
         )
 
-        val created = safeCreatePhoto(photo, inputStream, sourceUri, sha256)
+        val created = safeCreatePhoto(photo, effectiveInputStream, sourceUri, sha256)
         inputStream?.lazyClose()
+        effectiveInputStream?.lazyClose()
+
+        // TODO #1 — Clean up faststart temp file
+        fastStartTempFile?.let { fastStartUseCase.cleanup(it) }
 
         // ─── v9 dedup: finalize the SHA-256 hash and stash it on the Photo ──
         // The digest was updated incrementally inside createPhotoFile() as the

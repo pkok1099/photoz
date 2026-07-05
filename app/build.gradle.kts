@@ -312,6 +312,12 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.activity:activity:1.12.4")
 
+    // QtFastStart — MP4 MOOV atom relocation for progressive video streaming.
+    // Moves metadata (MOOV) from end of MP4 to beginning so ExoPlayer can
+    // start playback before the full file is downloaded. 7KB, zero deps.
+    // TODO #1 — progressive video streaming fix
+    implementation("net.ypresto.qtfaststartjava:qtfaststart:0.1.0")
+
     // Material Components for Android — Sprint 1 / P4 (Dynamic Color)
     // Provides Theme.Material3.* parents and DynamicColors API used by MainActivity.
     // The .Bridge theme parent keeps AppCompat-style attributes working on legacy
