@@ -315,8 +315,9 @@ dependencies {
     // QtFastStart — MP4 MOOV atom relocation for progressive video streaming.
     // Moves metadata (MOOV) from end of MP4 to beginning so ExoPlayer can
     // start playback before the full file is downloaded. 7KB, zero deps.
+    // Published on JitPack (jcenter is dead).
     // TODO #1 — progressive video streaming fix
-    implementation("net.ypresto.qtfaststartjava:qtfaststart:0.1.0")
+    implementation("com.github.ypresto:qtfaststart-java:0.1.0")
 
     // Material Components for Android — Sprint 1 / P4 (Dynamic Color)
     // Provides Theme.Material3.* parents and DynamicColors API used by MainActivity.
