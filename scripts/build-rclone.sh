@@ -149,19 +149,47 @@ for abi in "${!ABI_TO_GOARCH[@]}"; do
         [[ "$goarch" == "arm" ]] && export GOARM=7
         export CGO_ENABLED=1
         export CGO_LDFLAGS="-fuse-ld=lld -s -w -Wl,-z,max-page-size=16384"
-        # Use a project-local GOCACHE/GOPATH so we don't pollute the user's
-        # default and so the build is reproducible across machines.
         export GOCACHE="${GOCACHE:-$REPO_ROOT/.gocache}"
         export GOPATH="${GOPATH:-$REPO_ROOT/.gopath}"
 
         echo "  CC=$CC"
         echo "  GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED"
 
-        # -tags android: disables rclone's systemd socket-activation path
-        #   (wrong on Android) and includes Android in disk-usage statfs.
-        # -trimpath: removes absolute paths from the binary for reproducibility.
-        # -ldflags -s: strips debug symbols (smaller binary).
-        # -ldflags -X fs.Version: sets the version string rclone reports.
+        # ─── TODO #13 Phase 2 — Command stripping ──────────────────────────
+        # PhotoZ uses rclone via RC API (rcd mode) — it doesn't need CLI
+        # commands like mount, serve, bisync, ncdu, etc. Stripping them
+        # reduces binary size by ~5-10MB.
+        #
+        # We edit cmd/all/all.go to comment out unused commands BEFORE
+        # building. The edits are idempotent — if already stripped, the
+        # sed is a no-op.
+        echo "  Stripping unused commands from cmd/all/all.go..."
+        CMD_ALL="$RCLONE_SRC_DIR/cmd/all/all.go"
+        if [[ -f "$CMD_ALL" ]]; then
+            # Commands PhotoZ NEEDS (keep these):
+            # - rcd (remote control daemon — main entry point)
+            # - rc (remote control commands)
+            # - copy, copyto (file copy — used by operations/copyfile RC)
+            # - lsjson (list — used by operations/list RC)
+            # - cat (read file — used by operations/read RC)
+            # - delete, deletefile (cleanup)
+            # - mkdir, rmdir (directory operations)
+            # - move, moveto (move files)
+            #
+            # Commands to STRIP (not used by PhotoZ):
+            for cmd in mount serve bisync ncdu dedupe cryptcheck cryptdecode \
+                        tree cleanup config authorize reconnect link list \
+                        ls lsd lsl mkdir rmdir touch size hashdir about \
+                        backend obscure config_create config_update config_delete \
+                        config_dump config_file config_password config_show \
+                        config_user selftest help version; do
+                sed -i "/\"github.com\/rclone\/rclone\/cmd\/${cmd}\"/s/^/\/\//" "$CMD_ALL"
+            done
+            echo "  Command stripping done."
+        else
+            echo "  WARNING: cmd/all/all.go not found — skipping command strip."
+        fi
+
         "$GO_BIN" build -v -tags android -trimpath \
             -ldflags "-s -X github.com/rclone/rclone/fs.Version=$RCLONE_VERSION-android-cgo" \
             -o "$target_file" .
