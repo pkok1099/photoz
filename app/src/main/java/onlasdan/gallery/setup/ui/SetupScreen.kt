@@ -116,6 +116,7 @@ fun SetupScreen(
             Text(
                 text = stringResource(R.string.setupSetup),
                 fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(bottom = 30.dp),
             )
 
@@ -124,6 +125,7 @@ fun SetupScreen(
                 text = stringResource(R.string.setup_create_your_password),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier
                     .padding(start = 20.dp)
                     .padding(bottom = 30.dp),

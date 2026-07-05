@@ -137,7 +137,7 @@ class PhotoRepository @Inject constructor(
      * @since v11 — Sprint 2 / M7 multi-vault
      */
     private fun currentVaultId(): String =
-        sessionRepository.require().vaultId
+        sessionRepository.get()?.vaultId ?: ""
 
     // region IO
 

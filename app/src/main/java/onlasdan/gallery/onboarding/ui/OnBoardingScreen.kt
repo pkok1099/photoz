@@ -181,6 +181,7 @@ private fun OnBoardingSlide(page: OnBoardingPage) {
             text = stringResource(page.titleRes),
             style = MaterialTheme.typography.headlineMedium,
             fontSize = androidx.compose.ui.unit.TextUnit(30f, androidx.compose.ui.unit.TextUnitType.Sp),
+            color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center,
         )
 
@@ -188,6 +189,7 @@ private fun OnBoardingSlide(page: OnBoardingPage) {
         Text(
             text = stringResource(page.descriptionRes),
             style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 16.dp),
         )
