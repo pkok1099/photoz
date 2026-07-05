@@ -217,43 +217,24 @@ class BaseApplication : Application(), DefaultLifecycleObserver, Configuration.P
         config.lastBackgroundedAt = wentToBackgroundAt
 
         // ─── Sprint 3 / M8 — BFU-Safe key handling ────────────────────────
-        // Clear the VMK from memory when the app goes to the background,
-        // UNLESS the lock timeout is -1 (never auto-lock). This is the
-        // BFU-safe trade-off:
+        // REMOVED: clearing VMK in onStop was too aggressive — it broke the
+        // upload flow (VMK cleared mid-upload → worker fails → photos lost)
+        // and caused thumbnails to disappear (currentVaultId() returns ""
+        // when session is null → gallery query matches nothing).
         //
-        //  2026 forensics research shows the BFU (Before First Unlock) state
-        //  is dramatically harder for Cellebrite-class tools to extract from
-        //  — once the VMK leaves memory, the only way to recover plaintext
-        //  is to re-derive it from the user's password (which requires user
-        //  interaction on the next foreground).
+        // The security trade-off is acceptable: the VMK stays in memory while
+        // backgrounded, but:
+        //  - If the user returns within the lock timeout → no re-unlock (good UX)
+        //  - If the user returns after the timeout → onStart fires lockApp() →
+        //    VMK cleared → re-unlock required (good security)
+        //  - If the app is killed while backgrounded → VMK is gone anyway
+        //    (process death clears all memory)
         //
-        //  The previous behavior left the VMK in the SessionRepository
-        //  Singleton across backgrounding, meaning a snapshot/dump taken
-        //  while the app was backgrounded could still decrypt the vault.
+        // The BFU concern (forensic memory dump while backgrounded) is a very
+        // specific attack scenario. The trade-off of breaking uploads +
+        // disappearing thumbnails is worse for the user.
         //
-        // We respect the user's lock-timeout setting:
-        //  - If timeout = -1 (never), the user explicitly chose convenience
-        //    over BFU-safety — we leave the VMK in memory.
-        //  - If timeout = 0 (immediately), lockApp() fires on the next
-        //    onStart anyway, so we don't need to do anything special here.
-        //  - If timeout > 0 (e.g. 5 min), we clear the VMK NOW so that a
-        //    snapshot taken during the background window cannot decrypt
-        //    the vault. The user re-unlocks when they return.
-        //
-        // Non-fatal: any in-flight WorkManager worker that needs the VMK
-        // (e.g. PhotoSyncWorker mid-upload) will fail gracefully and retry
-        // on the next foreground unlock.
-        val timeout = config.securityLockTimeout
-        if (timeout != -1) {
-            try {
-                sessionRepository.reset()
-                android.util.Log.i("RcloneDiag",
-                    "BaseApplication.onStop: cleared VMK from memory (BFU-safe, timeout=$timeout)")
-            } catch (e: Exception) {
-                android.util.Log.w("RcloneDiag",
-                    "BaseApplication.onStop: sessionRepository.reset() failed (non-fatal): ${e.message}")
-            }
-        }
+        // @since v14 fix — removed sessionRepository.reset() from onStop
     }
 
     /**
