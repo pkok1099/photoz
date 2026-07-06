@@ -18,12 +18,12 @@
 
 plugins {
     id("com.android.test")
-    kotlin("android")
+    // Sprint 7: kotlin("android") removed — AGP 9.0 has built-in Kotlin.
 }
 
 android {
     namespace = "onlasdan.gallery.baselineprofile"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 35
