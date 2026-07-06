@@ -27,33 +27,33 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        minSdk = 35
-        targetSdk = 36
+	minSdk = 35
+	targetSdk = 36
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+	testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     targetProjectPath = ":app"
     experimentalProperties["android.experimental.self-instrumenting"] = true
 
     buildTypes {
-        create("benchmark") {
-            isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
+	create("benchmark") {
+	    isDebuggable = false
+	    signingConfig = signingConfigs.getByName("debug")
+	    matchingFallbacks += listOf("release")
+	}
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
 // Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+	jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
