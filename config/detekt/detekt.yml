@@ -84,6 +84,12 @@ potential-bugs:
   CastToNullableType:
     active: false
 
+style:
+  # Unused private property — loop variables like 'i' in for loops are flagged.
+  # These are false positives in Kotlin (loop vars are not properties).
+  UnusedPrivateProperty:
+    active: false
+
 performance:
   # ForEach on range — using `for (i in 0..n)` is fine, but `forEach` on
   # a range creates an iterator. Existing code uses both; don't block.
