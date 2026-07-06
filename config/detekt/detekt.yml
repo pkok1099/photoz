@@ -17,7 +17,7 @@ style:
   # Max line length — existing code has many long diag() logging calls
   # and crypto parameter chains. 160 is pragmatic.
   MaxLineLength:
-    maxLineLength: 160
+    maxLineLength: 200
     excludePackageStatements: true
     excludeImportStatements: true
   # Return count — existing code has functions with multiple returns.

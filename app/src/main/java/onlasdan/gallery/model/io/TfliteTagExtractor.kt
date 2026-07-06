@@ -180,7 +180,7 @@ class TfliteTagExtractor
                         bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
 
                         var pixel = 0
-                        for (i in 0 until INPUT_IMAGE_SIZE) {
+                        for (_ in 0 until INPUT_IMAGE_SIZE) {
                                 for (j in 0 until INPUT_IMAGE_SIZE) {
                                         val pixelVal = intValues[pixel++]
                                         // Normalize to [-1, 1] (MobileNet V2 preprocessing)
