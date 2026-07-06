@@ -316,7 +316,7 @@ class Config(
          * @since Sprint 8 — TFLite activation
          */
         var tfliteModelUrl: String
-                get() = getString(TFLITE_MODEL_URL, TFLITE_MODEL_URL_DEFAULT)
+                get() = getString(TFLITE_MODEL_URL, TFLITE_MODEL_URL_DEFAULT) ?: TFLITE_MODEL_URL_DEFAULT
                 set(value) = putString(TFLITE_MODEL_URL, value)
 
         /**
