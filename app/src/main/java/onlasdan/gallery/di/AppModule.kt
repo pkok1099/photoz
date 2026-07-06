@@ -19,7 +19,6 @@ package onlasdan.gallery.di
 import android.content.Context
 import android.content.res.Resources
 import androidx.room.Room
-import androidx.room.RoomDatabase
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -29,18 +28,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.encryption.data.BootstrapDatabase
-import onlasdan.gallery.encryption.data.SqlCipherKeyProvider
-import onlasdan.gallery.encryption.data.SqlCipherMigrationHelper
 import onlasdan.gallery.encryption.data.VaultProtectionDao
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.model.database.DATABASE_NAME
 import onlasdan.gallery.model.database.MIGRATION_15_16
 import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.settings.data.Config
-import timber.log.Timber
-import java.util.concurrent.Executors
 import javax.inject.Singleton
 
 /**
@@ -122,63 +116,15 @@ object AppModule {
 	@Singleton
 	fun providePhotoZDatabase(
 		@ApplicationContext app: Context,
-		sqlCipherKeyProvider: SqlCipherKeyProvider,
-		migrationHelper: SqlCipherMigrationHelper,
 	): PhotoZDatabase {
-		// Step 1: run the one-time plaintext → encrypted migration if needed.
-		// This MUST happen before Room.databaseBuilder().build() so that
-		// SQLCipher doesn't try to open a plaintext file with a key (which
-		// would fail with "file is not a database" error).
-		//
-		// The migration uses SQLCipher's sqlcipher_export() to copy the
-		// entire plaintext DB into a new encrypted DB file, then swaps
-		// the files. After this, photok.db is SQLCipher-encrypted.
-		if (!migrationHelper.migrateIfNecessary()) {
-			Timber.e(
-				"SQLCipher migration failed — DB will likely fail to open. " +
-					"User may need to clear app data and re-import photos.",
-			)
-		}
-
-		// Step 2: fetch the SQLCipher passphrase from Keystore.
-		val passphrase = sqlCipherKeyProvider.getOrCreatePassphrase()
-
-		// Step 3: build the SupportOpenHelperFactory with the passphrase.
-		// SupportOpenHelperFactory passes the passphrase to SQLCipher,
-		// which internally PBKDF2-derives the page-encryption key. The
-		// passphrase bytes themselves never touch disk.
-		val factory =
-			net.sqlcipher.database.SupportFactory(
-				passphrase,
-				null,
-				false,
-			)
-
-		// Step 4: build the Room database with the SQLCipher factory +
-		// manual v15→v16 migration stub (no-op — data copy happens in
-		// the migration helper above, this just advances user_version).
-		return Room
-			.databaseBuilder(
-				app,
-				PhotoZDatabase::class.java,
-				DATABASE_NAME,
-			).openHelperFactory(factory)
-			.addMigrations(MIGRATION_15_16)
-			.apply {
-				if (BuildConfig.DEBUG) {
-					setQueryCallback(
-						object : RoomDatabase.QueryCallback {
-							override fun onQuery(
-								sqlQuery: String,
-								bindArgs: List<Any?>,
-							) {
-								Timber.d("SQL: $sqlQuery | args: $bindArgs")
-							}
-						},
-						Executors.newSingleThreadExecutor(),
-					)
-				}
-			}.build()
+		// DEBUG: SQLCipher disabled for crash isolation.
+		// Using plain Room (no encryption) to test if SQLCipher native lib
+		// is causing the startup crash.
+		return Room.databaseBuilder(
+			app,
+			PhotoZDatabase::class.java,
+			DATABASE_NAME,
+		).addMigrations(MIGRATION_15_16).build()
 	}
 
 	@Provides
