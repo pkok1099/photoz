@@ -375,7 +375,7 @@ dependencies {
 	// Provides Theme.Material3.* parents and DynamicColors API used by MainActivity.
 	// The .Bridge theme parent keeps AppCompat-style attributes working on legacy
 	// XML screens while enabling Material 3 + dynamic color overlays on Android 12+.
-	implementation("com.google.android.material:material:1.12.0")
+	implementation("com.google.android.material:material:1.14.0")
 
 	// Biometric
 	implementation("androidx.biometric:biometric:1.1.0")
