@@ -334,7 +334,7 @@ dependencies {
 	implementation("org.mindrot", "jbcrypt", "0.4")
 
 	// Gson
-	implementation("com.google.code.gson", "gson", "2.13.2")
+	implementation("com.google.code.gson", "gson", "2.14.0")
 
 	// Androidx ExifInterface
 	implementation("androidx.exifinterface", "exifinterface", "1.4.2")
