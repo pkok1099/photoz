@@ -240,7 +240,7 @@ dependencies {
 	// bcprov-jdk18on is the JDK 1.8+ build of Bouncy Castle — compatible
 	// with Android minSdk 35 (which requires JDK 8+).
 	// @since v14 — Sprint 2 / TODO #3 Argon2id
-	implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+	implementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
 	// ViewPager2
 	implementation("androidx.viewpager2:viewpager2:1.1.0")
