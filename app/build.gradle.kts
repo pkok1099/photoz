@@ -309,7 +309,7 @@ dependencies {
 	// with material3).
 
 	// ZXing - QR code generation and scanning
-	implementation("com.google.zxing:core:3.5.3")
+	implementation("com.google.zxing:core:3.5.4")
 
 	// CameraX - camera access for QR scanning
 	// Bumped 1.4.2 → 1.6.1 for Android 16 16KB-page-size compatibility.
