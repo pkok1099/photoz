@@ -28,6 +28,10 @@ style:
   # are used legitimately in crypto code).
   MagicNumber:
     active: false
+  # Unused private property — loop variables like 'i' in for loops are flagged.
+  # These are false positives in Kotlin (loop vars are not properties).
+  UnusedPrivateProperty:
+    active: false
 complexity:
   # Long methods — existing code has some long setup/init methods.
   # Default 60, we allow 120 for Compose UI functions.
@@ -82,11 +86,6 @@ potential-bugs:
     active: false
   # Cast to nullable type — common in Kotlin/Java interop.
   CastToNullableType:
-    active: false
-
-  # Unused private property — loop variables like 'i' in for loops are flagged.
-  # These are false positives in Kotlin (loop vars are not properties).
-  UnusedPrivateProperty:
     active: false
 
 performance:

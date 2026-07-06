@@ -106,334 +106,334 @@ import onlasdan.gallery.ui.LocalFragment
 import onlasdan.gallery.ui.theme.AppTheme
 
 val LocalPreferencesValues: ProvidableCompositionLocal<Map<String, *>> =
-        compositionLocalOf { emptyMap<String, String>() }
+	compositionLocalOf { emptyMap<String, String>() }
 
 fun createBackupFilename(): String = "photok_backup_${BindingConverters.millisToFormattedDateConverter(System.currentTimeMillis())}.zip"
 
 @Composable
 fun SettingsCallbacks(viewModel: SettingsViewModel) {
-        val fragment = LocalFragment.current
-        val context = LocalContext.current
-        val activity = LocalActivity.current
+	val fragment = LocalFragment.current
+	val context = LocalContext.current
+	val activity = LocalActivity.current
 
-        val backupLauncher =
-                rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-                        uri ?: return@rememberLauncherForActivityResult
-                        fragment ?: return@rememberLauncherForActivityResult
-                        BackupBottomSheetDialogFragment(
-                                uri,
-                                BackupStrategy.Name.Default,
-                        ).show(fragment.parentFragmentManager)
-                }
+	val backupLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+			uri ?: return@rememberLauncherForActivityResult
+			fragment ?: return@rememberLauncherForActivityResult
+			BackupBottomSheetDialogFragment(
+				uri,
+				BackupStrategy.Name.Default,
+			).show(fragment.parentFragmentManager)
+		}
 
-        // SAF picker for ZIP vault export. The user picks the output .zip path
-        // (SAF CreateDocument — file is created at the chosen location).
-        // @since Item 1 ZIP backup
-        val exportZipLauncher =
-                rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-                        uri ?: return@rememberLauncherForActivityResult
-                        viewModel.exportVaultToZip(uri)
-                }
+	// SAF picker for ZIP vault export. The user picks the output .zip path
+	// (SAF CreateDocument — file is created at the chosen location).
+	// @since Item 1 ZIP backup
+	val exportZipLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+			uri ?: return@rememberLauncherForActivityResult
+			viewModel.exportVaultToZip(uri)
+		}
 
-        // SAF picker for ZIP vault import. The user picks an existing .zip to
-        // import photos from.
-        // @since Item 1 ZIP backup
-        val importZipLauncher =
-                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                        uri ?: return@rememberLauncherForActivityResult
-                        viewModel.importVaultFromZip(uri)
-                }
+	// SAF picker for ZIP vault import. The user picks an existing .zip to
+	// import photos from.
+	// @since Item 1 ZIP backup
+	val importZipLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+			uri ?: return@rememberLauncherForActivityResult
+			viewModel.importVaultFromZip(uri)
+		}
 
-        // SAF picker for rclone.conf import. @since PR1 sync addendum (Settings UI)
-        val rcloneConfigLauncher =
-                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                        uri ?: return@rememberLauncherForActivityResult
-                        viewModel.importRcloneConfig(uri)
-                }
+	// SAF picker for rclone.conf import. @since PR1 sync addendum (Settings UI)
+	val rcloneConfigLauncher =
+		rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+			uri ?: return@rememberLauncherForActivityResult
+			viewModel.importRcloneConfig(uri)
+		}
 
-        // Observe sync config status to trigger the remote picker dialog when state becomes
-        // AwaitingRemoteChoice. @since PR1 sync addendum (remote picker)
-        val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
-        var showRemotePicker by rememberSaveable { mutableStateOf(false) }
-        var pickerRemotes by remember { mutableStateOf<List<RcloneConfigManager.RemoteInfo>>(emptyList()) }
-        val settingsScope = rememberCoroutineScope()
+	// Observe sync config status to trigger the remote picker dialog when state becomes
+	// AwaitingRemoteChoice. @since PR1 sync addendum (remote picker)
+	val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
+	var showRemotePicker by rememberSaveable { mutableStateOf(false) }
+	var pickerRemotes by remember { mutableStateOf<List<RcloneConfigManager.RemoteInfo>>(emptyList()) }
+	val settingsScope = rememberCoroutineScope()
 
-        LaunchedEffect(syncConfigStatus) {
-                when (val s = syncConfigStatus) {
-                        is SyncConfigStatus.AwaitingRemoteChoice -> {
-                                pickerRemotes = s.remotes
-                                showRemotePicker = true
-                        }
-                        else -> {
-                                showRemotePicker = false
-                        }
-                }
-        }
+	LaunchedEffect(syncConfigStatus) {
+		when (val s = syncConfigStatus) {
+			is SyncConfigStatus.AwaitingRemoteChoice -> {
+				pickerRemotes = s.remotes
+				showRemotePicker = true
+			}
+			else -> {
+				showRemotePicker = false
+			}
+		}
+	}
 
-        var showSecretLaunchCodeDialog by remember { mutableStateOf(false) }
-        var showUsageDataSheet by rememberSaveable { mutableStateOf(false) }
-        var showRecoveryPhraseSheet by rememberSaveable { mutableStateOf(false) }
-        var showChangePasswordSheet by rememberSaveable { mutableStateOf(false) }
-        // Sprint 2 / M7 — Multi-vault UI
-        var showCreateVaultSheet by rememberSaveable { mutableStateOf(false) }
-        var showConfirmPasswordDialogForBackup by rememberSaveable { mutableStateOf(false) }
-        var showConfirmPasswordDialogForReset by rememberSaveable { mutableStateOf(false) }
+	var showSecretLaunchCodeDialog by remember { mutableStateOf(false) }
+	var showUsageDataSheet by rememberSaveable { mutableStateOf(false) }
+	var showRecoveryPhraseSheet by rememberSaveable { mutableStateOf(false) }
+	var showChangePasswordSheet by rememberSaveable { mutableStateOf(false) }
+	// Sprint 2 / M7 — Multi-vault UI
+	var showCreateVaultSheet by rememberSaveable { mutableStateOf(false) }
+	var showConfirmPasswordDialogForBackup by rememberSaveable { mutableStateOf(false) }
+	var showConfirmPasswordDialogForReset by rememberSaveable { mutableStateOf(false) }
 
-        LaunchedEffect(Unit) {
-                fragment ?: return@LaunchedEffect
+	LaunchedEffect(Unit) {
+		fragment ?: return@LaunchedEffect
 
-                viewModel.registerPreferenceCallback(Config.SYSTEM_DESIGN) {
-                        it as SystemDesignEnum
-                        setAppDesign(it)
-                        true
-                }
+		viewModel.registerPreferenceCallback(Config.SYSTEM_DESIGN) {
+			it as SystemDesignEnum
+			setAppDesign(it)
+			true
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CHANGE_PASSWORD) {
-                        showChangePasswordSheet = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CHANGE_PASSWORD) {
+			showChangePasswordSheet = true
+			false
+		}
 
-                viewModel.registerPreferenceCallback(Config.SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED) {
-                        viewModel.onBiometricUnlockChanged(it, fragment)
-                }
+		viewModel.registerPreferenceCallback(Config.SECURITY_BIOMETRIC_AUTHENTICATION_ENABLED) {
+			viewModel.onBiometricUnlockChanged(it, fragment)
+		}
 
-                viewModel.registerPreferenceCallback(Config.SECURITY_DIAL_LAUNCH_CODE) {
-                        showSecretLaunchCodeDialog = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(Config.SECURITY_DIAL_LAUNCH_CODE) {
+			showSecretLaunchCodeDialog = true
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_RECOVERY_PHRASE) {
-                        showRecoveryPhraseSheet = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_RECOVERY_PHRASE) {
+			showRecoveryPhraseSheet = true
+			false
+		}
 
-                // ─── Sprint 2 / M7 — Multi-vault UI wiring ──────────────────────────
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CREATE_VAULT) {
-                        showCreateVaultSheet = true
-                        false
-                }
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_SWITCH_VAULT) {
-                        // Switch vault = lock the app. The unlock screen will iterate all
-                        // Password rows and the user picks which vault to enter by typing
-                        // that vault's password.
-                        (fragment?.activity as? onlasdan.gallery.BaseApplication)?.lockApp()
-                        false
-                }
+		// ─── Sprint 2 / M7 — Multi-vault UI wiring ──────────────────────────
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CREATE_VAULT) {
+			showCreateVaultSheet = true
+			false
+		}
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_SWITCH_VAULT) {
+			// Switch vault = lock the app. The unlock screen will iterate all
+			// Password rows and the user picks which vault to enter by typing
+			// that vault's password.
+			(fragment?.activity as? onlasdan.gallery.BaseApplication)?.lockApp()
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_HIDE_APP) {
-                        ToggleAppVisibilityDialog().show(fragment.childFragmentManager)
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_HIDE_APP) {
+			ToggleAppVisibilityDialog().show(fragment.childFragmentManager)
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_RESET) {
-                        showConfirmPasswordDialogForReset = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_RESET) {
+			showConfirmPasswordDialogForReset = true
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_BACKUP) {
-                        showConfirmPasswordDialogForBackup = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_BACKUP) {
+			showConfirmPasswordDialogForBackup = true
+			false
+		}
 
-                // Cloud Sync row → context-dependent action. @since PR1 sync addendum (Settings UI)
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
-                        when (syncConfigStatus) {
-                                is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
-                                        settingsScope.launch {
-                                                val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
-                                                if (remotes.isNotEmpty()) {
-                                                        pickerRemotes = remotes
-                                                        showRemotePicker = true
-                                                } else {
-                                                        rcloneConfigLauncher.launch(arrayOf("*/*"))
-                                                }
-                                        }
-                                }
-                                else -> {
-                                        rcloneConfigLauncher.launch(arrayOf("*/*"))
-                                }
-                        }
-                        false
-                }
+		// Cloud Sync row → context-dependent action. @since PR1 sync addendum (Settings UI)
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
+			when (syncConfigStatus) {
+				is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
+					settingsScope.launch {
+						val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
+						if (remotes.isNotEmpty()) {
+							pickerRemotes = remotes
+							showRemotePicker = true
+						} else {
+							rcloneConfigLauncher.launch(arrayOf("*/*"))
+						}
+					}
+				}
+				else -> {
+					rcloneConfigLauncher.launch(arrayOf("*/*"))
+				}
+			}
+			false
+		}
 
-                // @since registry-gc feature — "Clean up backup" row. Triggers
-                // HashRegistry.gcThumbnailPacks() + gcOriginals() in the ViewModel.
-                // The ViewModel surfaces the result via toast; no UI state needs to
-                // be observed here.
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEANUP_BACKUP) {
-                        viewModel.cleanupBackup()
-                        false
-                }
+		// @since registry-gc feature — "Clean up backup" row. Triggers
+		// HashRegistry.gcThumbnailPacks() + gcOriginals() in the ViewModel.
+		// The ViewModel surfaces the result via toast; no UI state needs to
+		// be observed here.
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEANUP_BACKUP) {
+			viewModel.cleanupBackup()
+			false
+		}
 
-                // @since Item 2 — "Clean cached originals" row. Triggers the
-                // ViewModel's cleanCachedOriginals() which deletes the local `.crypt`
-                // originals for photos whose syncState == UPLOADED. The ViewModel
-                // surfaces the result (count + bytes freed) via toast.
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS) {
-                        settingsScope.launch { viewModel.cleanCachedOriginals() }
-                        false
-                }
+		// @since Item 2 — "Clean cached originals" row. Triggers the
+		// ViewModel's cleanCachedOriginals() which deletes the local `.crypt`
+		// originals for photos whose syncState == UPLOADED. The ViewModel
+		// surfaces the result (count + bytes freed) via toast.
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLEAN_CACHED_ORIGINALS) {
+			settingsScope.launch { viewModel.cleanCachedOriginals() }
+			false
+		}
 
-                // @since Item 1 ZIP backup — "Export vault to ZIP" row. Launches
-                // SAF CreateDocument so the user picks the output .zip path. The
-                // ViewModel handles the actual encryption-to-plaintext-and-zip work
-                // once the URI is returned.
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_EXPORT_ZIP) {
-                        exportZipLauncher.launchAndIgnoreTimer(
-                                "photok_vault_${System.currentTimeMillis()}.zip",
-                                activity = activity,
-                        )
-                        false
-                }
+		// @since Item 1 ZIP backup — "Export vault to ZIP" row. Launches
+		// SAF CreateDocument so the user picks the output .zip path. The
+		// ViewModel handles the actual encryption-to-plaintext-and-zip work
+		// once the URI is returned.
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_EXPORT_ZIP) {
+			exportZipLauncher.launchAndIgnoreTimer(
+				"photok_vault_${System.currentTimeMillis()}.zip",
+				activity = activity,
+			)
+			false
+		}
 
-                // @since Item 1 ZIP backup — "Import vault from ZIP" row. Launches
-                // SAF OpenDocument so the user picks an existing .zip file. The
-                // ViewModel handles reading the manifest, re-encrypting each entry,
-                // and creating fresh Photo DB rows.
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_IMPORT_ZIP) {
-                        importZipLauncher.launchAndIgnoreTimer(
-                                input = arrayOf("application/zip", "application/octet-stream"),
-                                activity = activity,
-                        )
-                        false
-                }
+		// @since Item 1 ZIP backup — "Import vault from ZIP" row. Launches
+		// SAF OpenDocument so the user picks an existing .zip file. The
+		// ViewModel handles reading the manifest, re-encrypting each entry,
+		// and creating fresh Photo DB rows.
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_IMPORT_ZIP) {
+			importZipLauncher.launchAndIgnoreTimer(
+				input = arrayOf("application/zip", "application/octet-stream"),
+				activity = activity,
+			)
+			false
+		}
 
-                // @since v10 recycle bin — "Trash" row. Navigates to the Trash
-                // screen (TrashFragment) where the user can browse, restore, or
-                // permanently delete soft-deleted photos.
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TRASH) {
-                        fragment?.findNavController()?.navigate(R.id.action_global_trashFragment)
-                        false
-                }
+		// @since v10 recycle bin — "Trash" row. Navigates to the Trash
+		// screen (TrashFragment) where the user can browse, restore, or
+		// permanently delete soft-deleted photos.
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TRASH) {
+			fragment?.findNavController()?.navigate(R.id.action_global_trashFragment)
+			false
+		}
 
-                // @since Item 4 storage analytics — "Refresh storage stats" row.
-                // Re-runs getStorageStats() and updates the subtitles of the three
-                // Info rows in the Storage section. The ViewModel surfaces no toast
-                // (the rows themselves update visibly).
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_REFRESH_STORAGE) {
-                        viewModel.refreshStorageStats()
-                        false
-                }
+		// @since Item 4 storage analytics — "Refresh storage stats" row.
+		// Re-runs getStorageStats() and updates the subtitles of the three
+		// Info rows in the Storage section. The ViewModel surfaces no toast
+		// (the rows themselves update visibly).
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_REFRESH_STORAGE) {
+			viewModel.refreshStorageStats()
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_FEEDBACK) {
-                        val email = context.getString(R.string.settings_other_feedback_mail_emailaddress)
-                        val subject =
-                                "${context.getString(
-                                        R.string.settings_other_feedback_mail_subject,
-                                )} (App ${BuildConfig.VERSION_NAME} / Android ${Build.VERSION.RELEASE})"
-                        val text = context.getString(R.string.settings_other_feedback_mail_body)
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_FEEDBACK) {
+			val email = context.getString(R.string.settings_other_feedback_mail_emailaddress)
+			val subject =
+				"${context.getString(
+					R.string.settings_other_feedback_mail_subject,
+				)} (App ${BuildConfig.VERSION_NAME} / Android ${Build.VERSION.RELEASE})"
+			val text = context.getString(R.string.settings_other_feedback_mail_body)
 
-                        context.sendEmail(
-                                email = email,
-                                subject = subject,
-                                text = text,
-                                chooserTitle = context.getString(R.string.settings_other_feedback_title),
-                        )
-                        false
-                }
+			context.sendEmail(
+				email = email,
+				subject = subject,
+				text = text,
+				chooserTitle = context.getString(R.string.settings_other_feedback_title),
+			)
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_DONATE) {
-                        fragment.openUrl(context.getString(R.string.settings_other_donate_url))
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_DONATE) {
+			fragment.openUrl(context.getString(R.string.settings_other_donate_url))
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_SOURCECODE) {
-                        fragment.openUrl(context.getString(R.string.settings_other_sourcecode_url))
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_SOURCECODE) {
+			fragment.openUrl(context.getString(R.string.settings_other_sourcecode_url))
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CREDITS) {
-                        fragment.findNavController().navigate(R.id.action_settingsFragment_to_creditsFragment)
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CREDITS) {
+			fragment.findNavController().navigate(R.id.action_settingsFragment_to_creditsFragment)
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TELEMETRY) {
-                        showUsageDataSheet = true
-                        false
-                }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TELEMETRY) {
+			showUsageDataSheet = true
+			false
+		}
 
-                viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_ABOUT) {
-                        fragment.findNavController().navigate(R.id.action_settingsFragment_to_aboutFragment)
-                        false
-                }
-        }
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_ABOUT) {
+			fragment.findNavController().navigate(R.id.action_settingsFragment_to_aboutFragment)
+			false
+		}
+	}
 
-        SecretLaunchCodeDialog(
-                show = showSecretLaunchCodeDialog,
-                onDismissRequest = { showSecretLaunchCodeDialog = false },
-        )
+	SecretLaunchCodeDialog(
+		show = showSecretLaunchCodeDialog,
+		onDismissRequest = { showSecretLaunchCodeDialog = false },
+	)
 
-        TelemetryExplanationSheet(
-                visible = showUsageDataSheet,
-                onDismissRequest = { showUsageDataSheet = false },
-        )
+	TelemetryExplanationSheet(
+		visible = showUsageDataSheet,
+		onDismissRequest = { showUsageDataSheet = false },
+	)
 
-        ConfirmPasswordDialog(
-                visible = showConfirmPasswordDialogForBackup,
-                subtitle = stringResource(R.string.backup_confirm_password),
-                onSuccess = {
-                        backupLauncher.launchAndIgnoreTimer(
-                                createBackupFilename(),
-                                activity = activity,
-                        )
+	ConfirmPasswordDialog(
+		visible = showConfirmPasswordDialogForBackup,
+		subtitle = stringResource(R.string.backup_confirm_password),
+		onSuccess = {
+			backupLauncher.launchAndIgnoreTimer(
+				createBackupFilename(),
+				activity = activity,
+			)
 
-                        showConfirmPasswordDialogForBackup = false
-                },
-                onDismissRequest = {
-                        showConfirmPasswordDialogForBackup = false
-                },
-        )
+			showConfirmPasswordDialogForBackup = false
+		},
+		onDismissRequest = {
+			showConfirmPasswordDialogForBackup = false
+		},
+	)
 
-        ConfirmPasswordDialog(
-                visible = showConfirmPasswordDialogForReset,
-                subtitle = stringResource(R.string.settings_advanced_reset_confirmation),
-                onSuccess = {
-                        viewModel.resetApp()
+	ConfirmPasswordDialog(
+		visible = showConfirmPasswordDialogForReset,
+		subtitle = stringResource(R.string.settings_advanced_reset_confirmation),
+		onSuccess = {
+			viewModel.resetApp()
 
-                        showConfirmPasswordDialogForReset = false
-                },
-                onDismissRequest = {
-                        showConfirmPasswordDialogForReset = false
-                },
-        )
+			showConfirmPasswordDialogForReset = false
+		},
+		onDismissRequest = {
+			showConfirmPasswordDialogForReset = false
+		},
+	)
 
-        if (showRecoveryPhraseSheet) {
-                RecoveryPhraseSheet(
-                        onDismissRequest = { showRecoveryPhraseSheet = false },
-                        onNavigateToSetup = {
-                                showRecoveryPhraseSheet = false
-                                fragment?.findNavController()?.navigate(R.id.action_global_recoveryPhraseSetupFragment)
-                        },
-                )
-        }
+	if (showRecoveryPhraseSheet) {
+		RecoveryPhraseSheet(
+			onDismissRequest = { showRecoveryPhraseSheet = false },
+			onNavigateToSetup = {
+				showRecoveryPhraseSheet = false
+				fragment?.findNavController()?.navigate(R.id.action_global_recoveryPhraseSetupFragment)
+			},
+		)
+	}
 
-        if (showChangePasswordSheet) {
-                ChangePasswordSheet(
-                        onDismissRequest = { showChangePasswordSheet = false },
-                )
-        }
+	if (showChangePasswordSheet) {
+		ChangePasswordSheet(
+			onDismissRequest = { showChangePasswordSheet = false },
+		)
+	}
 
-        // Sprint 2 / M7 — Multi-vault UI
-        if (showCreateVaultSheet) {
-                onlasdan.gallery.settings.ui.createvault.CreateVaultSheet(
-                        onDismissRequest = { showCreateVaultSheet = false },
-                )
-        }
+	// Sprint 2 / M7 — Multi-vault UI
+	if (showCreateVaultSheet) {
+		onlasdan.gallery.settings.ui.createvault.CreateVaultSheet(
+			onDismissRequest = { showCreateVaultSheet = false },
+		)
+	}
 
-        // Remote picker dialog — shown when syncConfigStatus becomes AwaitingRemoteChoice.
-        // @since PR1 sync addendum (remote picker)
-        if (showRemotePicker && pickerRemotes.isNotEmpty()) {
-                RemotePickerDialog(
-                        remotes = pickerRemotes,
-                        onPick = { name ->
-                                showRemotePicker = false
-                                viewModel.chooseRemote(name)
-                        },
-                        onDismiss = {
-                                showRemotePicker = false
-                        },
-                )
-        }
+	// Remote picker dialog — shown when syncConfigStatus becomes AwaitingRemoteChoice.
+	// @since PR1 sync addendum (remote picker)
+	if (showRemotePicker && pickerRemotes.isNotEmpty()) {
+		RemotePickerDialog(
+			remotes = pickerRemotes,
+			onPick = { name ->
+				showRemotePicker = false
+				viewModel.chooseRemote(name)
+			},
+			onDismiss = {
+				showRemotePicker = false
+			},
+		)
+	}
 }
 
 /**
@@ -445,443 +445,443 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
  */
 @Composable
 private fun RemotePickerDialog(
-        remotes: List<RcloneConfigManager.RemoteInfo>,
-        onPick: (String) -> Unit,
-        onDismiss: () -> Unit,
+	remotes: List<RcloneConfigManager.RemoteInfo>,
+	onPick: (String) -> Unit,
+	onDismiss: () -> Unit,
 ) {
-        var selected by remember { mutableStateOf<String?>(null) }
+	var selected by remember { mutableStateOf<String?>(null) }
 
-        AlertDialog(
-                onDismissRequest = onDismiss,
-                title = {
-                        Text(text = stringResource(R.string.sync_remote_picker_title))
-                },
-                text = {
-                        Column {
-                                Text(
-                                        text = stringResource(R.string.sync_remote_picker_subtitle, remotes.size),
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.padding(bottom = 12.dp),
-                                )
-                                LazyColumn(
-                                        modifier = Modifier.heightIn(max = 400.dp),
-                                ) {
-                                        items(remotes) { remote ->
-                                                val typeSuffix =
-                                                        remote.type?.let { " ($it)" }
-                                                                ?: stringResource(R.string.sync_remote_picker_no_type)
-                                                Row(
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier =
-                                                                Modifier
-                                                                        .clip(CircleShape)
-                                                                        .clickable {
-                                                                                selected = remote.name
-                                                                        }.fillMaxWidth()
-                                                                        .padding(vertical = 4.dp),
-                                                ) {
-                                                        RadioButton(
-                                                                selected = selected == remote.name,
-                                                                onClick = { selected = remote.name },
-                                                        )
-                                                        Text(
-                                                                text = remote.name + typeSuffix,
-                                                                style = MaterialTheme.typography.bodyLarge,
-                                                                modifier = Modifier.weight(1f),
-                                                        )
-                                                }
-                                        }
-                                }
-                        }
-                },
-                confirmButton = {
-                        TextButton(
-                                enabled = selected != null,
-                                onClick = {
-                                        selected?.let(onPick)
-                                },
-                        ) {
-                                Text(stringResource(R.string.common_ok))
-                        }
-                },
-                dismissButton = {
-                        TextButton(
-                                onClick = onDismiss,
-                        ) {
-                                Text(stringResource(R.string.common_cancel))
-                        }
-                },
-        )
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = {
+			Text(text = stringResource(R.string.sync_remote_picker_title))
+		},
+		text = {
+			Column {
+				Text(
+					text = stringResource(R.string.sync_remote_picker_subtitle, remotes.size),
+					fontSize = 14.sp,
+					color = MaterialTheme.colorScheme.outline,
+					modifier = Modifier.padding(bottom = 12.dp),
+				)
+				LazyColumn(
+					modifier = Modifier.heightIn(max = 400.dp),
+				) {
+					items(remotes) { remote ->
+						val typeSuffix =
+							remote.type?.let { " ($it)" }
+								?: stringResource(R.string.sync_remote_picker_no_type)
+						Row(
+							horizontalArrangement = Arrangement.spacedBy(8.dp),
+							verticalAlignment = Alignment.CenterVertically,
+							modifier =
+								Modifier
+									.clip(CircleShape)
+									.clickable {
+										selected = remote.name
+									}.fillMaxWidth()
+									.padding(vertical = 4.dp),
+						) {
+							RadioButton(
+								selected = selected == remote.name,
+								onClick = { selected = remote.name },
+							)
+							Text(
+								text = remote.name + typeSuffix,
+								style = MaterialTheme.typography.bodyLarge,
+								modifier = Modifier.weight(1f),
+							)
+						}
+					}
+				}
+			}
+		},
+		confirmButton = {
+			TextButton(
+				enabled = selected != null,
+				onClick = {
+					selected?.let(onPick)
+				},
+			) {
+				Text(stringResource(R.string.common_ok))
+			}
+		},
+		dismissButton = {
+			TextButton(
+				onClick = onDismiss,
+			) {
+				Text(stringResource(R.string.common_cancel))
+			}
+		},
+	)
 }
 
 @Composable
 fun SettingsScreen() {
-        val viewModel = hiltViewModel<SettingsViewModel>()
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-        val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
+	val viewModel = hiltViewModel<SettingsViewModel>()
+	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+	val syncConfigStatus by viewModel.syncConfigStatus.collectAsStateWithLifecycle()
 
-        CompositionLocalProvider(
-                LocalPreferencesValues provides uiState.preferencesValues,
-        ) {
-                SettingsContent(
-                        screenConfig = uiState.screenConfig,
-                        handleUiEvent = viewModel::handleUiEvent,
-                        syncConfigStatus = syncConfigStatus,
-                        infoSummaries = uiState.infoSummaries,
-                        trashCount = uiState.trashCount,
-                )
-        }
+	CompositionLocalProvider(
+		LocalPreferencesValues provides uiState.preferencesValues,
+	) {
+		SettingsContent(
+			screenConfig = uiState.screenConfig,
+			handleUiEvent = viewModel::handleUiEvent,
+			syncConfigStatus = syncConfigStatus,
+			infoSummaries = uiState.infoSummaries,
+			trashCount = uiState.trashCount,
+		)
+	}
 
-        SettingsCallbacks(viewModel)
+	SettingsCallbacks(viewModel)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsContent(
-        screenConfig: PreferenceScreenConfig,
-        handleUiEvent: (SettingsUiEvent) -> Unit,
-        syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured,
-        infoSummaries: Map<String, String> = emptyMap(),
-        trashCount: Int? = null,
+	screenConfig: PreferenceScreenConfig,
+	handleUiEvent: (SettingsUiEvent) -> Unit,
+	syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured,
+	infoSummaries: Map<String, String> = emptyMap(),
+	trashCount: Int? = null,
 ) {
-        val fragment = LocalFragment.current
+	val fragment = LocalFragment.current
 
-        val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-        Scaffold(
-                topBar = {
-                        LargeTopAppBar(
-                                title = {
-                                        Text(
-                                                text = stringResource(R.string.settings_title),
-                                        )
-                                },
-                                scrollBehavior = scrollBehavior,
-                        )
-                },
-        ) { contentPadding ->
-                Column(
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                        modifier =
-                                Modifier
-                                        .nestedScroll(scrollBehavior.nestedScrollConnection)
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(contentPadding),
-                ) {
-                        for (section in screenConfig.sections) {
-                                PreferenceSectionView(
-                                        section = section,
-                                ) {
-                                        for (preference in section.preferences) {
-                                                val isFirst = preference == section.preferences.first()
-                                                val isLast = preference == section.preferences.last()
+	val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+	Scaffold(
+		topBar = {
+			LargeTopAppBar(
+				title = {
+					Text(
+						text = stringResource(R.string.settings_title),
+					)
+				},
+				scrollBehavior = scrollBehavior,
+			)
+		},
+	) { contentPadding ->
+		Column(
+			verticalArrangement = Arrangement.spacedBy(20.dp),
+			modifier =
+				Modifier
+					.nestedScroll(scrollBehavior.nestedScrollConnection)
+					.verticalScroll(rememberScrollState())
+					.padding(contentPadding),
+		) {
+			for (section in screenConfig.sections) {
+				PreferenceSectionView(
+					section = section,
+				) {
+					for (preference in section.preferences) {
+						val isFirst = preference == section.preferences.first()
+						val isLast = preference == section.preferences.last()
 
-                                                val shape =
-                                                        when {
-                                                                section.preferences.size == 1 -> RoundedCornerShape(18.dp)
-                                                                isFirst -> RoundedCornerShape(18.dp, 18.dp, 6.dp, 6.dp)
-                                                                isLast -> RoundedCornerShape(6.dp, 6.dp, 18.dp, 18.dp)
-                                                                else -> RoundedCornerShape(6.dp)
-                                                        }
+						val shape =
+							when {
+								section.preferences.size == 1 -> RoundedCornerShape(18.dp)
+								isFirst -> RoundedCornerShape(18.dp, 18.dp, 6.dp, 6.dp)
+								isLast -> RoundedCornerShape(6.dp, 6.dp, 18.dp, 18.dp)
+								else -> RoundedCornerShape(6.dp)
+							}
 
-                                                Surface(
-                                                        shape = shape,
-                                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                                        modifier = Modifier.padding(bottom = 2.dp),
-                                                ) {
-                                                        when (preference) {
-                                                                is Preference.Simple -> {
-                                                                        PreferenceView(
-                                                                                icon = painterResource(preference.icon),
-                                                                                title = stringResource(preference.title),
-                                                                                summary = stringResource(preference.summary),
-                                                                                onClick = {
-                                                                                        fragment ?: return@PreferenceView
-                                                                                        handleUiEvent(
-                                                                                                SettingsUiEvent.OnPreferenceClick(
-                                                                                                        preference,
-                                                                                                        null,
-                                                                                                ),
-                                                                                        )
-                                                                                },
-                                                                        )
-                                                                }
+						Surface(
+							shape = shape,
+							color = MaterialTheme.colorScheme.surfaceContainerLow,
+							modifier = Modifier.padding(bottom = 2.dp),
+						) {
+							when (preference) {
+								is Preference.Simple -> {
+									PreferenceView(
+										icon = painterResource(preference.icon),
+										title = stringResource(preference.title),
+										summary = stringResource(preference.summary),
+										onClick = {
+											fragment ?: return@PreferenceView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													null,
+												),
+											)
+										},
+									)
+								}
 
-                                                                is Preference.Switch -> {
-                                                                        PreferenceSwitchView(
-                                                                                preference = preference,
-                                                                                onSwitchChange = { value ->
-                                                                                        fragment ?: return@PreferenceSwitchView
-                                                                                        handleUiEvent(
-                                                                                                SettingsUiEvent.OnPreferenceClick(
-                                                                                                        preference,
-                                                                                                        value,
-                                                                                                ),
-                                                                                        )
-                                                                                },
-                                                                        )
-                                                                }
+								is Preference.Switch -> {
+									PreferenceSwitchView(
+										preference = preference,
+										onSwitchChange = { value ->
+											fragment ?: return@PreferenceSwitchView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													value,
+												),
+											)
+										},
+									)
+								}
 
-                                                                is Preference.Enum<*> -> {
-                                                                        PreferenceEnumView(
-                                                                                preference = preference,
-                                                                                onItemSelected = { value ->
-                                                                                        fragment ?: return@PreferenceEnumView
-                                                                                        handleUiEvent(
-                                                                                                SettingsUiEvent.OnPreferenceClick(
-                                                                                                        preference,
-                                                                                                        value,
-                                                                                                ),
-                                                                                        )
-                                                                                },
-                                                                        )
-                                                                }
+								is Preference.Enum<*> -> {
+									PreferenceEnumView(
+										preference = preference,
+										onItemSelected = { value ->
+											fragment ?: return@PreferenceEnumView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													value,
+												),
+											)
+										},
+									)
+								}
 
-                                                                is Preference.DynamicSummary -> {
-                                                                        PreferenceDynamicSummaryView(
-                                                                                preference = preference,
-                                                                                status = syncConfigStatus,
-                                                                                trashCount = trashCount,
-                                                                                onClick = {
-                                                                                        fragment ?: return@PreferenceDynamicSummaryView
-                                                                                        handleUiEvent(
-                                                                                                SettingsUiEvent.OnPreferenceClick(
-                                                                                                        preference,
-                                                                                                        null,
-                                                                                                ),
-                                                                                        )
-                                                                                },
-                                                                        )
-                                                                }
+								is Preference.DynamicSummary -> {
+									PreferenceDynamicSummaryView(
+										preference = preference,
+										status = syncConfigStatus,
+										trashCount = trashCount,
+										onClick = {
+											fragment ?: return@PreferenceDynamicSummaryView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													null,
+												),
+											)
+										},
+									)
+								}
 
-                                                                is Preference.Info -> {
-                                                                        PreferenceInfoView(
-                                                                                preference = preference,
-                                                                                summary = infoSummaries[preference.key],
-                                                                        )
-                                                                }
-                                                        }
-                                                }
-                                        }
-                                }
-                        }
+								is Preference.Info -> {
+									PreferenceInfoView(
+										preference = preference,
+										summary = infoSummaries[preference.key],
+									)
+								}
+							}
+						}
+					}
+				}
+			}
 
-                        // Sprint 8 / TODO #15 — Semantic Search settings section
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        val config = remember { onlasdan.gallery.settings.data.Config(context) }
-                        SemanticSearchSettings(
-                                config = config,
-                                onToggleChanged = { enabled ->
-                                        config.semanticSearchEnabled = enabled
-                                },
-                        )
-                }
-        }
+			// Sprint 8 / TODO #15 — Semantic Search settings section
+			val context = androidx.compose.ui.platform.LocalContext.current
+			val config = remember { onlasdan.gallery.settings.data.Config(context) }
+			SemanticSearchSettings(
+				config = config,
+				onToggleChanged = { enabled ->
+					config.semanticSearchEnabled = enabled
+				},
+			)
+		}
+	}
 }
 
 @Composable
 fun PreferenceSectionView(
-        section: PreferenceSection,
-        modifier: Modifier = Modifier,
-        content: @Composable ColumnScope.() -> Unit,
+	section: PreferenceSection,
+	modifier: Modifier = Modifier,
+	content: @Composable ColumnScope.() -> Unit,
 ) {
-        Column(
-                modifier = modifier,
-        ) {
-                Text(
-                        text = stringResource(section.title),
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier =
-                                Modifier
-                                        .padding(
-                                                horizontal = 30.dp,
-                                        ),
-                )
+	Column(
+		modifier = modifier,
+	) {
+		Text(
+			text = stringResource(section.title),
+			style = MaterialTheme.typography.titleLarge,
+			modifier =
+				Modifier
+					.padding(
+						horizontal = 30.dp,
+					),
+		)
 
-                if (section.summary != null) {
-                        Text(
-                                text = stringResource(section.summary),
-                                fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier =
-                                        Modifier
-                                                .padding(
-                                                        horizontal = 30.dp,
-                                                ),
-                        )
-                }
+		if (section.summary != null) {
+			Text(
+				text = stringResource(section.summary),
+				fontSize = 16.sp,
+				color = MaterialTheme.colorScheme.secondary,
+				modifier =
+					Modifier
+						.padding(
+							horizontal = 30.dp,
+						),
+			)
+		}
 
-                Spacer(modifier = Modifier.height(10.dp))
+		Spacer(modifier = Modifier.height(10.dp))
 
-                Column(
-                        modifier = Modifier.padding(horizontal = 15.dp),
-                ) {
-                        content()
-                }
-        }
+		Column(
+			modifier = Modifier.padding(horizontal = 15.dp),
+		) {
+			content()
+		}
+	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun <T : SettingsEnum> PreferenceEnumView(
-        preference: Preference.Enum<T>,
-        onItemSelected: (T) -> Unit,
-        modifier: Modifier = Modifier,
+	preference: Preference.Enum<T>,
+	onItemSelected: (T) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-        val preferencesValues = LocalPreferencesValues.current
+	val preferencesValues = LocalPreferencesValues.current
 
-        var showDialog by remember { mutableStateOf(false) }
+	var showDialog by remember { mutableStateOf(false) }
 
-        val rawValue = preferencesValues[preference.key] as? String ?: preference.default.value
-        val value = preference.possibleValues.find { it.value == rawValue } ?: preference.default
+	val rawValue = preferencesValues[preference.key] as? String ?: preference.default.value
+	val value = preference.possibleValues.find { it.value == rawValue } ?: preference.default
 
-        PreferenceView(
-                icon = painterResource(preference.icon),
-                title = stringResource(preference.title),
-                summary = stringResource(value.label),
-                onClick = { showDialog = true },
-                modifier = modifier,
-        )
+	PreferenceView(
+		icon = painterResource(preference.icon),
+		title = stringResource(preference.title),
+		summary = stringResource(value.label),
+		onClick = { showDialog = true },
+		modifier = modifier,
+	)
 
-        if (showDialog) {
-                AlertDialog(
-                        onDismissRequest = { showDialog = false },
-                        confirmButton = {},
-                        dismissButton = {
-                                TextButton(
-                                        onClick = { showDialog = false },
-                                ) {
-                                        Text(stringResource(R.string.common_cancel))
-                                }
-                        },
-                        title = {
-                                Text(
-                                        text = stringResource(preference.title),
-                                )
-                        },
-                        text = {
-                                Column {
-                                        for (v in preference.possibleValues) {
-                                                Row(
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier =
-                                                                Modifier
-                                                                        .clip(CircleShape)
-                                                                        .clickable {
-                                                                                showDialog = false
-                                                                                onItemSelected(v)
-                                                                        },
-                                                ) {
-                                                        RadioButton(
-                                                                selected = value == v,
-                                                                onClick = {
-                                                                        showDialog = false
-                                                                        onItemSelected(v)
-                                                                },
-                                                        )
+	if (showDialog) {
+		AlertDialog(
+			onDismissRequest = { showDialog = false },
+			confirmButton = {},
+			dismissButton = {
+				TextButton(
+					onClick = { showDialog = false },
+				) {
+					Text(stringResource(R.string.common_cancel))
+				}
+			},
+			title = {
+				Text(
+					text = stringResource(preference.title),
+				)
+			},
+			text = {
+				Column {
+					for (v in preference.possibleValues) {
+						Row(
+							horizontalArrangement = Arrangement.spacedBy(8.dp),
+							verticalAlignment = Alignment.CenterVertically,
+							modifier =
+								Modifier
+									.clip(CircleShape)
+									.clickable {
+										showDialog = false
+										onItemSelected(v)
+									},
+						) {
+							RadioButton(
+								selected = value == v,
+								onClick = {
+									showDialog = false
+									onItemSelected(v)
+								},
+							)
 
-                                                        Text(
-                                                                text = stringResource(v.label),
-                                                                style = MaterialTheme.typography.bodyLarge,
-                                                                modifier = Modifier.weight(1f),
-                                                        )
-                                                }
-                                        }
-                                }
-                        },
-                )
-        }
+							Text(
+								text = stringResource(v.label),
+								style = MaterialTheme.typography.bodyLarge,
+								modifier = Modifier.weight(1f),
+							)
+						}
+					}
+				}
+			},
+		)
+	}
 }
 
 @Composable
 fun PreferenceSwitchView(
-        preference: Preference.Switch,
-        onSwitchChange: (Boolean) -> Unit,
-        modifier: Modifier = Modifier,
+	preference: Preference.Switch,
+	onSwitchChange: (Boolean) -> Unit,
+	modifier: Modifier = Modifier,
 ) {
-        val preferencesValues = LocalPreferencesValues.current
+	val preferencesValues = LocalPreferencesValues.current
 
-        val summary = stringResource(preference.summary)
-        val value = preferencesValues[preference.key] as? Boolean ?: preference.default
+	val summary = stringResource(preference.summary)
+	val value = preferencesValues[preference.key] as? Boolean ?: preference.default
 
-        PreferenceView(
-                icon = painterResource(preference.icon),
-                title = stringResource(preference.title),
-                summary = summary,
-                trailing = {
-                        Switch(
-                                checked = value,
-                                onCheckedChange = {
-                                        onSwitchChange(it)
-                                },
-                        )
-                },
-                onClick = {
-                        onSwitchChange(!value)
-                },
-                modifier = modifier,
-        )
+	PreferenceView(
+		icon = painterResource(preference.icon),
+		title = stringResource(preference.title),
+		summary = summary,
+		trailing = {
+			Switch(
+				checked = value,
+				onCheckedChange = {
+					onSwitchChange(it)
+				},
+			)
+		},
+		onClick = {
+			onSwitchChange(!value)
+		},
+		modifier = modifier,
+	)
 }
 
 @Composable
 fun PreferenceView(
-        icon: Painter,
-        title: String,
-        summary: String,
-        modifier: Modifier = Modifier,
-        onClick: (() -> Unit)? = null,
-        trailing: (@Composable () -> Unit)? = null,
+	icon: Painter,
+	title: String,
+	summary: String,
+	modifier: Modifier = Modifier,
+	onClick: (() -> Unit)? = null,
+	trailing: (@Composable () -> Unit)? = null,
 ) {
-        Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(15.dp),
-                modifier =
-                        modifier
-                                .clickable(enabled = onClick != null) {
-                                        onClick?.invoke()
-                                }.fillMaxWidth()
-                                .padding(
-                                        horizontal = 15.dp,
-                                        vertical = 12.dp,
-                                ),
-        ) {
-                Surface(
-                        modifier = Modifier.size(36.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                ) {
-                        Box(
-                                contentAlignment = Alignment.Center,
-                        ) {
-                                Icon(
-                                        painter = icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(8.dp),
-                                )
-                        }
-                }
+	Row(
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(15.dp),
+		modifier =
+			modifier
+				.clickable(enabled = onClick != null) {
+					onClick?.invoke()
+				}.fillMaxWidth()
+				.padding(
+					horizontal = 15.dp,
+					vertical = 12.dp,
+				),
+	) {
+		Surface(
+			modifier = Modifier.size(36.dp),
+			shape = CircleShape,
+			color = MaterialTheme.colorScheme.primary,
+		) {
+			Box(
+				contentAlignment = Alignment.Center,
+			) {
+				Icon(
+					painter = icon,
+					contentDescription = null,
+					modifier = Modifier.padding(8.dp),
+				)
+			}
+		}
 
-                Column(
-                        modifier = Modifier.weight(1f),
-                ) {
-                        Text(
-                                text = title,
-                                style = MaterialTheme.typography.bodyLarge,
-                        )
+		Column(
+			modifier = Modifier.weight(1f),
+		) {
+			Text(
+				text = title,
+				style = MaterialTheme.typography.bodyLarge,
+			)
 
-                        Text(
-                                text = summary,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.outline,
-                        )
-                }
+			Text(
+				text = summary,
+				fontSize = 14.sp,
+				color = MaterialTheme.colorScheme.outline,
+			)
+		}
 
-                if (trailing != null) {
-                        trailing()
-                }
-        }
+		if (trailing != null) {
+			trailing()
+		}
+	}
 }
 
 /**
@@ -890,50 +890,50 @@ fun PreferenceView(
  */
 @Composable
 fun PreferenceDynamicSummaryView(
-        preference: Preference.DynamicSummary,
-        status: SyncConfigStatus,
-        onClick: () -> Unit,
-        modifier: Modifier = Modifier,
-        trashCount: Int? = null,
+	preference: Preference.DynamicSummary,
+	status: SyncConfigStatus,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+	trashCount: Int? = null,
 ) {
-        val context = LocalContext.current
-        val summary: String =
-                when (preference.key) {
-                        // Trash row — subtitle is the live trash count from the DB.
-                        // @since v10 recycle bin
-                        SettingsFragment.KEY_ACTION_TRASH -> {
-                                val count = trashCount
-                                if (count == null) {
-                                        context.getString(R.string.settings_trash_summary)
-                                } else if (count == 0) {
-                                        context.getString(R.string.settings_trash_empty_summary)
-                                } else {
-                                        context.getString(R.string.settings_trash_count_summary, count)
-                                }
-                        }
-                        // Cloud Sync row — subtitle is the rclone config status.
-                        else ->
-                                when (status) {
-                                        is SyncConfigStatus.NotConfigured ->
-                                                context.getString(R.string.settings_cloud_sync_not_configured)
-                                        SyncConfigStatus.Validating ->
-                                                context.getString(R.string.settings_cloud_sync_validating)
-                                        is SyncConfigStatus.Configured ->
-                                                context.getString(R.string.settings_cloud_sync_configured, status.remoteName)
-                                        is SyncConfigStatus.AwaitingRemoteChoice ->
-                                                context.getString(R.string.settings_cloud_sync_awaiting_choice)
-                                        is SyncConfigStatus.Invalid -> status.reason.toSummary(context)
-                                        is SyncConfigStatus.ImportFailed -> status.reason.toSummary(context)
-                                }
-                }
+	val context = LocalContext.current
+	val summary: String =
+		when (preference.key) {
+			// Trash row — subtitle is the live trash count from the DB.
+			// @since v10 recycle bin
+			SettingsFragment.KEY_ACTION_TRASH -> {
+				val count = trashCount
+				if (count == null) {
+					context.getString(R.string.settings_trash_summary)
+				} else if (count == 0) {
+					context.getString(R.string.settings_trash_empty_summary)
+				} else {
+					context.getString(R.string.settings_trash_count_summary, count)
+				}
+			}
+			// Cloud Sync row — subtitle is the rclone config status.
+			else ->
+				when (status) {
+					is SyncConfigStatus.NotConfigured ->
+						context.getString(R.string.settings_cloud_sync_not_configured)
+					SyncConfigStatus.Validating ->
+						context.getString(R.string.settings_cloud_sync_validating)
+					is SyncConfigStatus.Configured ->
+						context.getString(R.string.settings_cloud_sync_configured, status.remoteName)
+					is SyncConfigStatus.AwaitingRemoteChoice ->
+						context.getString(R.string.settings_cloud_sync_awaiting_choice)
+					is SyncConfigStatus.Invalid -> status.reason.toSummary(context)
+					is SyncConfigStatus.ImportFailed -> status.reason.toSummary(context)
+				}
+		}
 
-        PreferenceView(
-                icon = painterResource(preference.icon),
-                title = stringResource(preference.title),
-                summary = summary,
-                onClick = onClick,
-                modifier = modifier,
-        )
+	PreferenceView(
+		icon = painterResource(preference.icon),
+		title = stringResource(preference.title),
+		summary = summary,
+		onClick = onClick,
+		modifier = modifier,
+	)
 }
 
 /**
@@ -946,18 +946,18 @@ fun PreferenceDynamicSummaryView(
  */
 @Composable
 fun PreferenceInfoView(
-        preference: Preference.Info,
-        summary: String?,
-        modifier: Modifier = Modifier,
+	preference: Preference.Info,
+	summary: String?,
+	modifier: Modifier = Modifier,
 ) {
-        val resolved = summary ?: stringResource(preference.summaryPlaceholder)
-        PreferenceView(
-                icon = painterResource(preference.icon),
-                title = stringResource(preference.title),
-                summary = resolved,
-                onClick = null,
-                modifier = modifier,
-        )
+	val resolved = summary ?: stringResource(preference.summaryPlaceholder)
+	PreferenceView(
+		icon = painterResource(preference.icon),
+		title = stringResource(preference.title),
+		summary = resolved,
+		onClick = null,
+		modifier = modifier,
+	)
 }
 
 /**
@@ -965,37 +965,37 @@ fun PreferenceInfoView(
  * @since PR1 sync addendum (Settings UI)
  */
 private fun RcloneConfigManager.Status.InvalidReason.toSummary(context: android.content.Context): String =
-        when (this) {
-                RcloneConfigManager.Status.InvalidReason.NO_SECTIONS ->
-                        context.getString(R.string.settings_cloud_sync_invalid_no_sections)
-                RcloneConfigManager.Status.InvalidReason.UNREADABLE ->
-                        context.getString(R.string.settings_cloud_sync_invalid_unreadable)
-        }
+	when (this) {
+		RcloneConfigManager.Status.InvalidReason.NO_SECTIONS ->
+			context.getString(R.string.settings_cloud_sync_invalid_no_sections)
+		RcloneConfigManager.Status.InvalidReason.UNREADABLE ->
+			context.getString(R.string.settings_cloud_sync_invalid_unreadable)
+	}
 
 @Preview(heightDp = 1000)
 @Composable
 private fun Preview() {
-        val context = LocalContext.current
-        CompositionLocalProvider(LocalConfig provides Config(context)) {
-                AppTheme {
-                        SettingsContent(
-                                screenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
-                                handleUiEvent = {},
-                        )
-                }
-        }
+	val context = LocalContext.current
+	CompositionLocalProvider(LocalConfig provides Config(context)) {
+		AppTheme {
+			SettingsContent(
+				screenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
+				handleUiEvent = {},
+			)
+		}
+	}
 }
 
 @Preview(heightDp = 1000, uiMode = UI_MODE_NIGHT_YES)
 @Composable
 private fun PreviewDark() {
-        val context = LocalContext.current
-        CompositionLocalProvider(LocalConfig provides Config(context)) {
-                AppTheme {
-                        SettingsContent(
-                                screenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
-                                handleUiEvent = {},
-                        )
-                }
-        }
+	val context = LocalContext.current
+	CompositionLocalProvider(LocalConfig provides Config(context)) {
+		AppTheme {
+			SettingsContent(
+				screenConfig = PreferenceScreenConfig(PreferenceScreenConfigContent),
+				handleUiEvent = {},
+			)
+		}
+	}
 }

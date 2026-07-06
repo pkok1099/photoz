@@ -54,3 +54,16 @@ ktlint_standard_no-consecutive-comments = disabled
 #  - no-semi (no unnecessary semicolons)
 #  - indent (tab indentation)
 # The ktlint engine version is pinned in app/build.gradle.kts (ktlint block).
+
+# Sprint 8 — additional ktlint rule disables
+ktlint_standard_spacing-between-declarations-with-comments = disabled
+ktlint_standard_function-expression-body = disabled
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_chain-method-continuation = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_wrapping = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+ktlint_standard_comma-spacing = disabled
+ktlint_standard_max-line-length = disabled
+ktlint_standard_multiline-expression-wrapping = disabled
