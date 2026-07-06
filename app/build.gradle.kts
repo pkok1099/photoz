@@ -340,7 +340,7 @@ dependencies {
 	implementation("androidx.exifinterface", "exifinterface", "1.4.2")
 
 	// Telephoto
-	implementation("me.saket.telephoto:zoomable-image-coil:0.18.0")
+	implementation("me.saket.telephoto:zoomable-image-coil:0.19.0")
 
 	// Coil
 	val coilVersion = "2.7.0"
