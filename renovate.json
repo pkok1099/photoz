@@ -1,19 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "schedule:weekly"],
-  "description": "Renovate config for PhotoZ — augments Dependabot with auto-merge + granular grouping. See https://docs.renovatebot.com/configuration-options/",
+  "description": "Renovate config for PhotoZ — augments Dependabot with auto-merge + granular grouping.",
 
   "schedule": ["before 6am on Monday"],
-
   "timezone": "Asia/Jakarta",
-
   "labels": ["dependencies"],
-
   "rangeStrategy": "bump",
-
   "commitMessagePrefix": "deps:",
   "commitMessageTopic": "{{depName}}",
-
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
 
@@ -22,99 +17,139 @@
     "schedule": ["before 6am on Monday"]
   },
 
-  "groups": {
-    "kotlin": {
-      "description": "Kotlin + Kotlin Gradle Plugin updates",
-      "packageNames": [
-        "org.jetbrains.kotlin:*",
+  "packageRules": [
+    {
+      "description": "Group: Kotlin + Kotlin Gradle Plugin updates",
+      "groupName": "Kotlin",
+      "matchPackageNames": [
         "org.jetbrains.kotlin:kotlin-gradle-plugin",
         "org.jetbrains.kotlin:kotlin-serialization",
-        "org.jetbrains.kotlin:kotlin-stdlib*"
-      ]
-    },
-    "compose": {
-      "description": "Jetpack Compose updates",
-      "packageNames": [
-        "androidx.compose.*:compose-bom",
-        "androidx.compose.material3:material3",
-        "androidx.compose.ui:ui-tooling",
         "org.jetbrains.kotlin.plugin.compose"
       ]
     },
-    "androidx": {
-      "description": "AndroidX libraries (non-Compose)",
-      "packageNames": [
+    {
+      "description": "Group: Jetpack Compose updates",
+      "groupName": "Jetpack Compose",
+      "matchPackageNames": [
+        "androidx.compose:compose-bom",
+        "androidx.compose.material3:material3",
+        "androidx.compose.ui:ui-tooling"
+      ]
+    },
+    {
+      "description": "Group: AndroidX libraries (non-Compose)",
+      "groupName": "AndroidX",
+      "matchPackageNames": [
+        "androidx.activity:activity-ktx",
+        "androidx.activity:activity-compose",
+        "androidx.appcompat:appcompat",
+        "androidx.biometric:biometric",
+        "androidx.constraintlayout:constraintlayout",
+        "androidx.core:core-ktx",
+        "androidx.exifinterface:exifinterface",
+        "androidx.graphics:graphics-path",
+        "androidx.hilt:hilt-compiler",
+        "androidx.hilt:hilt-navigation-compose",
+        "androidx.hilt:hilt-work",
+        "androidx.lifecycle:lifecycle-viewmodel-ktx",
+        "androidx.lifecycle:lifecycle-runtime-ktx",
+        "androidx.lifecycle:lifecycle-extensions",
+        "androidx.navigation:navigation-fragment-ktx",
+        "androidx.navigation:navigation-ui-ktx",
+        "androidx.room:room-runtime",
+        "androidx.room:room-paging",
+        "androidx.room:room-compiler",
+        "androidx.room:room-ktx",
+        "androidx.viewpager2:viewpager2",
+        "androidx.work:work-runtime-ktx",
+        "androidx.sqlite:sqlite",
+        "androidx.activity:activity"
+      ]
+    },
+    {
+      "description": "Group: Dagger Hilt updates",
+      "groupName": "Dagger Hilt",
+      "matchPackageNames": [
+        "com.google.dagger:dagger",
+        "com.google.dagger:dagger-compiler",
+        "com.google.dagger:hilt-android",
+        "com.google.dagger:hilt-android-compiler",
+        "com.google.dagger:hilt-android-gradle-plugin",
+        "com.google.dagger:hilt-android-testing"
+      ]
+    },
+    {
+      "description": "Group: Media3 / ExoPlayer updates",
+      "groupName": "Media3",
+      "matchPackageNames": [
+        "androidx.media3:media3-exoplayer",
+        "androidx.media3:media3-ui",
+        "androidx.media3:media3-ui-compose",
+        "androidx.media3:media3-ui-compose-material3"
+      ]
+    },
+    {
+      "description": "Group: Coil image loading",
+      "groupName": "Coil",
+      "matchPackageNames": [
+        "io.coil-kt:coil-compose",
+        "io.coil-kt:coil-gif",
+        "io.coil-kt:coil-video"
+      ]
+    },
+    {
+      "description": "Group: Kotlin Coroutines",
+      "groupName": "Kotlin Coroutines",
+      "matchPackageNames": [
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test"
+      ]
+    },
+    {
+      "description": "Group: Kotlin Serialization",
+      "groupName": "Kotlin Serialization",
+      "matchPackageNames": [
+        "org.jetbrains.kotlinx:kotlinx-serialization-json"
+      ]
+    },
+    {
+      "description": "Group: Test dependencies",
+      "groupName": "Testing",
+      "matchPackageNames": [
+        "junit:junit",
+        "org.robolectric:robolectric",
+        "io.mockk:mockk",
+        "androidx.test.ext:junit",
+        "androidx.test.espresso:espresso-core",
+        "androidx.test.uiautomator:uiautomator",
+        "androidx.benchmark:benchmark-macro-junit4"
+      ]
+    },
+    {
+      "description": "Auto-merge patch updates for stable, non-breaking dependencies",
+      "matchUpdateTypes": ["patch"],
+      "matchPackageNames": [
         "androidx.activity:*",
         "androidx.appcompat:*",
         "androidx.biometric:*",
         "androidx.constraintlayout:*",
         "androidx.core:*",
         "androidx.exifinterface:*",
-        "androidx.hilt:*",
+        "androidx.graphics:*",
         "androidx.lifecycle:*",
-        "androidx.navigation:*",
-        "androidx.room:*",
         "androidx.viewpager2:*",
-        "androidx.work:*",
-        "androidx.sqlite:*"
-      ]
-    },
-    "hilt": {
-      "description": "Dagger Hilt updates",
-      "packageNames": [
-        "com.google.dagger:*"
-      ]
-    },
-    "media3": {
-      "description": "Media3 / ExoPlayer updates",
-      "packageNames": [
-        "androidx.media3:*"
-      ]
-    },
-    "coil": {
-      "description": "Coil image loading",
-      "packageNames": [
-        "io.coil-kt:*"
-      ]
-    },
-    "coroutines": {
-      "description": "Kotlin Coroutines",
-      "packageNames": [
-        "org.jetbrains.kotlinx:kotlinx-coroutines-*"
-      ]
-    },
-    "serialization": {
-      "description": "Kotlin Serialization",
-      "packageNames": [
-        "org.jetbrains.kotlinx:kotlinx-serialization-*"
-      ]
-    },
-    "testing": {
-      "description": "Test dependencies",
-      "packageNames": [
-        "junit:junit",
-        "org.robolectric:*",
-        "io.mockk:*",
-        "androidx.test:*",
-        "androidx.test.ext:*",
-        "androidx.test.espresso:*"
-      ]
-    }
-  },
-
-  "packageRules": [
-    {
-      "description": "Auto-merge patch + minor updates for stable dependencies",
-      "matchUpdateTypes": ["patch", "minor"],
-      "matchPackagePatterns": [
-        "androidx.*",
-        "com.google.android.material:*",
+        "com.google.android.material:material",
         "io.coil-kt:*",
         "org.jetbrains.kotlinx:kotlinx-coroutines-*",
         "org.jetbrains.kotlinx:kotlinx-serialization-*",
         "junit:junit",
         "org.robolectric:*",
-        "io.mockk:*"
+        "io.mockk:*",
+        "com.jakewharton.timber:timber",
+        "com.google.zxing:core",
+        "com.google.code.gson:gson",
+        "com.telemetrydeck:kotlin-sdk"
       ],
       "automerge": true,
       "automergeType": "pr",
@@ -145,11 +180,39 @@
       "automerge": false
     },
     {
-      "description": "Pin SQLCipher + Bouncy Castle — security-critical, manual review",
+      "description": "Never auto-merge SQLCipher + Bouncy Castle — security-critical, manual review",
       "matchPackageNames": [
         "net.zetetic:android-database-sqlcipher",
-        "org.bouncycastle:*"
+        "org.bouncycastle:bcprov-jdk18on"
       ],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge LeakCanary — debug tooling, manual review",
+      "matchPackageNames": ["com.squareup.leakcanary:leakcanary-android"],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge KSP — must match Kotlin version exactly",
+      "matchPackageNames": ["com.google.devtools.ksp:*"],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge Paparazzi — layoutlib version sensitive",
+      "matchPackageNames": ["app.cash.paparazzi:*"],
+      "automerge": false
+    },
+    {
+      "description": "Never auto-merge detekt + ktlint — rule changes can break CI",
+      "matchPackageNames": [
+        "io.gitlab.arturbosch.detekt:*",
+        "org.jlleitschuh.gradle:ktlint-gradle"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Pin AGP — requires manual Compose/Kotlin compat verification",
+      "matchPackageNames": ["com.android.tools.build:gradle"],
       "automerge": false
     }
   ],
