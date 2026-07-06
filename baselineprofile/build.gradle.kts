@@ -18,7 +18,8 @@
 
 plugins {
     id("com.android.test")
-    // Sprint 7: kotlin("android") removed — AGP 9.0 has built-in Kotlin.
+    // Sprint 7: AGP 9.1.0 with builtInKotlin=false
+    kotlin("android")
 }
 
 android {

@@ -3,10 +3,9 @@ import com.android.sdklib.AndroidVersion.VersionCodes
 plugins {
         id("com.android.application")
         id("com.jaredsburrows.license")
-        // Sprint 7: kotlin("android") + kotlin("kapt") removed — AGP 9.0 has
-        // built-in Kotlin. kapt is NOT compatible with built-in Kotlin.
-        // DataBinding works without kapt in AGP 9.0 (native support).
-        // Hilt + Room use KSP (migrated Sprint 6).
+        // Sprint 7: AGP 9.1.0 with builtInKotlin=false (kapt needed for DataBinding)
+        kotlin("android")
+        kotlin("kapt")
         kotlin("plugin.serialization")
         id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
 
