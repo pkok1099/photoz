@@ -26,16 +26,19 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import onlasdan.gallery.encryption.data.BootstrapDatabase
+import onlasdan.gallery.encryption.data.SqlCipherKeyProvider
+import onlasdan.gallery.encryption.data.SqlCipherMigrationHelper
 import onlasdan.gallery.encryption.data.VaultProtectionDao
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.model.database.DATABASE_NAME
 import onlasdan.gallery.model.database.MIGRATION_15_16
 import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.settings.data.Config
-import javax.inject.Singleton
+import timber.log.Timber
 
 /**
  * Hilt Module for [SingletonComponent].
@@ -116,15 +119,28 @@ object AppModule {
 	@Singleton
 	fun providePhotoZDatabase(
 		@ApplicationContext app: Context,
+		sqlCipherKeyProvider: SqlCipherKeyProvider,
+		migrationHelper: SqlCipherMigrationHelper,
 	): PhotoZDatabase {
-		// DEBUG: SQLCipher disabled for crash isolation.
-		// Using plain Room (no encryption) to test if SQLCipher native lib
-		// is causing the startup crash.
+		// Sprint 8 fix: SQLCipher 4.9.0 (was 4.5.4 which had 4KB page
+		// alignment — crashes on Android 16 with 16KB page size requirement).
+		if (!migrationHelper.migrateIfNecessary()) {
+			Timber.e("SQLCipher migration failed — DB will likely fail to open.")
+		}
+
+		val passphrase = sqlCipherKeyProvider.getOrCreatePassphrase()
+		val factory = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(
+			passphrase, null, false,
+		)
+
 		return Room.databaseBuilder(
 			app,
 			PhotoZDatabase::class.java,
 			DATABASE_NAME,
-		).addMigrations(MIGRATION_15_16).build()
+		)
+			.openHelperFactory(factory)
+			.addMigrations(MIGRATION_15_16)
+			.build()
 	}
 
 	@Provides
