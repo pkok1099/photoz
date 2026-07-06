@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import onlasdan.gallery.model.io.TfliteTagExtractor
+import onlasdan.gallery.settings.data.Config
 import timber.log.Timber
 import java.io.File
 import java.net.HttpURLConnection
