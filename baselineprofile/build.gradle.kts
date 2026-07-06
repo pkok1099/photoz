@@ -17,49 +17,49 @@
 // @since v13 — Sprint 8 / L7 baseline profiles
 
 plugins {
-    id("com.android.test")
-    // Sprint 7: AGP 9.1.0 with builtInKotlin=false
-    kotlin("android")
+	id("com.android.test")
+	// Sprint 7: AGP 9.1.0 with builtInKotlin=false
+	kotlin("android")
 }
 
 android {
-    namespace = "onlasdan.gallery.baselineprofile"
-    compileSdk = 37
+	namespace = "onlasdan.gallery.baselineprofile"
+	compileSdk = 37
 
-    defaultConfig {
+	defaultConfig {
 	minSdk = 35
 	targetSdk = 36
 
 	testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    targetProjectPath = ":app"
-    experimentalProperties["android.experimental.self-instrumenting"] = true
-
-    buildTypes {
-	create("benchmark") {
-	    isDebuggable = false
-	    signingConfig = signingConfigs.getByName("debug")
-	    matchingFallbacks += listOf("release")
 	}
-    }
 
-    compileOptions {
+	targetProjectPath = ":app"
+	experimentalProperties["android.experimental.self-instrumenting"] = true
+
+	buildTypes {
+	create("benchmark") {
+		isDebuggable = false
+		signingConfig = signingConfigs.getByName("debug")
+		matchingFallbacks += listOf("release")
+	}
+	}
+
+	compileOptions {
 	sourceCompatibility = JavaVersion.VERSION_17
 	targetCompatibility = JavaVersion.VERSION_17
-    }
+	}
 }
 
 // Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
 kotlin {
-    compilerOptions {
+	compilerOptions {
 	jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
+	}
 }
 
 dependencies {
-    implementation("androidx.test.ext:junit:1.3.0")
-    implementation("androidx.test.espresso:espresso-core:3.7.0")
-    implementation("androidx.test.uiautomator:uiautomator:2.4.0")
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.4.1")
+	implementation("androidx.test.ext:junit:1.3.0")
+	implementation("androidx.test.espresso:espresso-core:3.7.0")
+	implementation("androidx.test.uiautomator:uiautomator:2.4.0")
+	implementation("androidx.benchmark:benchmark-macro-junit4:1.4.1")
 }

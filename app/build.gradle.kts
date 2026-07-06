@@ -15,10 +15,6 @@ plugins {
 	// @since Sprint 6 — KSP retry with KSP2
 	id("com.google.devtools.ksp")
 
-	// ─── Paparazzi — screenshot testing (Sprint 6) ────────────────────────
-	// Renders Compose/UI on JVM without a device. Run: ./gradlew paparazzi
-	// @since Sprint 6 — screenshot testing
-	id("app.cash.paparazzi")
 
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
@@ -39,98 +35,98 @@ android {
 	compileSdk = 37
 
 	defaultConfig {
-	        applicationId = "onlasdan.gallery"
-	        minSdk = 35
-	        targetSdk = 36
+		applicationId = "onlasdan.gallery"
+		minSdk = 35
+		targetSdk = 36
 
-	        versionCode = appVersionCode.toInt()
-	        versionName = appVersionName
+		versionCode = appVersionCode.toInt()
+		versionName = appVersionName
 
-	        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-	        javaCompileOptions {
-	                annotationProcessorOptions {
-	                        arguments += "room.incremental" to "true"
-	                        arguments += "room.schemaLocation" to "$projectDir/schemas"
-	                }
-	        }
+		javaCompileOptions {
+			annotationProcessorOptions {
+				arguments += "room.incremental" to "true"
+				arguments += "room.schemaLocation" to "$projectDir/schemas"
+			}
+		}
 
-	        base {
-	                archivesName = "photok-$versionName"
-	        }
+		base {
+			archivesName = "photok-$versionName"
+		}
 
-	        buildConfigField(
-	                "String",
-	                "TELEMETRY_DECK_APP_ID",
-	                "\"${telemetryDeckAppId.orEmpty()}\"",
-	        )
+		buildConfigField(
+			"String",
+			"TELEMETRY_DECK_APP_ID",
+			"\"${telemetryDeckAppId.orEmpty()}\"",
+		)
 	}
 
 	flavorDimensions += "distribution"
 	productFlavors {
-	        create("play") {
-	                dimension = "distribution"
-	                buildConfigField("Boolean", "PLAY", "true")
+		create("play") {
+			dimension = "distribution"
+			buildConfigField("Boolean", "PLAY", "true")
 
-	                if (!isReleaseBuildInvocation) {
-	                        versionNameSuffix = "-play-debug"
-	                }
-	        }
+			if (!isReleaseBuildInvocation) {
+				versionNameSuffix = "-play-debug"
+			}
+		}
 
-	        create("foss") {
-	                dimension = "distribution"
-	                buildConfigField("Boolean", "PLAY", "false")
+		create("foss") {
+			dimension = "distribution"
+			buildConfigField("Boolean", "PLAY", "false")
 
-	                if (!isReleaseBuildInvocation) {
-	                        versionNameSuffix = "-foss-debug"
-	                }
-	        }
+			if (!isReleaseBuildInvocation) {
+				versionNameSuffix = "-foss-debug"
+			}
+		}
 	}
 
 	buildTypes {
-	        getByName("debug") {
-	                isDebuggable = true
-	                // Sprint 10+ — consistent debug signing key for CI builds.
-	                // Without this, each CI runner generates its own ephemeral debug
-	                // key, and the user can't install updates without uninstalling.
-	                // The debug.keystore is committed to the repo (debug keys are not
-	                // sensitive — they're for debug builds only).
-	                signingConfig =
-	                        signingConfigs.create("debugCi") {
-	                                storeFile = rootProject.file("debug.keystore")
-	                                storePassword = "android"
-	                                keyAlias = "debug"
-	                                keyPassword = "android"
-	                        }
-	        }
+		getByName("debug") {
+			isDebuggable = true
+			// Sprint 10+ — consistent debug signing key for CI builds.
+			// Without this, each CI runner generates its own ephemeral debug
+			// key, and the user can't install updates without uninstalling.
+			// The debug.keystore is committed to the repo (debug keys are not
+			// sensitive — they're for debug builds only).
+			signingConfig =
+				signingConfigs.create("debugCi") {
+					storeFile = rootProject.file("debug.keystore")
+					storePassword = "android"
+					keyAlias = "debug"
+					keyPassword = "android"
+				}
+		}
 
-	        getByName("release") {
-	                isMinifyEnabled = true
-	                // Sprint 8 / L7 — shrink resources in release (removes unused
-	                // drawables/strings). Pairs with R8 full mode for smaller APK.
-	                isShrinkResources = true
+		getByName("release") {
+			isMinifyEnabled = true
+			// Sprint 8 / L7 — shrink resources in release (removes unused
+			// drawables/strings). Pairs with R8 full mode for smaller APK.
+			isShrinkResources = true
 
-	                proguardFiles(
-	                        getDefaultProguardFile("proguard-android-optimize.txt"),
-	                        "proguard-rules.pro",
-	                )
-	        }
+			proguardFiles(
+				getDefaultProguardFile("proguard-android-optimize.txt"),
+				"proguard-rules.pro",
+			)
+		}
 	}
 
 	buildFeatures {
-	        dataBinding = true
-	        compose = true
-	        buildConfig = true
+		dataBinding = true
+		compose = true
+		buildConfig = true
 	}
 
 	compileOptions {
-	        sourceCompatibility = JavaVersion.VERSION_11
-	        targetCompatibility = JavaVersion.VERSION_11
+		sourceCompatibility = JavaVersion.VERSION_11
+		targetCompatibility = JavaVersion.VERSION_11
 	}
 
 	lint {
-	        lintConfig = file("$rootDir/gradle/lint.xml")
-	        baseline = file("$rootDir/gradle/lint-baseline.xml")
+		lintConfig = file("$rootDir/gradle/lint.xml")
+		baseline = file("$rootDir/gradle/lint-baseline.xml")
 	}
 	namespace = "onlasdan.gallery"
 
@@ -163,16 +159,16 @@ android {
 	// is IGNORED by AGP 9.0+ and replaced by this DSL flag. Do not also set the manifest
 	// attribute — they would conflict.
 	packaging {
-	        jniLibs {
-	                useLegacyPackaging = true
-	        }
+		jniLibs {
+			useLegacyPackaging = true
+		}
 	}
 }
 
 // Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
 kotlin {
 	compilerOptions {
-	        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+		jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
 	}
 }
 
@@ -355,9 +351,9 @@ dependencies {
 	implementation("androidx.media3:media3-ui-compose-material3:$media3Version")
 
 	implementation(
-	        fileTree("libs").matching {
-	                include("*.jar")
-	        },
+		fileTree("libs").matching {
+			include("*.jar")
+		},
 	)
 	implementation("androidx.core:core-ktx:1.19.0")
 	implementation("androidx.appcompat:appcompat:1.7.1")
