@@ -63,7 +63,7 @@ jobs:
         run: ./gradlew ktlintCheck --stacktrace
       - name: Upload detekt report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: detekt-report
           path: app/build/reports/detekt/
@@ -91,7 +91,7 @@ jobs:
         run: ./gradlew test --stacktrace
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report
           path: app/build/reports/tests/
@@ -119,7 +119,7 @@ jobs:
         run: ./gradlew lintFossDebug --stacktrace
       - name: Upload lint report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-report
           path: app/build/reports/lint-results-*.html
@@ -146,7 +146,7 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleFossDebug --stacktrace
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: foss-debug-apk
           path: app/build/outputs/apk/foss/debug/*.apk
