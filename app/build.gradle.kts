@@ -390,7 +390,7 @@ dependencies {
 	androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 
 	// Telemetry
-	implementation("com.telemetrydeck:kotlin-sdk:6.3.0")
+	implementation("com.telemetrydeck:kotlin-sdk:7.0.0")
 
 	// Play Review
 	playImplementation("com.google.android.play:review:2.0.2")
