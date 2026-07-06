@@ -130,16 +130,6 @@ android {
 		targetCompatibility = JavaVersion.VERSION_1_8
 	}
 
-	// NOTE: kotlinOptions is deprecated in Kotlin 2.x but still functional.
-	// The top-level kotlin { compilerOptions {} } replacement was causing
-	// CI failures (ScriptCompilationError or similar). Reverting to the
-	// deprecated but working kotlinOptions block until the root cause is
-	// identified. The deprecation warning is acceptable — it doesn't break
-	// the build.
-	kotlinOptions {
-		jvmTarget = "1.8"
-	}
-
 	lint {
 		lintConfig = file("$rootDir/gradle/lint.xml")
 		baseline = file("$rootDir/gradle/lint-baseline.xml")
@@ -181,10 +171,12 @@ android {
 	}
 }
 
-// NOTE: The top-level kotlin { compilerOptions {} } block was removed.
-// The deprecated kotlinOptions {} block inside android {} is used instead
-// (see above). This reverts to the last known working configuration from
-// commit 9e3db233.
+// Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
+kotlin {
+	compilerOptions {
+		jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+	}
+}
 
 licenseReport {
 	generateCsvReport = false
