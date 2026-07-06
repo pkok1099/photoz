@@ -532,8 +532,15 @@ class PhotoRepository
 				//
 				// Thumbnails and video previews are small enough that they're read in
 				// full (no streaming), so they default to GCM via the default
-				// `useGcm = true` parameter in CreateThumbnailsUseCase's calls.
-				val useGcm = !photo.type.isVideo
+				// Sprint 8 — videos now use chunked GCM (version 0x04) too!
+				// ChunkedGcmRandomAccessDataSource supports true random access
+				// (seek to any chunk, decrypt only that chunk), so videos no
+				// longer need CBC's block-chain IV property.
+				//
+				// Thumbnails and video previews are small enough that they're
+				// read in full (no streaming), so they default to GCM via the
+				// default `useGcm = true` parameter in CreateThumbnailsUseCase.
+				val useGcm = true
 				val encryptedDestination =
 					vaultFileStorage.openEncryptedOutput(
 						fileName = photo.internalFileName,

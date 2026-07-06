@@ -51,6 +51,7 @@ import onlasdan.gallery.sort.domain.SortConfig
 import onlasdan.gallery.sort.domain.SortRepository
 import onlasdan.gallery.sync.work.SyncRestorer
 import onlasdan.gallery.transcoding.data.AesCbcRandomAccessDataSource
+import onlasdan.gallery.transcoding.data.VersionDispatchDataSourceFactory
 import onlasdan.gallery.uicomponnets.bindings.ObservableViewModel
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -582,17 +583,13 @@ class ImageViewerViewModel
 		}
 
 		val mediaSourceFactory: MediaSource.Factory by lazy {
-			// The DataSource.Factory creates a fresh AesCbcRandomAccessDataSource
-			// per MediaSource. ExoPlayer calls DataSource.open(dataSpec) with the
-			// file Uri, and the DataSource looks up the per-file StreamState (if
-			// any) via the providers below. When a progressive download is in
-			// flight, the DataSource blocks on reads past the available window;
-			// when the file is fully local (no StreamState entry), the providers
-			// return their defaults and the DataSource behaves exactly as before
-			// — preserving the existing local-playback path.
+			// Sprint 8 — Version-dispatching DataSource that reads the version
+			// byte and delegates to ChunkedGcmRandomAccessDataSource (v0x04)
+			// or AesCbcRandomAccessDataSource (v0x01-v0x03). This enables
+			// chunked-GCM videos to be played with true random access.
 			val factory =
 				DataSource.Factory {
-					AesCbcRandomAccessDataSource(
+					VersionDispatchDataSourceFactory(
 						sessionRepository = sessionRepository,
 						availableBytesProvider = { uri ->
 							lookupStreamState(uri)?.availableBytes?.get() ?: -1L
@@ -600,7 +597,7 @@ class ImageViewerViewModel
 						downloadCompleteProvider = { uri ->
 							lookupStreamState(uri)?.downloadComplete?.get() ?: true
 						},
-					)
+					).createDataSource()
 				}
 
 			ProgressiveMediaSource.Factory(factory)
