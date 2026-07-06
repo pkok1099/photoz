@@ -120,7 +120,7 @@ jobs:
 
       - name: Create GitHub release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release == 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: rclone-${{ steps.version.outputs.version }}
           name: rclone ${{ steps.version.outputs.version }} (Android arm64-v8a)
