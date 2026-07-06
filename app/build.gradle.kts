@@ -160,7 +160,7 @@ android {
 	// attribute — they would conflict.
 	packaging {
 		jniLibs {
-			useLegacyPackaging = true
+			useLegacyPackaging = false
 		}
 	}
 }
