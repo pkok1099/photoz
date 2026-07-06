@@ -24,7 +24,7 @@ plugins {
 
 android {
 	namespace = "onlasdan.gallery.baselineprofile"
-	compileSdk = 37
+	compileSdk = 36
 
 	defaultConfig {
 	minSdk = 35
