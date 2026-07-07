@@ -18,6 +18,7 @@ package onlasdan.gallery.sync.rclone
 
 import android.app.Application
 import android.util.Log
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -44,7 +45,9 @@ class RcloneController
 	@Inject
 	constructor(
 		private val app: Application,
+		private val configManager: RcloneConfigManager,
 	) {
+
 		companion object {
 			private const val TAG = "RcloneController"
 			private var initialized = false
@@ -60,6 +63,22 @@ class RcloneController
 		}
 
 		/**
+		 * Check if rclone is alive and responding to RC calls.
+		 */
+		suspend fun checkRcloneAlive(): Boolean =
+			withContext(Dispatchers.IO) {
+				try {
+					Log.i(TAG, "Checking if rclone is alive...")
+					val result = rpc("core/version", "{}")
+					Log.i(TAG, "rclone version info: $result")
+					!result.contains("\"error\"")
+				} catch (e: Exception) {
+					Log.e(TAG, "rclone is NOT alive: ${e.message}")
+					false
+				}
+			}
+
+		/**
 		 * Initialize rclone. Must be called once before any RC operations.
 		 */
 		fun ensureInitialized() {
@@ -73,6 +92,23 @@ class RcloneController
 					initMethod.invoke(null)
 					initialized = true
 					Log.i(TAG, "rclone initialized via JNI")
+
+					// Set config file path immediately after initialization
+					val configFile = configManager.configFile
+					if (configFile != null && configFile.exists()) {
+						Log.i(TAG, "Setting rclone config path to: ${configFile.absolutePath}")
+						val setConfigInput = "{\"main\": {\"Config\": \"${configFile.absolutePath}\"}}"
+						// We use raw rpc call here to avoid recursion
+						val result = try {
+							val rpcMethod = clazz.getMethod("rcloneRPC", String::class.java, String::class.java)
+							rpcMethod.invoke(null, "options/set", setConfigInput) as String
+						} catch (e: Exception) {
+							"Error: ${e.message}"
+						}
+						Log.i(TAG, "Set rclone config result: $result")
+					} else {
+						Log.w(TAG, "No rclone config file found to set path.")
+					}
 				} catch (e: Exception) {
 					Log.e(TAG, "rclone init failed: ${e.message}")
 				}
@@ -95,7 +131,7 @@ class RcloneController
 				result
 			} catch (e: Exception) {
 				Log.e(TAG, "RPC call failed: method=$method error=${e.message}")
-				"""{"error":"${e.message}"}"""
+				"{\"error\":\"${e.message}\"}"
 			}
 		}
 
@@ -112,11 +148,15 @@ class RcloneController
 					val (remote, path) = parseRemotePath(remotePath)
 					val input =
 						"""
-						{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path","_async":"true"}
+						{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path"}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
 					Log.d(TAG, "uploadFile result: $result")
-					Result.success(Unit)
+					if (result.contains("\"error\":")) {
+						Result.failure(IOException("rclone error: $result"))
+					} else {
+						Result.success(Unit)
+					}
 				} catch (e: Exception) {
 					Log.e(TAG, "uploadFile failed: ${e.message}")
 					Result.failure(e)
@@ -136,11 +176,15 @@ class RcloneController
 					val (remote, path) = parseRemotePath(remotePath)
 					val input =
 						"""
-						{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":"","_async":"true"}
+						{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":""}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
 					Log.d(TAG, "downloadFile result: $result")
-					Result.success(Unit)
+					if (result.contains("\"error\":")) {
+						Result.failure(IOException("rclone error: $result"))
+					} else {
+						Result.success(Unit)
+					}
 				} catch (e: Exception) {
 					Log.e(TAG, "downloadFile failed: ${e.message}")
 					Result.failure(e)
@@ -158,9 +202,13 @@ class RcloneController
 				try {
 					val input = """{"fs":"$remoteFs","remote":"$remoteDir"}"""
 					val result = rpc("operations/list", input)
-					// Parse JSON response — list is in "list" array
-					val files = parseListResult(result)
-					Result.success(files)
+					if (result.contains("\"error\":")) {
+						Result.failure(IOException("rclone error: $result"))
+					} else {
+						// Parse JSON response — list is in "list" array
+						val files = parseListResult(result)
+						Result.success(files)
+					}
 				} catch (e: Exception) {
 					Log.e(TAG, "listRemote failed: ${e.message}")
 					Result.failure(e)
@@ -175,8 +223,8 @@ class RcloneController
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
 					val input = """{"fs":"$remote:","remote":"$path"}"""
-					rpc("operations/deletefile", input)
-					Result.success(Unit)
+					val result = rpc("operations/deletefile", input)
+					if (result.contains("\"error\":")) Result.failure(IOException(result)) else Result.success(Unit)
 				} catch (e: Exception) {
 					Result.failure(e)
 				}
