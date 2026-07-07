@@ -17,6 +17,7 @@
 package onlasdan.gallery
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -48,23 +49,10 @@ class BaseApplication :
 	Application(),
 	DefaultLifecycleObserver,
 	Configuration.Provider {
-	companion object {
-		init {
-			// SQLCipher 4.9.0+ (sqlcipher-android) requires explicit
-			// System.loadLibrary("sqlcipher") — the old
-			// android-database-sqlcipher 4.5.4 auto-loaded via
-			// SQLiteDatabase.loadLibs(), but the new package does NOT.
-			// Without this, the app crashes with UnsatisfiedLinkError
-			// when Room tries to open the encrypted DB.
-			// @since Sprint 8 — SQLCipher 4.9.0 migration fix
-			try {
-				System.loadLibrary("sqlcipher")
-			} catch (e: UnsatisfiedLinkError) {
-				android.util.Log.e("BaseApplication", "FAILED to load sqlcipher library: ${e.message}")
-			} catch (e: Exception) {
-				android.util.Log.e("BaseApplication", "Unexpected error loading sqlcipher: ${e.message}")
-			}
-		}
+
+	override fun attachBaseContext(base: Context?) {
+		android.util.Log.e("BaseApplication", "ATTACH_BASE_CONTEXT")
+		super.attachBaseContext(base)
 	}
 
 	@Inject
@@ -116,7 +104,13 @@ class BaseApplication :
 	private var ignoreNextTimeout = false
 
 	override fun onCreate() {
-		super<Application>.onCreate()
+		android.util.Log.e("BaseApplication", "ON_CREATE_START pid=${android.os.Process.myPid()}")
+		try {
+			super<Application>.onCreate()
+		} catch (t: Throwable) {
+			android.util.Log.e("BaseApplication", "CRITICAL: super.onCreate (Hilt injection) failed", t)
+			throw t
+		}
 
 		// ─── DIAGNOSTIC: process lifecycle logging (data-loss bug investigation) ──
 		android.util.Log.e(

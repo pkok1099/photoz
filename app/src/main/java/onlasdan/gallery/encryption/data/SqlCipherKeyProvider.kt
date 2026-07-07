@@ -93,6 +93,7 @@ class SqlCipherKeyProvider
 	@Inject
 	constructor(
 		@ApplicationContext private val app: Context,
+		private val fallbackProvider: FallbackSqlCipherKeyProvider,
 	) {
 		/**
 		 * Get the SQLCipher passphrase bytes, generating + persisting the
@@ -109,12 +110,17 @@ class SqlCipherKeyProvider
 		 * will be GC'd normally.
 		 */
 		fun getOrCreatePassphrase(): ByteArray {
-			val key = getOrCreateKey()
-			return key.encoded
-				?: error(
-					"Keystore key for $ALIAS returned null encoded form — " +
-						"this should not happen for a software-backed AES key",
-				)
+			return try {
+				val key = getOrCreateKey()
+				key.encoded
+					?: error(
+						"Keystore key for $ALIAS returned null encoded form — " +
+							"this should not happen for a software-backed AES key",
+					)
+			} catch (e: Exception) {
+				android.util.Log.e("SqlCipherKeyProvider", "CRITICAL: Keystore failed, using fallback! ${e.message}")
+				fallbackProvider.getOrCreatePassphrase()
+			}
 		}
 
 		private fun getOrCreateKey(): SecretKey {

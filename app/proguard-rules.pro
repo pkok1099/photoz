@@ -74,3 +74,6 @@
 # Media3/ExoPlayer — keep DataSource factories (Media3 loads DataSource
 # implementations by reflection via @DefaultDataSinkFactory etc.).
 -keep class onlasdan.gallery.transcoding.** { *; }
+# SQLCipher — keep the JNI-bound database API.
+-keep class net.zetetic.database.sqlcipher.** { *; }
+-keep class net.zetetic.database.** { *; }

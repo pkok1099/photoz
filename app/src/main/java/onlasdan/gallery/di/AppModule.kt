@@ -124,6 +124,20 @@ object AppModule {
 	): PhotoZDatabase {
 		// Sprint 8 fix: SQLCipher 4.9.0 (was 4.5.4 which had 4KB page
 		// alignment — crashes on Android 16 with 16KB page size requirement).
+		//
+		// We load the library here instead of BaseApplication init to ensure
+		// it happens within the Hilt dependency graph where we can log
+		// failures better, and to avoid crashes in early app initialization.
+		try {
+			android.util.Log.i("AppModule", "Loading SQLCipher native library...")
+			System.loadLibrary("sqlcipher")
+			android.util.Log.i("AppModule", "SQLCipher native library loaded successfully.")
+		} catch (e: UnsatisfiedLinkError) {
+			android.util.Log.e("AppModule", "CRITICAL: FAILED to load sqlcipher: ${e.message}")
+		} catch (e: Exception) {
+			android.util.Log.e("AppModule", "CRITICAL: Unexpected error loading sqlcipher: ${e.message}")
+		}
+
 		if (!migrationHelper.migrateIfNecessary()) {
 			Timber.e("SQLCipher migration failed — DB will likely fail to open.")
 		}
