@@ -641,20 +641,17 @@ class PhotoSyncWorker
 				bigText = expandedText,
 			)
 			try {
+				// JNI migration note: the new RcloneController.uploadFile() does not
+				// support progress callbacks (rclone operations/copyfile is _async
+				// server-side; polling job/status would be a separate effort). The
+				// notification stays in indeterminate mode for the duration of the
+				// upload — updateNotification(progress = null, ...) was already
+				// called above to set that up.
 				rcloneController
 					.uploadFile(
 						localPath = origPath.absolutePath,
 						remotePath = remoteOrig,
-					) { progress ->
-						// Drive the in-place notification update with the estimated
-						// progress percent. updateNotification() is rate-limited to
-						// ~2/sec and treats 100% as a state change (always emits).
-						updateNotification(
-							progress = progress,
-							text = collapsedText,
-							bigText = expandedText,
-						)
-					}.getOrThrow()
+					).getOrThrow()
 				diag("performUpload: original upload OK")
 			} catch (e: Exception) {
 				diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)

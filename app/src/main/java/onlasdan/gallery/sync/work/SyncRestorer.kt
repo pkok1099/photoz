@@ -157,12 +157,15 @@ class SyncRestorer
 
 					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
 					Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
+					// JNI migration note: the new RcloneController.downloadFile() does
+					// not accept expectedSize / onProgress. Until we wire up rclone
+					// job/status polling, the caller's onProgress will only see the
+					// terminal 100f tick — UI degrades from a determinate bar to an
+					// indeterminate spinner. Re-add progress estimation in a follow-up.
 					rcloneController
 						.downloadFile(
 							remotePath = remoteOrig,
 							localPath = localFile.absolutePath,
-							expectedSize = photo.size.takeIf { it > 0 },
-							onProgress = onProgress,
 						).getOrThrow()
 					onProgress(100f)
 				}
