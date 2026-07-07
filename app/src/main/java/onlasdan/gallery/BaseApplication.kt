@@ -49,7 +49,6 @@ class BaseApplication :
 	Application(),
 	DefaultLifecycleObserver,
 	Configuration.Provider {
-
 	override fun attachBaseContext(base: Context?) {
 		android.util.Log.e("BaseApplication", "ATTACH_BASE_CONTEXT")
 		super.attachBaseContext(base)
