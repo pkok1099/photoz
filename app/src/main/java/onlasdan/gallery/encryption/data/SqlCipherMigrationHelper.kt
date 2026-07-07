@@ -167,16 +167,17 @@ class SqlCipherMigrationHelper
 			File("${newDbFile.absolutePath}-wal").takeIf { it.exists() }?.delete()
 			File("${newDbFile.absolutePath}-shm").takeIf { it.exists() }?.delete()
 
-			var plaintextDb: net.sqlcipher.database.SQLiteDatabase? = null
+			var plaintextDb: net.zetetic.database.sqlcipher.SQLiteDatabase? = null
 			try {
 				// Step 1: open the plaintext DB with empty passphrase.
 				// SQLCipher treats `""` as "no encryption" — this allows
 				// reading/writing a standard SQLite file via the SQLCipher API.
 				plaintextDb =
-					net.sqlcipher.database.SQLiteDatabase.openOrCreateDatabase(
+					net.zetetic.database.sqlcipher.SQLiteDatabase.openOrCreateDatabase(
 						dbFile.absolutePath,
 						"", // empty passphrase = plaintext
-						null, // cursor factory
+						null, // CursorFactory
+						null, // DatabaseErrorHandler
 					)
 
 				// Step 2: ATTACH the new encrypted DB with the Keystore passphrase.
@@ -275,7 +276,7 @@ class SqlCipherMigrationHelper
 		 *
 		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
 		 */
-		private fun copyVaultProtectionToBootstrap(plaintextDb: net.sqlcipher.database.SQLiteDatabase) {
+		private fun copyVaultProtectionToBootstrap(plaintextDb: net.zetetic.database.sqlcipher.SQLiteDatabase) {
 			// Check if vault_protection table exists in the plaintext DB.
 			val tableExists =
 				plaintextDb

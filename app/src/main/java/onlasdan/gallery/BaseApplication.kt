@@ -48,6 +48,19 @@ class BaseApplication :
 	Application(),
 	DefaultLifecycleObserver,
 	Configuration.Provider {
+	companion object {
+		init {
+			// SQLCipher 4.9.0+ (sqlcipher-android) requires explicit
+			// System.loadLibrary("sqlcipher") — the old
+			// android-database-sqlcipher 4.5.4 auto-loaded via
+			// SQLiteDatabase.loadLibs(), but the new package does NOT.
+			// Without this, the app crashes with UnsatisfiedLinkError
+			// when Room tries to open the encrypted DB.
+			// @since Sprint 8 — SQLCipher 4.9.0 migration fix
+			System.loadLibrary("sqlcipher")
+		}
+	}
+
 	@Inject
 	lateinit var appScope: CoroutineScope
 

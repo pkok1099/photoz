@@ -1,4 +1,3 @@
-
 plugins {
 	id("com.android.application")
 	id("com.jaredsburrows.license")
@@ -219,7 +218,7 @@ dependencies {
 	//
 	// Trade-off: ~5-15% slower DB queries, +3-5MB APK (native lib).
 	// @since v16 — Sprint 3 / TODO #6 SQLCipher
-	implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+	implementation("net.zetetic:sqlcipher-android:4.9.0")
 	implementation("androidx.sqlite:sqlite:2.7.0")
 
 	// ─── TODO #3: Bouncy Castle for Argon2id KDF ─────────────────────────────
