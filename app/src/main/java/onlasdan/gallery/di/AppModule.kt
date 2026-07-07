@@ -31,15 +31,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import onlasdan.gallery.BuildConfig
 import onlasdan.gallery.encryption.data.BootstrapDatabase
-import onlasdan.gallery.encryption.data.SqlCipherKeyProvider
-import onlasdan.gallery.encryption.data.SqlCipherMigrationHelper
 import onlasdan.gallery.encryption.data.VaultProtectionDao
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.model.database.DATABASE_NAME
 import onlasdan.gallery.model.database.MIGRATION_15_16
 import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.settings.data.Config
-import timber.log.Timber
 import java.util.concurrent.Executors
 import javax.inject.Singleton
 
