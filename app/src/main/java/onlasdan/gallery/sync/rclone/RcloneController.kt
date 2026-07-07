@@ -26,7 +26,7 @@ import javax.inject.Singleton
 /**
  * Sprint 8+ — RcloneController using gomobile JNI (replaces ProcessBuilder subprocess).
  *
- * rclone is loaded as a shared library via System.loadLibrary("rclone")
+ * rclone is loaded as a shared library via System.loadLibrary("gojni")
  * (dlopen, NOT exec). This is W^X safe — Android 16 does not block dlopen.
  *
  * All rclone operations are performed via the RC API:
@@ -51,10 +51,10 @@ class RcloneController
 
 			init {
 				try {
-					System.loadLibrary("rclone")
-					Log.i(TAG, "librclone.so loaded via dlopen (W^X safe)")
+					System.loadLibrary("gojni")
+					Log.i(TAG, "libgojni.so loaded via dlopen (W^X safe)")
 				} catch (e: UnsatisfiedLinkError) {
-					Log.e(TAG, "Failed to load librclone.so: ${e.message}")
+					Log.e(TAG, "Failed to load libgojni.so: ${e.message}")
 				}
 			}
 		}

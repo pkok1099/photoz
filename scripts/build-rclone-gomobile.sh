@@ -79,6 +79,7 @@ gomobile bind \
     github.com/rclone/rclone/librclone/gomobile
 
 # gomobile produces rclone.aar in current directory
+# The .so inside is named libgojni.so (gomobile default)
 if [[ -f "rclone.aar" ]]; then
     cp rclone.aar "$OUTPUT_DIR/librclone.aar"
     echo ""
@@ -86,7 +87,7 @@ if [[ -f "rclone.aar" ]]; then
     ls -lh "$OUTPUT_DIR/librclone.aar"
     echo ""
 
-    # Verify .so files
+    # Verify .so files — gomobile names them libgojni.so
     echo "=== Contents ==="
     unzip -l "$OUTPUT_DIR/librclone.aar" | grep "\.so"
 
@@ -94,9 +95,9 @@ if [[ -f "rclone.aar" ]]; then
     echo ""
     echo "=== 16KB alignment check (arm64-v8a) ==="
     TMPDIR=$(mktemp -d)
-    unzip -q "$OUTPUT_DIR/librclone.aar" "jni/arm64-v8a/librclone.so" -d "$TMPDIR"
-    if [[ -f "$TMPDIR/jni/arm64-v8a/librclone.so" ]]; then
-        ALIGN=$(readelf -lW "$TMPDIR/jni/arm64-v8a/librclone.so" 2>/dev/null | grep "LOAD" | head -1 | awk '{print $NF}')
+    unzip -q "$OUTPUT_DIR/librclone.aar" "jni/arm64-v8a/libgojni.so" -d "$TMPDIR"
+    if [[ -f "$TMPDIR/jni/arm64-v8a/libgojni.so" ]]; then
+        ALIGN=$(readelf -lW "$TMPDIR/jni/arm64-v8a/libgojni.so" 2>/dev/null | grep "LOAD" | head -1 | awk '{print $NF}')
         echo "  arm64-v8a alignment: $ALIGN"
         if [[ "$ALIGN" == "0x4000" ]]; then
             echo "  ✅ 16KB aligned"

@@ -89,9 +89,9 @@ jobs:
           echo ""
           echo "=== 16KB alignment check ==="
           TMPDIR=$(mktemp -d)
-          unzip -q app/libs/librclone.aar "jni/arm64-v8a/librclone.so" -d "$TMPDIR"
+          unzip -q app/libs/librclone.aar "jni/arm64-v8a/libgojni.so" -d "$TMPDIR"
           ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf \
-            -l "$TMPDIR/jni/arm64-v8a/librclone.so" | grep LOAD | head -1
+            -l "$TMPDIR/jni/arm64-v8a/libgojni.so" | grep LOAD | head -1
           rm -rf "$TMPDIR"
 
       - name: Upload artifact
