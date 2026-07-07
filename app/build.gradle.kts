@@ -1,5 +1,3 @@
-import com.android.sdklib.AndroidVersion.VersionCodes
-
 plugins {
 	id("com.android.application")
 	id("com.jaredsburrows.license")
@@ -7,7 +5,7 @@ plugins {
 	kotlin("android")
 	kotlin("kapt")
 	kotlin("plugin.serialization")
-	id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
+	id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
 
 	// ─── KSP 2.3.9 (Sprint 6) ─────────────────────────────────────────────
 	// KSP2 architecture — version not tied to Kotlin version.
@@ -32,7 +30,7 @@ apply(plugin = "androidx.navigation.safeargs.kotlin")
 apply(plugin = "dagger.hilt.android.plugin")
 
 android {
-	compileSdk = VersionCodes.BAKLAVA
+	compileSdk = 37
 
 	defaultConfig {
 		applicationId = "onlasdan.gallery"
@@ -120,8 +118,8 @@ android {
 	}
 
 	compileOptions {
-		sourceCompatibility = JavaVersion.VERSION_1_8
-		targetCompatibility = JavaVersion.VERSION_1_8
+		sourceCompatibility = JavaVersion.VERSION_11
+		targetCompatibility = JavaVersion.VERSION_11
 	}
 
 	lint {
@@ -168,7 +166,7 @@ android {
 // Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
 kotlin {
 	compilerOptions {
-		jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+		jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
 	}
 }
 
@@ -193,8 +191,8 @@ fun DependencyHandler.fossImplementation(dependencyNotation: Any) {
 
 dependencies {
 	// Architectural Components
-	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
-	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 	implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
 
 	// Room
@@ -221,7 +219,7 @@ dependencies {
 	// Trade-off: ~5-15% slower DB queries, +3-5MB APK (native lib).
 	// @since v16 — Sprint 3 / TODO #6 SQLCipher
 	implementation("net.zetetic:sqlcipher-android:4.9.0")
-	implementation("androidx.sqlite:sqlite:2.5.0")
+	implementation("androidx.sqlite:sqlite:2.7.0")
 
 	// ─── TODO #3: Bouncy Castle for Argon2id KDF ─────────────────────────────
 	// Sprint 2 / TODO #3 — Argon2id memory-hard KDF for new vaults.
@@ -243,8 +241,8 @@ dependencies {
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
 	// Coroutine Lifecycle Scopes
-	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
-	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 
 	// Navigation Components
 	// Bumped 2.9.7 → 2.9.8 (Batch 3 — safe dep bumps from dependabot branch).
@@ -257,20 +255,20 @@ dependencies {
 	// Dagger Core
 	// NOTE: Dagger/Hilt 2.60 fails to load dagger.spi.internal.shaded...JavacBasicAnnotationProcessor
 	// with Room 2.8.4 — reverted to 2.57.2 (Batch 3 dep bump reverted due to build failure).
-	val daggerVersion = "2.57.2"
+	val daggerVersion = "2.60"
 	implementation("com.google.dagger:dagger:$daggerVersion")
 	ksp("com.google.dagger:dagger-compiler:$daggerVersion")
 
 	// Dagger - Hilt
 	implementation("com.google.dagger:hilt-android:$daggerVersion")
 	ksp("com.google.dagger:hilt-android-compiler:$daggerVersion")
-	implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
+	implementation("androidx.hilt:hilt-navigation-compose:1.4.0")
 
-	ksp("androidx.hilt:hilt-compiler:1.3.0")
+	ksp("androidx.hilt:hilt-compiler:1.4.0")
 
 	// Hilt-Work — allows @HiltWorker injection into WorkManager Workers.
 	// Required by onlasdan.gallery.sync.work.PhotoSyncWorker.
-	implementation("androidx.hilt:hilt-work:1.3.0")
+	implementation("androidx.hilt:hilt-work:1.4.0")
 
 	// WorkManager — required by onlasdan.gallery.sync.work.PhotoSyncWorker for cloud sync.
 	// Bumped 2.10.0 → 2.11.2 (Batch 3 — safe dep bumps from dependabot branch).
@@ -281,7 +279,7 @@ dependencies {
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
 	// Activity KTX for viewModels()
-	implementation("androidx.activity:activity-ktx:1.12.4")
+	implementation("androidx.activity:activity-ktx:1.13.0")
 
 	// Compose
 	implementation(platform("androidx.compose:compose-bom:2026.06.01"))
@@ -320,7 +318,7 @@ dependencies {
 	// libandroidx.graphics.path.so. Explicitly declaring 1.0.1+ ensures the
 	// 16KB-aligned build is used. See:
 	// https://developer.android.com/guide/practices/page-sizes
-	implementation("androidx.graphics:graphics-path:1.0.1")
+	implementation("androidx.graphics:graphics-path:1.1.0")
 
 	// jBCrypt for Password Hashing
 	implementation("org.mindrot", "jbcrypt", "0.4")
@@ -353,10 +351,10 @@ dependencies {
 			include("*.jar")
 		},
 	)
-	implementation("androidx.core:core-ktx:1.17.0")
+	implementation("androidx.core:core-ktx:1.19.0")
 	implementation("androidx.appcompat:appcompat:1.7.1")
 	implementation("androidx.constraintlayout:constraintlayout:2.2.1")
-	implementation("androidx.activity:activity:1.12.4")
+	implementation("androidx.activity:activity:1.13.0")
 	implementation("androidx.documentfile:documentfile:1.1.0")
 
 	// QtFastStart — vendored from https://github.com/ypresto/qtfaststart-java
