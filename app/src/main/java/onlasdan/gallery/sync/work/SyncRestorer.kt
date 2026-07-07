@@ -158,7 +158,7 @@ class SyncRestorer
 					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
 					Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
 					rcloneController
-						.downloadFileWithProgress(
+						.downloadFile(
 							remotePath = remoteOrig,
 							localPath = localFile.absolutePath,
 							expectedSize = photo.size.takeIf { it > 0 },

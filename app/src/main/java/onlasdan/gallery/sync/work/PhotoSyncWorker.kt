@@ -642,7 +642,7 @@ class PhotoSyncWorker
 			)
 			try {
 				rcloneController
-					.uploadFileWithProgress(
+					.uploadFile(
 						localPath = origPath.absolutePath,
 						remotePath = remoteOrig,
 					) { progress ->
@@ -678,14 +678,14 @@ class PhotoSyncWorker
 			val localHash = sha256OfFile(origPath.absolutePath)
 			diag("performUpload: verifying hash (local sha256=$localHash)")
 			try {
-				rcloneController.verifyRemote(remoteOrig, localHash).getOrThrow()
-				diag("performUpload: hash verification OK")
-			} catch (e: RcloneController.HashNotSupportedException) {
-				diag("performUpload: hash verification skipped — backend doesn't support sha256. Relying on size check.")
+				rcloneController.verifyRemote(remoteOrig).getOrThrow()
+				diag("performUpload: remote verification OK")
+			} catch (e: Exception) {
+				diag("performUpload: remote verification skipped — ${e.message}")
 				Timber.w(
-					"PhotoSyncWorker: hash verification skipped for %s — backend doesn't support sha256. Relying on size check. %s",
+					"PhotoSyncWorker: verification skipped for %s — %s",
 					uuid,
-					e.message,
+					e.message ?: "unknown",
 				)
 				SyncLogger.logStateTransition(
 					uuid,
