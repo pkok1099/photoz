@@ -42,6 +42,10 @@ android {
 
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+		ndk {
+			abiFilters += "arm64-v8a"
+		}
+
 		javaCompileOptions {
 			annotationProcessorOptions {
 				arguments += "room.incremental" to "true"

@@ -126,7 +126,7 @@ jobs:
           retention-days: 7
 
   build:
-    name: Build Debug APK
+    name: Build Debug APK (arm64-only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -148,6 +148,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: foss-debug-apk
+          name: foss-debug-arm64-apk
           path: app/build/outputs/apk/foss/debug/*.apk
           retention-days: 14

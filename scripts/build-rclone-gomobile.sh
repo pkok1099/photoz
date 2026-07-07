@@ -71,7 +71,7 @@ cd "$RCLONE_SRC_DIR"
 # Build for arm64 + arm (arm64 is primary, arm for older devices)
 gomobile bind \
     -v \
-    -target=android/arm64,android/arm \
+    -target=android/arm64 \
     -androidapi=$NDK_API_LEVEL \
     -ldflags="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VERSION-android-gomobile" \
     -tags="android" \
