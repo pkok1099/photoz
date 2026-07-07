@@ -74,7 +74,7 @@ gomobile bind \
     -target=android/arm64 \
     -androidapi=$NDK_API_LEVEL \
     -ldflags="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VERSION-android-gomobile" \
-    -tags="android" \
+    -tags="android,noweb,nomount,nserve" \
     -trimpath \
     github.com/rclone/rclone/librclone/gomobile
 
