@@ -78,12 +78,20 @@ gomobile bind \
     -trimpath \
     github.com/rclone/rclone/librclone/gomobile
 
-# gomobile produces rclone.aar in current directory
-# The .so inside is named libgojni.so (gomobile default)
-if [[ -f "rclone.aar" ]]; then
-    cp rclone.aar "$OUTPUT_DIR/librclone.aar"
+# gomobile produces .aar named after the last package segment
+# For github.com/rclone/rclone/librclone/gomobile → gomobile.aar
+AAR_SRC=""
+for name in gomobile.aar rclone.aar librclone.aar; do
+    if [[ -f "$name" ]]; then
+        AAR_SRC="$name"
+        break
+    fi
+done
+
+if [[ -n "$AAR_SRC" ]]; then
+    cp "$AAR_SRC" "$OUTPUT_DIR/librclone.aar"
     echo ""
-    echo "=== AAR built successfully ==="
+    echo "=== AAR built successfully (source: $AAR_SRC) ==="
     ls -lh "$OUTPUT_DIR/librclone.aar"
     echo ""
 
