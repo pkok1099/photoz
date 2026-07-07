@@ -57,7 +57,13 @@ class BaseApplication :
 			// Without this, the app crashes with UnsatisfiedLinkError
 			// when Room tries to open the encrypted DB.
 			// @since Sprint 8 — SQLCipher 4.9.0 migration fix
-			System.loadLibrary("sqlcipher")
+			try {
+				System.loadLibrary("sqlcipher")
+			} catch (e: UnsatisfiedLinkError) {
+				android.util.Log.e("BaseApplication", "FAILED to load sqlcipher library: ${e.message}")
+			} catch (e: Exception) {
+				android.util.Log.e("BaseApplication", "Unexpected error loading sqlcipher: ${e.message}")
+			}
 		}
 	}
 
