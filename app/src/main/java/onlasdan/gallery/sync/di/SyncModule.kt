@@ -50,8 +50,7 @@ object SyncModule {
 	@Singleton
 	fun provideRcloneController(
 		app: Application,
-		configManager: RcloneConfigManager,
-	) = RcloneController(app, configManager)
+	) = RcloneController(app)
 
 	@Provides
 	@Singleton

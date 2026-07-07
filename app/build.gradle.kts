@@ -348,7 +348,7 @@ dependencies {
 
 	implementation(
 		fileTree("libs").matching {
-			include("*.jar")
+			include("*.jar", "*.aar")
 		},
 	)
 	implementation("androidx.core:core-ktx:1.19.0")
