@@ -213,6 +213,72 @@ class RcloneController
                                 }
                         }
 
+		/**
+		 * F-UV-001: Upload a local file to the remote with periodic progress callbacks.
+		 *
+		 * Uses rclone async RC API: operations/copyfile with _async=true
+		 * returns a jobid, then poll job/status every 500ms for progress.
+		 *
+		 * @param localPath local file path
+		 * @param remotePath full rclone remote path
+		 * @param onProgress callback invoked with 0.0-100.0 percentage
+		 * @return Result<Unit>
+		 */
+		suspend fun uploadFileWithProgress(
+			localPath: String,
+			remotePath: String,
+			onProgress: (Float) -> Unit,
+		): Result<Unit> =
+			withContext(Dispatchers.IO) {
+				var jobid: Long? = null
+				try {
+					val (remote, path) = parseRemotePath(remotePath)
+					val startInput = """{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path","_async":true}"""
+					val startResult = rpc("operations/copyfile", startInput)
+					if (hasRpcError(startResult)) {
+						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
+					}
+					val startJson = JSONObject(startResult)
+					jobid = startJson.optLong("jobid", -1)
+					if (jobid < 0) {
+						Timber.w("uploadFileWithProgress: no jobid, falling back to sync upload")
+						return@withContext uploadFile(localPath, remotePath).also {
+							if (it.isSuccess) onProgress(100f)
+						}
+					}
+
+					onProgress(0f)
+					while (true) {
+						delay(500)
+						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
+						if (hasRpcError(statusResult)) break
+						val statusJson = JSONObject(statusResult)
+						val finished = statusJson.optBoolean("finished", false)
+						val completed = statusJson.optLong("completed", -1L)
+						val total = statusJson.optLong("total", -1L)
+						if (total > 0 && completed >= 0) {
+							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
+						}
+						if (finished) {
+							val success = statusJson.optBoolean("success", false)
+							if (!success) {
+								val errorMsg = statusJson.optString("error", "unknown error")
+								return@withContext Result.failure(IOException("rclone upload job $jobid failed: $errorMsg"))
+							}
+							onProgress(100f)
+							return@withContext Result.success(Unit)
+						}
+					}
+					Result.success(Unit)
+				} catch (e: kotlinx.coroutines.CancellationException) {
+					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
+					throw e
+				} catch (e: Exception) {
+					Timber.e(e, "uploadFileWithProgress failed")
+					Result.failure(e)
+				}
+			}
+
                 /**
                  * Download a file from the remote.
                  *

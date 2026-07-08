@@ -27,6 +27,7 @@ import onlasdan.gallery.sync.domain.SyncState
 import onlasdan.gallery.sync.rclone.RcloneController
 import timber.log.Timber
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -67,23 +68,29 @@ class SyncRestorer
                                         }
 
                                         if (photo.syncState != SyncState.UPLOADED) {
-                                                Timber.d(
-                                                        "SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
-                                                        uuid,
-                                                        photo.syncState,
-                                                )
-                                                return@runCatching
+                                                // F-UV-014: Surface error instead of swallowing
+                                                throw IOException("Photo $uuid has syncState=${photo.syncState}; cannot restore")
                                         }
 
                                         val remote = config.syncChosenRemote
                                         if (remote == null) {
-                                                Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
-                                                return@runCatching
+                                                throw IOException("No remote chosen; cannot restore $uuid")
                                         }
 
                                         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
                                         Timber.i("SyncRestorer: downloading %s ← %s", localFile.absolutePath, remoteOrig)
-                                        rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+                                        // F-UV-015 + FLOWD-002: Clean up partial download on failure
+                                        try {
+                                                rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+                                                // FLOWD-001: Verify file integrity
+                                                if (!localFile.exists() || localFile.length() == 0L) {
+                                                        localFile.delete()
+                                                        throw IOException("Downloaded file is empty for $uuid")
+                                                }
+                                        } catch (e: Exception) {
+                                                localFile.delete()
+                                                throw e
+                                        }
                                 }
                         }
 
@@ -129,8 +136,7 @@ class SyncRestorer
                                                 try {
                                                         photoDao.get(uuid)
                                                 } catch (e: Exception) {
-                                                        Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
-                                                        return@runCatching
+                                                        return@runCatching // F-UV-014: photo not in DB — non-fatal, silent return OK
                                                 }
 
                                         // Sprint 10+ / M10 Part 3 fix: resolve symlink via photo.internalFileName
@@ -141,30 +147,45 @@ class SyncRestorer
                                         }
 
                                         if (photo.syncState != SyncState.UPLOADED) {
-                                                Timber.d(
-                                                        "SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
-                                                        uuid,
-                                                        photo.syncState,
-                                                )
-                                                return@runCatching
+                                                // F-UV-014: Surface error instead of swallowing as success
+                                                throw IOException("Photo $uuid has syncState=${photo.syncState} (not UPLOADED); cannot restore from remote")
                                         }
 
                                         val remote = config.syncChosenRemote
                                         if (remote == null) {
-                                                Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
-                                                return@runCatching
+                                                throw IOException("No remote chosen; cannot restore $uuid")
                                         }
 
                                         val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
                                         Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
-                                        // F-SYNC-021: use async RC API with job/status polling for real
-                                        // progress (was: single 100f tick — UI degraded to indeterminate spinner).
-                                        rcloneController
-                                                .downloadFileWithProgress(
-                                                        remotePath = remoteOrig,
-                                                        localPath = localFile.absolutePath,
-                                                        onProgress = onProgress,
-                                                ).getOrThrow()
+                                        // F-SYNC-021: use async RC API with job/status polling for real progress.
+                                        // F-UV-015 + FLOWD-002: Clean up partial download on failure.
+                                        try {
+                                                rcloneController
+                                                        .downloadFileWithProgress(
+                                                                remotePath = remoteOrig,
+                                                                localPath = localFile.absolutePath,
+                                                                onProgress = onProgress,
+                                                        ).getOrThrow()
+
+                                                // FLOWD-001: Verify downloaded file integrity (size check).
+                                                // If the local file is empty or significantly smaller than expected,
+                                                // the download may have been truncated.
+                                                if (!localFile.exists() || localFile.length() == 0L) {
+                                                        localFile.delete()
+                                                        throw IOException("Downloaded file is empty or missing for $uuid")
+                                                }
+                                                if (photo.size > 0 && localFile.length() < photo.size / 2) {
+                                                        Timber.w("SyncRestorer: downloaded file for %s is %d bytes but expected ~%d — may be truncated", uuid, localFile.length(), photo.size)
+                                                        // Non-fatal warning — encrypted file size != plaintext size, but
+                                                        // a 50%+ discrepancy suggests truncation. Let GCM auth tag catch it.
+                                                }
+                                        } catch (e: Exception) {
+                                                // F-UV-015 + FLOWD-002: Delete partial download to prevent
+                                                // future calls from seeing a non-empty file and short-circuiting.
+                                                localFile.delete()
+                                                throw e
+                                        }
                                         onProgress(100f)
                                 }
                         }
