@@ -76,6 +76,10 @@ class RcloneConfigManager
 		val configFile: File?
 			get() = targetFile().takeIf { it.exists() }
 
+		/** Canonical config path, even before the file is imported. */
+		val configFilePath: String
+			get() = targetFile().absolutePath
+
 		val binDir: File
 			get() = File(app.filesDir, BIN_DIR_NAME).also { it.mkdirs() }
 

@@ -51,7 +51,6 @@ class RcloneController
 			private const val TAG = "RcloneController"
 			private var initialized = false
 			private var configPathApplied: String? = null
-			private var configPathAppliedAt: Long = -1L
 
 			init {
 				try {
@@ -102,34 +101,28 @@ class RcloneController
 		}
 
 		/**
-		 * Point rclone at the imported config file via the `main.Config` option.
+		 * Point rclone at the imported config file via `config/setpath`.
 		 *
-		 * Must run BEFORE the first RC call that resolves a remote, otherwise rclone
-		 * loads the (empty) default config and later fails with
-		 * "didn't find section in config file" for any remote.
+		 * `options/set {"main":{"Config":...}}` is SILENTLY IGNORED by rclone, so the
+		 * config path must be set with `config/setpath` instead. The path is resolved
+		 * at rclone's package init and the config is read lazily on the first remote
+		 * operation, so `config/setpath` must run BEFORE that first read — otherwise
+		 * rclone falls back to the (empty) default config and fails with
+		 * "didn't find section in config file".
 		 *
-		 * Idempotent: only re-applies when the config path or its mtime changes
-		 * (e.g. after re-importing rclone.conf to the same path).
+		 * Uses the canonical path (set even before the file is imported) so the path
+		 * is registered as early as possible; the file only needs to exist by the time
+		 * the first operation reads it.
 		 */
 		private fun applyConfigPath(clazz: Class<*>) {
-			val configFile = configManager.configFile
-			val exists = configFile != null && configFile.exists()
-			val path = configFile?.takeIf { exists }?.absolutePath
-			val mtime = configFile?.takeIf { exists }?.lastModified() ?: -1L
-			if (path == configPathApplied && mtime == configPathAppliedAt) return
-			if (path == null) {
-				// No imported config yet — rclone falls back to an empty default config.
-				configPathApplied = null
-				configPathAppliedAt = -1L
-				return
-			}
-			val input = "{\"main\":{\"Config\":\"$path\"}}"
+			val path = configManager.configFilePath
+			if (path == configPathApplied) return
+			val input = "{\"path\":\"$path\"}"
 			try {
 				val rpcMethod = clazz.getMethod("rcloneRPC", String::class.java, String::class.java)
-				val result = rpcMethod.invoke(null, "options/set", input) as String
+				val result = rpcMethod.invoke(null, "config/setpath", input) as String
 				configPathApplied = path
-				configPathAppliedAt = mtime
-				Log.i(TAG, "Applied rclone config path: $path -> $result")
+				Log.i(TAG, "Applied rclone config path via config/setpath: $path -> $result")
 			} catch (e: Exception) {
 				Log.e(TAG, "Failed to apply rclone config path: ${e.message}")
 			}
@@ -300,7 +293,6 @@ class RcloneController
 						finalizeMethod.invoke(null)
 						initialized = false
 						configPathApplied = null
-						configPathAppliedAt = -1L
 						Log.i(TAG, "rclone finalized")
 					} catch (e: Exception) {
 						Log.w(TAG, "rclone finalize failed (non-fatal): ${e.message}")
