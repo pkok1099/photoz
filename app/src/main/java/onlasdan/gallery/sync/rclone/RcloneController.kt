@@ -377,7 +377,98 @@ class RcloneController
                                 }
                         }
 
-                /**
+                                // ─── Additional rclone RC operations (mkdir, move, copydir, rmdir, purge, hash) ──
+                // The gomobile JNI rcloneRPC(method, input) supports ALL rclone RC operations.
+                // These wrappers add folder management + file integrity verification.
+
+                suspend fun createDir(remotePath: String): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (remote, path) = parseRemotePath(remotePath)
+                                        val input = """{"fs":"$remote:","remote":"$path"}"""
+                                        val result = rpc("operations/mkdir", input)
+                                        if (hasRpcError(result)) Result.failure(IOException("rclone mkdir error: $result"))
+                                        else Result.success(Unit)
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+                suspend fun moveFile(srcRemotePath: String, dstRemotePath: String): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (srcRemote, srcPath) = parseRemotePath(srcRemotePath)
+                                        val (dstRemote, dstPath) = parseRemotePath(dstRemotePath)
+                                        val input = """{"srcFs":"$srcRemote:","srcRemote":"$srcPath","dstFs":"$dstRemote:","dstRemote":"$dstPath"}"""
+                                        val result = rpc("operations/movefile", input)
+                                        if (hasRpcError(result)) Result.failure(IOException("rclone movefile error: $result"))
+                                        else Result.success(Unit)
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+                suspend fun moveDir(srcRemotePath: String, dstRemotePath: String): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (srcRemote, srcPath) = parseRemotePath(srcRemotePath)
+                                        val (dstRemote, dstPath) = parseRemotePath(dstRemotePath)
+                                        val input = """{"srcFs":"$srcRemote:","srcRemote":"$srcPath","dstFs":"$dstRemote:","dstRemote":"$dstPath"}"""
+                                        val result = rpc("operations/movedir", input)
+                                        if (hasRpcError(result)) Result.failure(IOException("rclone movedir error: $result"))
+                                        else Result.success(Unit)
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+                suspend fun copyDir(srcRemotePath: String, dstRemotePath: String): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (srcRemote, srcPath) = parseRemotePath(srcRemotePath)
+                                        val (dstRemote, dstPath) = parseRemotePath(dstRemotePath)
+                                        val input = """{"srcFs":"$srcRemote:","srcRemote":"$srcPath","dstFs":"$dstRemote:","dstRemote":"$dstPath"}"""
+                                        val result = rpc("operations/copydir", input)
+                                        if (hasRpcError(result)) Result.failure(IOException("rclone copydir error: $result"))
+                                        else Result.success(Unit)
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+                suspend fun removeDir(remotePath: String, recursive: Boolean = true): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (remote, path) = parseRemotePath(remotePath)
+                                        val method = if (recursive) "operations/purge" else "operations/rmdir"
+                                        val input = """{"fs":"$remote:","remote":"$path"}"""
+                                        val result = rpc(method, input)
+                                        if (hasRpcError(result)) Result.failure(IOException("rclone $method error: $result"))
+                                        else Result.success(Unit)
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+                suspend fun hashFile(remotePath: String, hashType: String = "sha256"): Result<String?> =
+                        withContext(Dispatchers.IO) {
+                                try {
+                                        val (remote, path) = parseRemotePath(remotePath)
+                                        val input = """{"fs":"$remote:","remote":"$path","hashType":"$hashType"}"""
+                                        val result = rpc("operations/hash", input)
+                                        if (hasRpcError(result)) {
+                                                Result.failure(IOException("rclone hash error: $result"))
+                                        } else {
+                                                val json = JSONObject(result)
+                                                val hash = if (json.isNull("hash")) null else json.optString("hash", null)
+                                                Result.success(hash)
+                                        }
+                                } catch (e: Exception) {
+                                        Result.failure(e)
+                                }
+                        }
+
+/**
                  * Stop rclone (finalize). Safe to call multiple times.
                  */
                 suspend fun stop() {
@@ -441,7 +532,12 @@ class RcloneController
                                         val obj = arr.optJSONObject(i) ?: return@mapNotNull null
                                         val name = obj.optString("Name")
                                         if (name.isEmpty()) null
-                                        else RemoteFileInfo(name = name, size = obj.optLong("Size", 0L))
+                                        else RemoteFileInfo(
+                                                name = name,
+                                                size = obj.optLong("Size", 0L),
+                                                isDir = obj.optBoolean("IsDir", false),
+                                                mimeType = if (obj.isNull("MimeType")) null else obj.optString("MimeType", null),
+                                        )
                                 }
                         } catch (e: Exception) {
                                 Timber.w(e, "parseListResult: JSON parse failed")
@@ -456,4 +552,8 @@ class RcloneController
 data class RemoteFileInfo(
         val name: String,
         val size: Long,
+        /** True if this entry is a directory. F-SYNC: needed to distinguish files from folders for move/delete operations. */
+        val isDir: Boolean = false,
+        /** MIME type from rclone (e.g. "image/jpeg"). Null for directories. */
+        val mimeType: String? = null,
 )
