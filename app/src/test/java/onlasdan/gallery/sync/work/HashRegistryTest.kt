@@ -63,7 +63,7 @@ class HashRegistryTest {
 	private val sessionRepository: SessionRepository by lazy { mockk(relaxed = true) }
 
 	private val registry: HashRegistry by lazy {
-		HashRegistry(app, rcloneController, dao, sessionRepository)
+		HashRegistry(app, rcloneController, dao, sessionRepository, mockk<onlasdan.gallery.model.database.dao.PhotoDao>(relaxed = true))
 	}
 
 	/** Mock VMK — fresh random 256-bit AES key per test. */

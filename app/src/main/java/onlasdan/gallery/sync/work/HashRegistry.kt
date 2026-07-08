@@ -111,6 +111,12 @@ class HashRegistry
                 // tombstones + compacted state to the remote. Already Hilt-provided
                 // (SessionRepositoryImpl has @Inject constructor + @Singleton).
                 private val sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
+                // Anti-dedup fix: needed to check if any live Photo row still references
+                // a content_hash before tombstoning the registry entry. Without this,
+                // deleting one of two photos with the same content would tombstone the
+                // hash → gcOriginals would delete the remote file → the other photo
+                // (symlink) becomes broken.
+                private val photoDao: onlasdan.gallery.model.database.dao.PhotoDao,
         ) {
                 companion object {
                         private const val TAG = "RcloneDiag"
@@ -792,6 +798,19 @@ class HashRegistry
                                         diag("softDelete: $contentHash already tombstoned — skipping")
                                         return@withContext
                                 }
+
+					// Anti-dedup fix: check if any OTHER live Photo row still references
+					// this content_hash. If yes, do NOT tombstone — the remote original
+					// is still needed by the other photo (e.g. a symlink in another album).
+					try {
+						val liveCount = photoDao.countLiveByContentHash(contentHash)
+						if (liveCount > 1) {
+							diag("softDelete: $contentHash still has $liveCount live photo(s) — skipping tombstone (anti-dedup)")
+							return@withContext
+						}
+					} catch (e: Exception) {
+						diag("softDelete: countLiveByContentHash FAILED — proceeding with tombstone (non-fatal): ${e.message}", e)
+					}
                                 val tombstoned = existing.copy(deleted = true)
                                 try {
                                         dao.upsert(tombstoned)
@@ -1137,6 +1156,20 @@ class HashRegistry
 
                                 var deleted = 0
                                 for (entry in tombstoned) {
+                                	// Anti-dedup: double-check no live Photo row still references this hash.
+                                	// The softDelete check should have prevented the tombstone, but a race
+                                	// could occur (photo restored from trash after tombstone but before GC).
+                                	try {
+                                		val liveCount = photoDao.countLiveByContentHash(entry.contentHash)
+                                		if (liveCount > 0) {
+                                			diag("gcOriginals: ${entry.contentHash} still has $liveCount live photo(s) — un-tombstoning (anti-dedup safety)")
+                                			dao.upsert(entry.copy(deleted = false))
+                                			continue
+                                		}
+                                	} catch (e: Exception) {
+                                		diag("gcOriginals: countLiveByContentHash FAILED for ${entry.contentHash} — skipping GC (safety): ${e.message}")
+                                		continue
+                                	}
                                         val origRemotePath =
                                                 "$remote:${SyncConfig.remoteOriginalsDir}/${entry.uuid}${SyncConfig.ORIGINAL_FILE_SUFFIX}"
                                         try {
@@ -1214,50 +1247,50 @@ class HashRegistry
                  * layer). Tolerant of field re-ordering and missing optional fields.
                  */
                 private fun parseRegistryJson(json: String): List<HashRegistryEntry> {
-			// F-SYNC-007: use JSONObject/JSONArray instead of regex — handles
-			// escaped quotes in filenames correctly (regex truncated at first \").
-			val entries = mutableListOf<HashRegistryEntry>()
-			try {
-				val root = org.json.JSONObject(json)
-				val arr = root.optJSONArray("entries") ?: return entries
-				for (i in 0 until arr.length()) {
-					val obj = arr.optJSONObject(i) ?: continue
-					try {
-						val hash = obj.optString("content_hash")
-						val uuid = obj.optString("uuid")
-						if (hash.isEmpty() || uuid.isEmpty()) continue
-						val filename = obj.optString("filename", "")
-						val albumPath = if (obj.isNull("album_path")) null else obj.optString("album_path", null)
-						val size = obj.optLong("size", 0L)
-						val type = obj.optString("type", "JPEG")
-						val thumbPack = if (obj.isNull("thumbnail_pack")) null else obj.optString("thumbnail_pack", null)
-						val thumbOffset = obj.optLong("thumbnail_offset", 0L)
-						val thumbLength = obj.optLong("thumbnail_length", 0L)
-						val deleted = obj.optBoolean("deleted", false)
-						entries.add(
-							HashRegistryEntry(
-								contentHash = hash,
-								uuid = uuid,
-								filename = filename,
-								albumPath = albumPath,
-								size = size,
-								type = type,
-								thumbnailPack = thumbPack,
-								thumbnailOffset = thumbOffset,
-								thumbnailLength = thumbLength,
-								deleted = deleted,
-								vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
-							),
-						)
-					} catch (e: Exception) {
-						diag("parseRegistryJson: failed to parse entry: ${e.message}")
-					}
-			}
-			} catch (e: Exception) {
-				diag("parseRegistryJson: FAILED to parse root JSON: ${e.message}")
-			}
-			return entries
-		}
+                        // F-SYNC-007: use JSONObject/JSONArray instead of regex — handles
+                        // escaped quotes in filenames correctly (regex truncated at first \").
+                        val entries = mutableListOf<HashRegistryEntry>()
+                        try {
+                                val root = org.json.JSONObject(json)
+                                val arr = root.optJSONArray("entries") ?: return entries
+                                for (i in 0 until arr.length()) {
+                                        val obj = arr.optJSONObject(i) ?: continue
+                                        try {
+                                                val hash = obj.optString("content_hash")
+                                                val uuid = obj.optString("uuid")
+                                                if (hash.isEmpty() || uuid.isEmpty()) continue
+                                                val filename = obj.optString("filename", "")
+                                                val albumPath = if (obj.isNull("album_path")) null else obj.optString("album_path", null)
+                                                val size = obj.optLong("size", 0L)
+                                                val type = obj.optString("type", "JPEG")
+                                                val thumbPack = if (obj.isNull("thumbnail_pack")) null else obj.optString("thumbnail_pack", null)
+                                                val thumbOffset = obj.optLong("thumbnail_offset", 0L)
+                                                val thumbLength = obj.optLong("thumbnail_length", 0L)
+                                                val deleted = obj.optBoolean("deleted", false)
+                                                entries.add(
+                                                        HashRegistryEntry(
+                                                                contentHash = hash,
+                                                                uuid = uuid,
+                                                                filename = filename,
+                                                                albumPath = albumPath,
+                                                                size = size,
+                                                                type = type,
+                                                                thumbnailPack = thumbPack,
+                                                                thumbnailOffset = thumbOffset,
+                                                                thumbnailLength = thumbLength,
+                                                                deleted = deleted,
+                                                                vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
+                                                        ),
+                                                )
+                                        } catch (e: Exception) {
+                                                diag("parseRegistryJson: failed to parse entry: ${e.message}")
+                                        }
+                        }
+                        } catch (e: Exception) {
+                                diag("parseRegistryJson: FAILED to parse root JSON: ${e.message}")
+                        }
+                        return entries
+                }
 
                 /**
                  * Serialize entries to JSON.
