@@ -89,11 +89,7 @@ class RestoreBackupV1
 
 				val encryptedZipInput =
 					legacyGcmCryptoEngine.createDecryptStream(stream, session)
-				if (encryptedZipInput == null) {
-					ze = stream.nextEntry
-					continue
-				}
-
+				
 				val photoBytes =
 					suspendCoroutine {
 						it.resume(encryptedZipInput.readBytes())

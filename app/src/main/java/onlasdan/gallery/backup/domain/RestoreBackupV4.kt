@@ -96,13 +96,9 @@ class RestoreBackupV4
 				}
 
 				val encryptedZipInput = cryptoEngine.createDecryptStream(stream, session)
-				val internalOutputStream = vaultFileStorage.openEncryptedOutput(ze.name)
+				val internalOutputStream = vaultFileStorage.openEncryptedOutput(ze.name)!!
 
-				if (encryptedZipInput == null || internalOutputStream == null) {
-					ze = stream.nextEntry
-					continue
-				}
-
+				
 				io
 					.copy(encryptedZipInput, internalOutputStream)
 					.onFailure {

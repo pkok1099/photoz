@@ -344,7 +344,7 @@ class VaultService
                 }
 
                 suspend fun reset(type: VaultProtectionType) {
-                        vaultProtectionRepository.removeProtection(type)
+                        vaultProtectionRepository.removeAllProtectionsOfType(type)
 
                         when (type) {
                                 VaultProtectionType.Password -> passwordProtectionHandler.reset()

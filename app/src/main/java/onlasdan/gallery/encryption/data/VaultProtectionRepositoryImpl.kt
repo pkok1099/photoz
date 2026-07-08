@@ -48,7 +48,7 @@ class VaultProtectionRepositoryImpl
 				dao.insert(protection.toData())
 			}
 
-		override suspend fun removeProtection(type: VaultProtectionType) =
+		override suspend fun removeAllProtectionsOfType(type: VaultProtectionType) =
 			withContext(IO) {
 				dao.delete(type)
 			}

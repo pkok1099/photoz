@@ -103,13 +103,9 @@ class RestoreBackupV3
 							oldValue = LEGACY_PHOTOK_FILE_EXTENSION,
 							newValue = PHOTOK_FILE_EXTENSION,
 						),
-					)
+					)!!
 
-				if (encryptedZipInput == null || internalOutputStream == null) {
-					ze = stream.nextEntry
-					continue
-				}
-
+				
 				io
 					.copy(encryptedZipInput, internalOutputStream)
 					.onFailure {

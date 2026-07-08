@@ -36,6 +36,7 @@ import onlasdan.gallery.encryption.data.VaultProtectionDao
 import onlasdan.gallery.gallery.ui.importing.SharedUrisStore
 import onlasdan.gallery.model.database.DATABASE_NAME
 import onlasdan.gallery.model.database.MIGRATION_15_16
+import onlasdan.gallery.model.database.MIGRATION_16_17
 import onlasdan.gallery.model.database.PhotoZDatabase
 import onlasdan.gallery.settings.data.Config
 import timber.log.Timber
@@ -49,153 +50,153 @@ import timber.log.Timber
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-	/**
-	 * Plaintext bootstrap database — Singleton.
-	 *
-	 * Holds only [onlasdan.gallery.encryption.data.VaultProtectionTable]
-	 * (wrapped VMKs + KDF params). Read by VaultService BEFORE the
-	 * encrypted [PhotoZDatabase] can be opened — see
-	 * [onlasdan.gallery.encryption.data.BootstrapDatabase] for the
-	 * chicken-and-egg explanation.
-	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
-	 */
-	@Provides
-	@Singleton
-	fun provideBootstrapDatabase(
-		@ApplicationContext app: Context,
-	): BootstrapDatabase =
-		Room
-			.databaseBuilder(
-				app,
-				BootstrapDatabase::class.java,
-				BootstrapDatabase.DATABASE_NAME,
-			)
-			// Plaintext — must be readable pre-unlock. No SQLCipher.
-			.build()
+        /**
+         * Plaintext bootstrap database — Singleton.
+         *
+         * Holds only [onlasdan.gallery.encryption.data.VaultProtectionTable]
+         * (wrapped VMKs + KDF params). Read by VaultService BEFORE the
+         * encrypted [PhotoZDatabase] can be opened — see
+         * [onlasdan.gallery.encryption.data.BootstrapDatabase] for the
+         * chicken-and-egg explanation.
+         *
+         * @since v16 — Sprint 3 / TODO #6 SQLCipher
+         */
+        @Provides
+        @Singleton
+        fun provideBootstrapDatabase(
+                @ApplicationContext app: Context,
+        ): BootstrapDatabase =
+                Room
+                        .databaseBuilder(
+                                app,
+                                BootstrapDatabase::class.java,
+                                BootstrapDatabase.DATABASE_NAME,
+                        )
+                        // Plaintext — must be readable pre-unlock. No SQLCipher.
+                        .build()
 
-	/**
-	 * VaultProtectionDao — sourced from the plaintext [BootstrapDatabase].
-	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher (was previously sourced
-	 *   from PhotoZDatabase)
-	 */
-	@Provides
-	@Singleton
-	fun provideVaultProtectionDao(db: BootstrapDatabase): VaultProtectionDao = db.getVaultProtectionDao()
+        /**
+         * VaultProtectionDao — sourced from the plaintext [BootstrapDatabase].
+         *
+         * @since v16 — Sprint 3 / TODO #6 SQLCipher (was previously sourced
+         *   from PhotoZDatabase)
+         */
+        @Provides
+        @Singleton
+        fun provideVaultProtectionDao(db: BootstrapDatabase): VaultProtectionDao = db.getVaultProtectionDao()
 
-	/**
-	 * SQLCipher-encrypted main Room database — Singleton.
-	 *
-	 * ## Sprint 3 / TODO #6 SQLCipher
-	 *
-	 * The DB is encrypted with a 32-byte passphrase backed by the Android
-	 * Keystore (see [SqlCipherKeyProvider]). The key:
-	 *  - Is generated on first run and persisted in hardware-isolated
-	 *    Keystore (StrongBox if available, TEE fallback).
-	 *  - Never leaves Keystore in plaintext form (only the encoded bytes
-	 *    are read out, briefly, to pass to SQLCipher).
-	 *  - Persists across app restarts and vault lock/unlock cycles.
-	 *
-	 * The DB stays open across vault switches — multi-vault data
-	 * separation is enforced by the `vault_id` column on every
-	 * photo/album/hash_registry row (Sprint 2 / M7), not by the DB
-	 * encryption. This is a deliberate trade-off: we lose "vault lock =
-	 * DB lock" semantics (the original design called for VMK-derived DB
-	 * keys) but gain the ability to run background DB queries (e.g.
-	 * CleanupDeadFilesUseCase at app start, PhotoSyncWorker in
-	 * background) without requiring vault unlock.
-	 *
-	 * ## Migration
-	 *
-	 * The one-time plaintext → encrypted migration is handled by
-	 * [SqlCipherMigrationHelper.migrateIfNecessary], called BEFORE
-	 * `Room.databaseBuilder(...).build()` so that the plaintext file is
-	 * renamed out of the way before SQLCipher tries to open it.
-	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
-	 */
-	@Provides
-	@Singleton
-	fun providePhotoZDatabase(
-		@ApplicationContext app: Context,
-		sqlCipherKeyProvider: SqlCipherKeyProvider,
-		migrationHelper: SqlCipherMigrationHelper,
-	): PhotoZDatabase {
-		// Sprint 8 fix: SQLCipher 4.9.0 (was 4.5.4 which had 4KB page
-		// alignment — crashes on Android 16 with 16KB page size requirement).
-		//
-		// We load the library here instead of BaseApplication init to ensure
-		// it happens within the Hilt dependency graph where we can log
-		// failures better, and to avoid crashes in early app initialization.
-		try {
-			android.util.Log.i("AppModule", "Loading SQLCipher native library...")
-			System.loadLibrary("sqlcipher")
-			android.util.Log.i("AppModule", "SQLCipher native library loaded successfully.")
-		} catch (e: UnsatisfiedLinkError) {
-			android.util.Log.e("AppModule", "CRITICAL: FAILED to load sqlcipher: ${e.message}")
-		} catch (e: Exception) {
-			android.util.Log.e("AppModule", "CRITICAL: Unexpected error loading sqlcipher: ${e.message}")
-		}
+        /**
+         * SQLCipher-encrypted main Room database — Singleton.
+         *
+         * ## Sprint 3 / TODO #6 SQLCipher
+         *
+         * The DB is encrypted with a 32-byte passphrase backed by the Android
+         * Keystore (see [SqlCipherKeyProvider]). The key:
+         *  - Is generated on first run and persisted in hardware-isolated
+         *    Keystore (StrongBox if available, TEE fallback).
+         *  - Never leaves Keystore in plaintext form (only the encoded bytes
+         *    are read out, briefly, to pass to SQLCipher).
+         *  - Persists across app restarts and vault lock/unlock cycles.
+         *
+         * The DB stays open across vault switches — multi-vault data
+         * separation is enforced by the `vault_id` column on every
+         * photo/album/hash_registry row (Sprint 2 / M7), not by the DB
+         * encryption. This is a deliberate trade-off: we lose "vault lock =
+         * DB lock" semantics (the original design called for VMK-derived DB
+         * keys) but gain the ability to run background DB queries (e.g.
+         * CleanupDeadFilesUseCase at app start, PhotoSyncWorker in
+         * background) without requiring vault unlock.
+         *
+         * ## Migration
+         *
+         * The one-time plaintext → encrypted migration is handled by
+         * [SqlCipherMigrationHelper.migrateIfNecessary], called BEFORE
+         * `Room.databaseBuilder(...).build()` so that the plaintext file is
+         * renamed out of the way before SQLCipher tries to open it.
+         *
+         * @since v16 — Sprint 3 / TODO #6 SQLCipher
+         */
+        @Provides
+        @Singleton
+        fun providePhotoZDatabase(
+                @ApplicationContext app: Context,
+                sqlCipherKeyProvider: SqlCipherKeyProvider,
+                migrationHelper: SqlCipherMigrationHelper,
+        ): PhotoZDatabase {
+                // Sprint 8 fix: SQLCipher 4.9.0 (was 4.5.4 which had 4KB page
+                // alignment — crashes on Android 16 with 16KB page size requirement).
+                //
+                // We load the library here instead of BaseApplication init to ensure
+                // it happens within the Hilt dependency graph where we can log
+                // failures better, and to avoid crashes in early app initialization.
+                try {
+                        android.util.Log.i("AppModule", "Loading SQLCipher native library...")
+                        System.loadLibrary("sqlcipher")
+                        android.util.Log.i("AppModule", "SQLCipher native library loaded successfully.")
+                } catch (e: UnsatisfiedLinkError) {
+                        android.util.Log.e("AppModule", "CRITICAL: FAILED to load sqlcipher: ${e.message}")
+                } catch (e: Exception) {
+                        android.util.Log.e("AppModule", "CRITICAL: Unexpected error loading sqlcipher: ${e.message}")
+                }
 
-		if (!migrationHelper.migrateIfNecessary()) {
-			Timber.e("SQLCipher migration failed — DB will likely fail to open.")
-		}
+                if (!migrationHelper.migrateIfNecessary()) {
+                        Timber.e("SQLCipher migration failed — DB will likely fail to open.")
+                }
 
-		val passphrase = sqlCipherKeyProvider.getOrCreatePassphrase()
-		val factory = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(
-			passphrase, null, false,
-		)
+                val passphrase = sqlCipherKeyProvider.getOrCreatePassphrase()
+                val factory = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(
+                        passphrase, null, false,
+                )
 
-		return Room.databaseBuilder(
-			app,
-			PhotoZDatabase::class.java,
-			DATABASE_NAME,
-		)
-			.openHelperFactory(factory)
-			.addMigrations(MIGRATION_15_16)
-			.build()
-	}
+                return Room.databaseBuilder(
+                        app,
+                        PhotoZDatabase::class.java,
+                        DATABASE_NAME,
+                )
+                        .openHelperFactory(factory)
+                        .addMigrations(MIGRATION_15_16, MIGRATION_16_17)
+                        .build()
+        }
 
-	@Provides
-	@Singleton
-	fun providePhotoDao(database: PhotoZDatabase) = database.getPhotoDao()
+        @Provides
+        @Singleton
+        fun providePhotoDao(database: PhotoZDatabase) = database.getPhotoDao()
 
-	@Provides
-	@Singleton
-	fun provideAlbumDao(database: PhotoZDatabase) = database.getAlbumDao()
+        @Provides
+        @Singleton
+        fun provideAlbumDao(database: PhotoZDatabase) = database.getAlbumDao()
 
-	@Provides
-	@Singleton
-	fun provideConfig(
-		@ApplicationContext app: Context,
-	) = Config(app)
+        @Provides
+        @Singleton
+        fun provideConfig(
+                @ApplicationContext app: Context,
+        ) = Config(app)
 
-	@Provides
-	@Singleton
-	fun provideSharedUrisStore() = SharedUrisStore()
+        @Provides
+        @Singleton
+        fun provideSharedUrisStore() = SharedUrisStore()
 
-	@Provides
-	fun provideResources(
-		@ApplicationContext context: Context,
-	): Resources = context.resources
+        @Provides
+        fun provideResources(
+                @ApplicationContext context: Context,
+        ): Resources = context.resources
 
-	@Provides
-	fun provideGson(): Gson =
-		GsonBuilder()
-			.setPrettyPrinting()
-			.create()
+        @Provides
+        fun provideGson(): Gson =
+                GsonBuilder()
+                        .setPrettyPrinting()
+                        .create()
 
-	@Provides
-	fun provideAppScope() = CoroutineScope(Dispatchers.Default)
+        @Provides
+        fun provideAppScope() = CoroutineScope(Dispatchers.Default)
 
-	/**
-	 * Sprint 8 / (roadmap #15) — TFLite tag extractor temporarily disabled
-	 * for startup crash debugging. Using StubTagExtractor instead.
-	 * @since Sprint 8 — TFLite disabled for debugging
-	 */
-	@Provides
-	@Singleton
-	fun provideTagExtractor(): onlasdan.gallery.model.io.TagExtractor =
-		onlasdan.gallery.model.io.StubTagExtractor()
+        /**
+         * Sprint 8 / (roadmap #15) — TFLite tag extractor temporarily disabled
+         * for startup crash debugging. Using StubTagExtractor instead.
+         * @since Sprint 8 — TFLite disabled for debugging
+         */
+        @Provides
+        @Singleton
+        fun provideTagExtractor(): onlasdan.gallery.model.io.TagExtractor =
+                onlasdan.gallery.model.io.StubTagExtractor()
 }

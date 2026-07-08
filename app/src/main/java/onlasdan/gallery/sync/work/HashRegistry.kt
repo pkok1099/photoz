@@ -1192,93 +1192,50 @@ class HashRegistry
                  * layer). Tolerant of field re-ordering and missing optional fields.
                  */
                 private fun parseRegistryJson(json: String): List<HashRegistryEntry> {
-                        val entries = mutableListOf<HashRegistryEntry>()
-                        // Match each `{...}` block that contains a "content_hash" key. The [^{}]*]
-                        // inner class prevents the regex from greedily spanning multiple entries
-                        // (entries themselves never contain nested objects).
-                        val entryPattern = Regex("""\{[^{}]*"content_hash"\s*:\s*"([^"]+)"[^{}]*\}""")
-                        for (match in entryPattern.findAll(json)) {
-                                val entryJson = match.value
-                                try {
-                                        val hash =
-                                                Regex("\"content_hash\"\\s*:\\s*\"([^\"]+)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1) ?: continue
-                                        val uuid =
-                                                Regex("\"uuid\"\\s*:\\s*\"([^\"]+)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1) ?: continue
-                                        val filename =
-                                                Regex("\"filename\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.let { unescapeJson(it) } ?: ""
-                                        val albumPath =
-                                                Regex("\"album_path\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.let { unescapeJson(it) }
-                                        val size =
-                                                Regex("\"size\"\\s*:\\s*(\\d+)")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.toLongOrNull() ?: 0L
-                                        val type =
-                                                Regex("\"type\"\\s*:\\s*\"([^\"]+)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1) ?: "JPEG"
-                                        val thumbPack =
-                                                Regex("\"thumbnail_pack\"\\s*:\\s*\"([^\"]+)\"")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                        val thumbOffset =
-                                                Regex("\"thumbnail_offset\"\\s*:\\s*(\\d+)")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.toLongOrNull() ?: 0L
-                                        val thumbLength =
-                                                Regex("\"thumbnail_length\"\\s*:\\s*(\\d+)")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.toLongOrNull() ?: 0L
-                                        val deleted =
-                                                Regex("\"deleted\"\\s*:\\s*(true|false)")
-                                                        .find(entryJson)
-                                                        ?.groupValues
-                                                        ?.get(1)
-                                                        ?.toBoolean() ?: false
-                                        entries.add(
-                                                HashRegistryEntry(
-                                                        contentHash = hash,
-                                                        uuid = uuid,
-                                                        filename = filename,
-                                                        albumPath = albumPath,
-                                                        size = size,
-                                                        type = type,
-                                                        thumbnailPack = thumbPack,
-                                                        thumbnailOffset = thumbOffset,
-                                                        thumbnailLength = thumbLength,
-                                                        deleted = deleted,
-                                                        // Sprint 2 / M7 — tag downloaded entries with the
-                                                        // syncing vault's vault_id (the registry on the remote
-                                                        // only ever contains the syncing vault's entries).
-                                                        vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),),
-                                        )
-                                } catch (e: Exception) {
-                                        diag("parseRegistryJson: failed to parse entry: ${e.message}")
-                                }
-                        }
-                        return entries
-                }
+			// F-SYNC-007: use JSONObject/JSONArray instead of regex — handles
+			// escaped quotes in filenames correctly (regex truncated at first \").
+			val entries = mutableListOf<HashRegistryEntry>()
+			try {
+				val root = org.json.JSONObject(json)
+				val arr = root.optJSONArray("entries") ?: return entries
+				for (i in 0 until arr.length()) {
+					val obj = arr.optJSONObject(i) ?: continue
+					try {
+						val hash = obj.optString("content_hash")
+						val uuid = obj.optString("uuid")
+						if (hash.isEmpty() || uuid.isEmpty()) continue
+						val filename = obj.optString("filename", "")
+						val albumPath = if (obj.isNull("album_path")) null else obj.optString("album_path", null)
+						val size = obj.optLong("size", 0L)
+						val type = obj.optString("type", "JPEG")
+						val thumbPack = if (obj.isNull("thumbnail_pack")) null else obj.optString("thumbnail_pack", null)
+						val thumbOffset = obj.optLong("thumbnail_offset", 0L)
+						val thumbLength = obj.optLong("thumbnail_length", 0L)
+						val deleted = obj.optBoolean("deleted", false)
+						entries.add(
+							HashRegistryEntry(
+								contentHash = hash,
+								uuid = uuid,
+								filename = filename,
+								albumPath = albumPath,
+								size = size,
+								type = type,
+								thumbnailPack = thumbPack,
+								thumbnailOffset = thumbOffset,
+								thumbnailLength = thumbLength,
+								deleted = deleted,
+								vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
+							),
+						)
+					} catch (e: Exception) {
+						diag("parseRegistryJson: failed to parse entry: ${e.message}")
+					}
+			}
+			} catch (e: Exception) {
+				diag("parseRegistryJson: FAILED to parse root JSON: ${e.message}")
+			}
+			return entries
+		}
 
                 /**
                  * Serialize entries to JSON.

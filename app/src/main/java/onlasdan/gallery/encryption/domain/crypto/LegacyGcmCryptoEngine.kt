@@ -20,6 +20,7 @@ import okio.IOException
 import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.encryption.domain.models.LegacySession
 import onlasdan.gallery.encryption.domain.models.Session
+import onlasdan.gallery.encryption.domain.crypto.CorruptHeaderException
 import timber.log.Timber
 import java.io.InputStream
 import java.io.OutputStream
@@ -35,7 +36,7 @@ class LegacyGcmCryptoEngine
 			output: OutputStream,
 			session: Session,
 			useGcm: Boolean,
-		): OutputStream? {
+		): OutputStream {
 			require(session is LegacySession)
 
 			return try {
@@ -47,14 +48,14 @@ class LegacyGcmCryptoEngine
 				CipherOutputStream(output, cipher)
 			} catch (e: Exception) {
 				Timber.e("Error creating CipherOutputStream: $e")
-				return null
+				throw CorruptHeaderException("Failed to create stream", e)
 			}
 		}
 
 		override fun createDecryptStream(
 			input: InputStream,
 			session: Session,
-		): InputStream? {
+		): InputStream {
 			require(session is LegacySession)
 
 			return try {
@@ -66,7 +67,7 @@ class LegacyGcmCryptoEngine
 				CipherInputStream(input, cipher)
 			} catch (e: IOException) {
 				Timber.e("Error creating CipherInputStream: $e")
-				return null
+				throw CorruptHeaderException("Failed to create stream", e)
 			}
 		}
 	}

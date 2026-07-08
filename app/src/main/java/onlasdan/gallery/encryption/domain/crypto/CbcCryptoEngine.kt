@@ -30,6 +30,23 @@ import javax.crypto.CipherOutputStream
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.inject.Inject
+import java.io.IOException
+
+/**
+ * F-ENC-024: Typed exceptions for CbcCryptoEngine error paths.
+ * Previously these returned null, which was ambiguous (could mean wrong key,
+ * corrupt header, IO error, unsupported version, etc.).
+ */
+
+/** Thrown when the version byte is not recognized (1, 2, 3, or 4). */
+class InvalidVersionByteException(version: Int) : IOException("Invalid encryption version byte: 0x${version.toString(16)} (supported: 0x01-0x04)")
+
+/** Thrown when the file header is truncated or malformed. */
+class CorruptHeaderException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+/** Thrown when the cipher algorithm in the params is unsupported. */
+class UnsupportedAlgorithmException(alg: String) : IOException("Unsupported cipher algorithm: $alg")
+
 
 /**
  * Hybrid CBC + GCM crypto engine — the single injected [CryptoEngine] for PhotoZ.
@@ -59,7 +76,7 @@ class CbcCryptoEngine
 			output: OutputStream,
 			session: Session,
 			useGcm: Boolean,
-		): OutputStream? {
+		): OutputStream {
 			require(session is VaultSession)
 
 			try {
@@ -91,15 +108,15 @@ class CbcCryptoEngine
 					return CipherOutputStream(output, cipher)
 				}
 			} catch (e: Exception) {
-				Timber.e("Error creating CipherOutputStream: $e")
-				return null
+				Timber.e(e, "Error creating CipherOutputStream")
+				throw CorruptHeaderException("Failed to create encrypt stream: ${e.message}", e)
 			}
 		}
 
 		override fun createDecryptStream(
 			input: InputStream,
 			session: Session,
-		): InputStream? {
+		): InputStream {
 			require(session is VaultSession)
 
 			try {
@@ -156,8 +173,8 @@ class CbcCryptoEngine
 					}
 				}
 			} catch (e: Exception) {
-				Timber.e("Error creating CipherInputStream: $e")
-				return null
+				Timber.e(e, "Error creating CipherInputStream")
+				throw CorruptHeaderException("Failed to create decrypt stream: ${e.message}", e)
 			}
 		}
 	}

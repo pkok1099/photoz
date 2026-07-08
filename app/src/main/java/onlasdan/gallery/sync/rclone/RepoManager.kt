@@ -1912,86 +1912,60 @@ class RepoManager
 		 * @since key-escrow — paired with [uploadRecoveryPhraseEscrow]
 		 */
 		private fun parseVaultProtection(json: String): VaultProtection? {
-			return try {
-				val id = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val typeStr = Regex("\"type\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val wrappedVmkB64 =
-					Regex("\"wrappedVMK\"\\s*:\\s*\"([^\"]+)\"")
-						.find(json)
-						?.groupValues
-						?.get(1)
-				// salt is a nullable string — match the quoted form only (null → null).
-				val salt = Regex("\"salt\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val iv = Regex("\"iv\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val kdfStr = Regex("\"kdf\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val kdfIterations =
-					Regex("\"kdfIterations\"\\s*:\\s*(\\d+)")
-						.find(json)
-						?.groupValues
-						?.get(1)
-						?.toIntOrNull()
-				val algorithmStr =
-					Regex("\"algorithm\"\\s*:\\s*\"([^\"]+)\"")
-						.find(json)
-						?.groupValues
-						?.get(1)
-				val keySize =
-					Regex("\"keySize\"\\s*:\\s*(\\d+)")
-						.find(json)
-						?.groupValues
-						?.get(1)
-						?.toIntOrNull()
-				val version =
-					Regex("\"version\"\\s*:\\s*(\\d+)")
-						.find(json)
-						?.groupValues
-						?.get(1)
-						?.toIntOrNull() ?: 1
+		return try {
+			// F-SYNC-007: use JSONObject instead of regex — handles escaped quotes
+			// in base64 strings correctly (regex "([^"]+)" truncated at first \").
+			val obj = org.json.JSONObject(json)
+			val id = obj.optString("id")
+			val typeStr = obj.optString("type")
+			val wrappedVmkB64 = obj.optString("wrappedVMK")
+			val salt = if (obj.isNull("salt")) null else obj.optString("salt", null)
+			val iv = obj.optString("iv")
+			val kdfStr = obj.optString("kdf", null)
+			val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
+			val algorithmStr = obj.optString("algorithm")
+			val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
+			val version = obj.optInt("version", 1)
 
-				if (id == null ||
-					typeStr == null ||
-					wrappedVmkB64 == null ||
-					iv == null ||
-					algorithmStr == null ||
-					keySize == null
-				) {
-					diag("parseVaultProtection: missing required field(s)")
-					return null
-				}
-
-				val type = VaultProtectionType.entries.find { it.name == typeStr }
-				if (type == null) {
-					diag("parseVaultProtection: unknown type=$typeStr")
-					return null
-				}
-				val algorithm = Algorithm.entries.find { it.value == algorithmStr }
-				if (algorithm == null) {
-					diag("parseVaultProtection: unknown algorithm=$algorithmStr")
-					return null
-				}
-				val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
-				val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
-
-				VaultProtection(
-					id = id,
-					type = type,
-					wrappedVMK = wrappedVMK,
-					params =
-						VaultProtectionParams(
-							salt = salt,
-							iv = iv,
-							kdf = kdf,
-							kdfIterations = kdfIterations,
-							algorithm = algorithm,
-							keySize = keySize,
-							version = version,
-						),
-				)
-			} catch (e: Exception) {
-				diag("parseVaultProtection: FAILED ${e.javaClass.name}: ${e.message}", e)
-				null
+			if (id.isEmpty() || typeStr.isEmpty() || wrappedVmkB64.isEmpty() ||
+				iv.isEmpty() || algorithmStr.isEmpty() || keySize == null
+			) {
+				diag("parseVaultProtection: missing required field(s)")
+				return null
 			}
+
+			val type = VaultProtectionType.entries.find { it.name == typeStr }
+			if (type == null) {
+				diag("parseVaultProtection: unknown type=$typeStr")
+				return null
+			}
+			val algorithm = Algorithm.entries.find { it.value == algorithmStr }
+			if (algorithm == null) {
+				diag("parseVaultProtection: unknown algorithm=$algorithmStr")
+				return null
+			}
+			val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
+			val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
+
+			VaultProtection(
+				id = id,
+				type = type,
+				wrappedVMK = wrappedVMK,
+				params = VaultProtectionParams(
+					salt = salt,
+					iv = iv,
+					kdf = kdf,
+					kdfIterations = kdfIterations,
+					algorithm = algorithm,
+					keySize = keySize,
+					version = version,
+				),
+			)
+		} catch (e: Exception) {
+			diag("parseVaultProtection: FAILED ${e.javaClass.name}: ${e.message}", e)
+			null
 		}
+	}
 
 		/**
 		 * Whether this device has a confirmed repo session. This is the gate for gallery access.
@@ -2021,24 +1995,20 @@ class RepoManager
 			}
 
 		private fun parseMarker(json: String): RepoMarker? =
-			try {
-				// Minimal JSON parse — no external dependency
-				val repoId = Regex("\"repo_id\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val created = Regex("\"created\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
-				val version =
-					Regex("\"version\"\\s*:\\s*(\\d+)")
-						.find(json)
-						?.groupValues
-						?.get(1)
-						?.toIntOrNull()
-				if (repoId != null && created != null && version != null) {
-					RepoMarker(repoId, created, version)
-				} else {
-					null
-				}
-			} catch (e: Exception) {
+		try {
+			// F-SYNC-007: use JSONObject instead of regex
+			val obj = org.json.JSONObject(json)
+			val repoId = obj.optString("repo_id")
+			val created = obj.optString("created")
+			val version = obj.optInt("version", -1)
+			if (repoId.isNotEmpty() && created.isNotEmpty() && version >= 0) {
+				RepoMarker(repoId, created, version)
+			} else {
 				null
 			}
+		} catch (e: Exception) {
+			null
+		}
 
 		companion object {
 			const val REPO_DIR = "photoz-backup"

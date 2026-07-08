@@ -47,10 +47,10 @@ interface CryptoEngine {
 		 * be streamed via [AesCbcRandomAccessDataSource] (video originals).
 		 */
 		useGcm: Boolean = true,
-	): OutputStream?
+	): OutputStream
 
 	fun createDecryptStream(
 		input: InputStream,
 		session: Session,
-	): InputStream?
+	): InputStream
 }
