@@ -5,6 +5,11 @@
 Private photo vault for Android with strong on-device encryption and optional
 end-to-end encrypted cloud sync via rclone.
 
+[![Audit Status](https://img.shields.io/badge/Audit-B2%20%2B%20Fixes-brightgreen)](docs/09-audit-summary.md)
+[![Tests](https://img.shields.io/badge/Tests-67%20passing-brightgreen)](docs/07-testing.md)
+[![Build](https://img.shields.io/badge/Build-AGP%209.1%20%2B%20Kotlin%202.4-blue)](docs/08-build-and-deploy.md)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
+
 ## About
 
 PhotoZ is a secure private photo vault for Android that helps you hide photos
@@ -12,9 +17,10 @@ and videos using strong AES-256 encryption. It protects sensitive media in an
 encrypted gallery and keeps your private memories safe on your own device.
 
 All files are encrypted locally with AES-256 (CBC for media bodies, GCM for
-metadata) and only decrypted in memory while you use the app. The cloud-sync
-feature (optional) mirrors the encrypted artifacts to **your own** rclone remote
-— PhotoZ never sees your photos, your password, or your recovery phrase.
+metadata, chunked-GCM for video streaming) and only decrypted in memory while
+you use the app. The cloud-sync feature (optional) mirrors the encrypted
+artifacts to **your own** rclone remote — PhotoZ never sees your photos,
+your password, or your recovery phrase.
 
 PhotoZ is open source, ad-free, and built with a privacy-first philosophy.
 
@@ -25,13 +31,30 @@ PhotoZ is open source, ad-free, and built with a privacy-first philosophy.
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" width="24%" />
 </p>
 
+## Documentation
+
+Full documentation available in [`docs/`](docs/README.md):
+
+| Doc | Description |
+|-----|-------------|
+| [01-architecture.md](docs/01-architecture.md) | App architecture, module layout, DI, navigation |
+| [02-rclone-integration.md](docs/02-rclone-integration.md) | Rclone gomobile JNI — all RC operations |
+| [03-encryption.md](docs/03-encryption.md) | CBC/GCM/chunked-GCM, Argon2id, SQLCipher, key escrow |
+| [04-backup-restore.md](docs/04-backup-restore.md) | Backup V1-V5 format, metadata round-trip |
+| [05-sync-workflow.md](docs/05-sync-workflow.md) | Cloud sync, dedup, multi-vault |
+| [06-database.md](docs/06-database.md) | Room schema v17, migrations, SQLCipher |
+| [07-testing.md](docs/07-testing.md) | Test strategy, 67 tests, patterns |
+| [08-build-and-deploy.md](docs/08-build-and-deploy.md) | Build instructions, CI/CD, release |
+| [09-audit-summary.md](docs/09-audit-summary.md) | Audit B2 summary (72 findings, 59 fixed) |
+| [10-troubleshooting.md](docs/10-troubleshooting.md) | Common issues, debug tips, FAQ |
+
 ## Download
 
 PhotoZ is distributed as APKs from GitHub releases and sideloaded directly.
 
 [<img src="https://raw.githubusercontent.com/andOTP/andOTP/master/assets/badges/get-it-on-github.png"
       alt="Get it on GitHub"
-      height="80">](https://github.com/leonlatsch/Photok/releases/latest)
+      height="80">](https://github.com/pkok1099/photok-sync-fork/releases/latest)
 
 ## Features
 
@@ -46,55 +69,38 @@ PhotoZ is distributed as APKs from GitHub releases and sideloaded directly.
 - Option to hide the app icon (stealth dialer)
 - Automatically delete original files after import
 
+### Encryption (AES-256)
+
+- **AES-CBC** for media bodies (v2 format)
+- **AES-GCM** for metadata (v3 format, single-stream)
+- **Chunked AES-GCM** for video streaming (v4 format — random access + per-chunk integrity)
+- **Argon2id** KDF for new vaults (memory-hard, 2025 standard; PBKDF2 for legacy)
+- **SQLCipher** at-rest DB encryption (key backed by Android Keystore)
+- **Two-layer key escrow** for fresh-install recovery (phrase + password wrap VMK)
+
 ### Cloud sync (optional, rclone-backed)
 
 PhotoZ can mirror your encrypted photos to **your own** cloud storage via
 [rclone](https://rclone.org). The sync feature is end-to-end encrypted: only
 the encrypted artifacts ever leave your device.
 
-- **Encrypted artifacts on the remote** — originals (`<uuid>.crypt`), thumbnails
-  (`<uuid>.crypt.tn`), and video previews (`<uuid>.crypt.vp`) are AES-CBC
-  encrypted with the Vault Master Key (VMK) before upload. An attacker with
-  read access to your remote sees only opaque ciphertext.
-- **Content-hash dedup** — every photo's plaintext bytes are SHA-256'd at import
-  time. Before uploading, the worker consults an encrypted dedup registry
-  (`registry.json.crypt`) on the remote; if the same content-hash is already
-  present under a different UUID, the upload is skipped (saving bandwidth and
-  remote storage). The duplicate photo is still marked `UPLOADED` locally so
-  the gallery's sync badge shows the correct state immediately.
-- **Encrypted dedup registry** — one encrypted JSON artifact
-  (`registry.json.crypt`) on the remote, AES-256-GCM encrypted with the VMK.
-  Contains one entry per content-hash: canonical UUID, filename, album path,
-  size, type, and (optionally) packed-thumbnail location.
-- **Packed thumbnails** — at batch end, thumbnails are concatenated into
-  ≤50 MB packs (`thumbnails/pack-*.pack`) and uploaded as a single file per
-  pack, instead of N individual round-trips for N thumbnails. The per-hash
-  `thumbnail_pack` / `thumbnail_offset` / `thumbnail_length` fields in the
-  registry record each thumbnail's location within its pack. On restore, each
-  pack is downloaded once and thumbnails are extracted by offset+length.
-- **Two-layer key escrow** — fresh-install recovery is supported via two
-  encrypted artifacts on the remote:
-  - `vault-protection/recovery-phrase.json.crypt` (Layer 1): the VMK wrapped
-    with a phrase-derived KEK. The entire JSON is additionally AES-256-GCM
-    encrypted with the VMK so the structure (field names, base64 strings) is
-    hidden from anyone with read access to the remote.
-  - `vault-protection/wrapped-phrase.json.crypt` (Layer 2): the recovery
-    phrase wrapped with a password-derived KEK. Same outer GCM encryption
-    with the VMK.
-  - On a fresh install, the user enters their password (Layer 2 is unwrapped
-    to recover the phrase, which then unwraps the VMK from Layer 1) OR their
-    recovery phrase directly (Layer 1 is unwrapped to recover the VMK).
-  - **Backwards compat**: legacy plaintext `recovery-phrase.json` and
-    `wrapped-phrase.json` files from older repos are still readable by the
-    download path as a fallback.
-- **Restore from cloud** — the gallery's overflow menu has a "Restore from
-  backup" option that re-downloads any missing thumbnails from the cloud
-  (via packs, with legacy individual-thumbnail fallback). Useful when a prior
-  restore was interrupted or when local thumbnails were deleted.
-- **Drive-style notifications** — sync runs as a foreground WorkManager job
-  with a persistent notification showing batch-level progress
-  ("Uploading N of M: filename (size)"), a final batch-complete summary
-  ("{N} photos backed up"), and per-photo failure notifications.
+- **Encrypted artifacts on the remote** — originals, thumbnails, and video
+  previews are AES-encrypted with the Vault Master Key (VMK) before upload
+- **Content-hash dedup** — SHA-256 at import time; same content skips upload
+- **Encrypted dedup registry** — `registry.json.crypt` (AES-256-GCM with VMK)
+- **Packed thumbnails** — ≤5 MB packs for efficient upload
+- **Two-layer key escrow** — fresh-install recovery via password or phrase
+- **Restore from cloud** — re-download missing thumbnails/originals
+- **Drive-style notifications** — foreground service with batch progress
+- **Full rclone operation support** — mkdir, move, copydir, rmdir, purge,
+  hash (in addition to upload/download/list/delete)
+
+### Multi-vault
+
+- One app, multiple vaults with distinct passwords
+- Each vault has its own VMK — password "duress" opens decoy vault
+- Vault ID scoped queries (no cross-vault data leakage)
+- Multi-vault dedup registry (optimistic concurrency for concurrent uploads)
 
 ### Privacy-focused design
 
@@ -103,10 +109,6 @@ and videos. Encryption happens on your device, and imported files are only
 decrypted in memory while the app is in use. The cloud sync uses your own
 rclone remote — PhotoZ has no server component and never sees your photos,
 your password, or your recovery phrase.
-
-PhotoZ can use minimal privacy-friendly analytics to improve stability and
-user experience. These analytics are never used for advertising or cross-app
-tracking.
 
 ## Translations
 <!-- BEGIN-TRANSLATIONS -->
@@ -134,18 +136,16 @@ The core app is identical, but some features differ due to platform requirements
 
 | Feature | Google Play | FOSS |
 |---|---|---|
-| **Telemetry** | Enabled by default (can be disabled in settings) | Disabled by default (can be enabled in settings) |
+| **Telemetry** | Enabled by default (can be disabled) | Disabled by default (can be enabled) |
 | **Telemetry opt-in prompt** | No prompt shown | Shown once after first unlock |
 | **In-App Review** | Requested after usage milestones | Not available |
-
-> **Why is telemetry off by default on FOSS?** F-Droid flags apps that transmit data without explicit opt-in as having the *Tracking* anti-feature. No data is ever transmitted unless the user has actively opted in.
 
 ## Build
 
 PhotoZ is a standard Android Gradle project. Build variants:
 
-- `play` — Google Play release (includes TelemetryDeck).
-- `foss` — F-Droid / sideload release (no telemetry).
+- `play` — Google Play release (includes TelemetryDeck)
+- `foss` — F-Droid / sideload release (no telemetry)
 
 ```bash
 # Debug build (FOSS flavor)
@@ -153,27 +153,62 @@ PhotoZ is a standard Android Gradle project. Build variants:
 
 # Release build (Play flavor)
 ./gradlew :app:assemblePlayRelease
+
+# Run unit tests (67 tests)
+./gradlew :app:testFossDebugUnitTest
 ```
 
-The cloud-sync feature uses an embedded rclone **shared library** (loaded via
-gomobile JNI / `dlopen` from `app/libs/librclone.aar`). No subprocess is spawned;
-this is W^X-safe on Android 16.
+The cloud-sync feature uses rclone as a **gomobile JNI shared library** (loaded
+via `dlopen` from `app/libs/librclone.aar`). No subprocess is spawned — this
+is W^X-safe on Android 16. See [docs/02-rclone-integration.md](docs/02-rclone-integration.md)
+for details.
+
+### Prerequisites
+
+- JDK 21+
+- Android SDK Platform 37 + Build-Tools 37.0.0
+- Gradle 9.6.1 (via wrapper)
+- AGP 9.1.0 + Kotlin 2.4.0
+
+See [docs/08-build-and-deploy.md](docs/08-build-and-deploy.md) for full setup instructions.
 
 ### Database
 
-PhotoZ uses a Room database (`photok.db`). The current schema version is 16.
-Schema changes use Room auto-migrations declared in `PhotokDatabase.kt` (file
-name) / `PhotoZDatabase` class. Since v16, the main DB is encrypted at-rest
-with SQLCipher (key backed by Android Keystore); a separate plaintext
-`BootstrapDatabase` (`photok_meta.db`) holds the `vault_protection` table so
-it can be read before the encrypted DB is unlocked.
+PhotoZ uses two Room databases:
+
+- **`photok.db`** (SQLCipher-encrypted, schema v17) — photos, albums, sort,
+  hash_registry. Key backed by Android Keystore.
+- **`photok_meta.db`** (plaintext, BootstrapDatabase) — `vault_protection`
+  table (wrapped VMKs + KDF params). Readable before encrypted DB unlock.
+
+See [docs/06-database.md](docs/06-database.md) for schema details + migration history.
+
+## Audit Status
+
+Branch `audit-b2-fixes` contains a comprehensive audit of the B2 migration
+(rclone gomobile JNI + SQLCipher + Argon2id + chunked GCM + two-layer escrow).
+
+| Metric | Value |
+|--------|-------|
+| Total findings | 72 |
+| Critical (fixed) | 7/9 |
+| High (fixed) | 19/23 |
+| Medium (fixed) | 22/27 |
+| Low (fixed) | 11/13 |
+| Unit tests | 67 (0 failures) |
+| Files changed | 78 |
+| Insertions | 10,185 |
+| Deletions | 8,088 |
+
+See [docs/09-audit-summary.md](docs/09-audit-summary.md) for the full summary,
+or [`download/AUDIT_B2.md`](../../download/AUDIT_B2.md) for the detailed report.
 
 ## Community
 
 ### Contributors
 
-<a href="https://github.com/leonlatsch/Photok/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=leonlatsch/Photok"  alt="PhotoZ Contributors"/>
+<a href="https://github.com/pkok1099/photok-sync-fork/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=pkok1099/photok-sync-fork"  alt="PhotoZ Contributors"/>
 </a>
 
 ## Related Tools
