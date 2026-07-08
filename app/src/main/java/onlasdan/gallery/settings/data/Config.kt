@@ -70,6 +70,22 @@ class Config(
                 set(value) = putBoolean(SYSTEM_FIRST_START, value)
 
         /**
+         * Set to true after a fresh-install login via recovery phrase (PHRASE_ONLY flow).
+         * The VMK is in memory (via sessionRepository) but NO VaultProtection(Password)
+         * row exists locally. SetupFragment detects this flag and calls
+         * [VaultService.createPasswordProtectionFromSession] (wrap existing VMK)
+         * instead of [VaultService.create] (generate new VMK).
+         *
+         * Without this, the next app open would see canUnlock()=false → SETUP →
+         * new VMK → all previously-encrypted photos undecryptable (data loss).
+         *
+         * @since anti-data-loss — phrase restore must persist Password protection
+         */
+        var pendingPasswordSetup: Boolean
+                get() = getBoolean(PENDING_PASSWORD_SETUP, PENDING_PASSWORD_SETUP_DEFAULT)
+                set(value) = putBoolean(PENDING_PASSWORD_SETUP, value)
+
+        /**
          * The version code of the last app version.
          * Updates after showing new features.
          */
@@ -498,6 +514,10 @@ class Config(
 
                 const val SYSTEM_FIRST_START = "system^firstStart"
                 const val SYSTEM_FIRST_START_DEFAULT = true
+
+                /** @since anti-data-loss — phrase restore must persist Password protection */
+                const val PENDING_PASSWORD_SETUP = "system^pendingPasswordSetup"
+                const val PENDING_PASSWORD_SETUP_DEFAULT = false
 
                 const val SYSTEM_LAST_FEATURE_VERSION_CODE = "system^lastFeatureVersionCode"
                 const val SYSTEM_LAST_FEATURE_VERSION_CODE_DEFAULT = 0
