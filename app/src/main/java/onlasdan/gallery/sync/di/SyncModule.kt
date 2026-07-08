@@ -39,13 +39,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object SyncModule {
-        @Provides
-        @Singleton
-        fun provideRcloneConfigManager(
-                app: Application,
-                config: Config,
-                rcloneController: onlasdan.gallery.sync.rclone.RcloneController,
-        ) = RcloneConfigManager(app, config, rcloneController)
+        // RcloneConfigManager has @Inject constructor + @Singleton, so Hilt provides
+        // it directly. The dagger.Lazy<RcloneController> parameter breaks the cycle
+        // (RcloneController ↔ RcloneConfigManager).
 
         @Provides
         @Singleton

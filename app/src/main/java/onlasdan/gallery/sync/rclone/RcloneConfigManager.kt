@@ -46,7 +46,9 @@ class RcloneConfigManager
         constructor(
                 private val app: Application,
                 private val config: Config,
-                private val rcloneController: RcloneController,
+                // F-SYNC-006: Use Lazy to break Hilt dependency cycle
+                // (RcloneController injects RcloneConfigManager, which would inject RcloneController).
+                private val rcloneController: dagger.Lazy<RcloneController>,
         ) {
                 data class RemoteInfo(
                         val name: String,
@@ -113,7 +115,7 @@ class RcloneConfigManager
                                         // F-SYNC-006: invalidate rclone's in-memory cached config so the
                                         // next operation re-reads the (possibly new) config file. Without
                                         // this, rclone keeps using the old config until process restart.
-                                        rcloneController.invalidateConfigPath()
+                                        rcloneController.get().invalidateConfigPath()
                                         Unit
                                 }
                         }

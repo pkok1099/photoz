@@ -23,6 +23,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import onlasdan.gallery.settings.data.Config
 import org.robolectric.RuntimeEnvironment
 
 /**
@@ -62,7 +63,7 @@ class SqlCipherKeyProviderTest {
 	@Test
 	fun `getOrCreatePassphrase returns 32 bytes`() {
 		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()))
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()), Config(RuntimeEnvironment.getApplication()))
 		val passphrase = provider.getOrCreatePassphrase()
 		assertEquals("SQLCipher passphrase must be 32 bytes (AES-256)", 32, passphrase.size)
 	}
@@ -70,7 +71,7 @@ class SqlCipherKeyProviderTest {
 	@Test
 	fun `getOrCreatePassphrase is non-zero sanity check`() {
 		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()))
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()), Config(RuntimeEnvironment.getApplication()))
 		val passphrase = provider.getOrCreatePassphrase()
 		val allZero = passphrase.all { it == 0.toByte() }
 		assertTrue("Passphrase must not be all-zero (SecureRandom failure?)", !allZero)
@@ -79,7 +80,7 @@ class SqlCipherKeyProviderTest {
 	@Test
 	fun `getOrCreatePassphrase returns same bytes on repeated calls`() {
 		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()))
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()), Config(RuntimeEnvironment.getApplication()))
 		val first = provider.getOrCreatePassphrase()
 		val second = provider.getOrCreatePassphrase()
 		// Same Keystore alias → same key. The encoded bytes must match.
@@ -93,7 +94,7 @@ class SqlCipherKeyProviderTest {
 	@Test
 	fun `deleteKey clears the Keystore entry`() {
 		assumeTrue("AndroidKeyStore not available in Robolectric — skipping", androidKeyStoreAvailable())
-		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()))
+		val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()), Config(RuntimeEnvironment.getApplication()))
 		// Generate the key first
 		val first = provider.getOrCreatePassphrase()
 		// Delete it
