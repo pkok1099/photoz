@@ -1,5 +1,7 @@
 # PhotoZ TODO List
 
+> Migration update: rclone gomobile JNI migration (item #13 Phase 3) is DONE — see `TODO_SYNC.md`.
+
 ## High Priority
 
 ### 1. QtFastStart — MP4 MOOV relocation untuk progressive video streaming
@@ -112,7 +114,7 @@
 - **Phase 3 (long term, post-beta)**: Evaluate gomobile JNI migration — bukan untuk size, tapi untuk eliminasi subprocess complexity (W^X, 16KB alignment, exec from nativeLibraryDir). Size tetap ~45MB tapi bisa di-download on-demand via `dlopen()` dari `filesDir` (W^X blocks `exec()` tapi tidak `dlopen()`). APK base jadi ~60MB, rclone di-download saat user setup cloud sync.
 - **NOT doing**: Backend stripping (breaks user rclone.conf), UPX (W^X violation + 16KB alignment break + AV false positive), Play Feature Delivery (not viable for FOSS flavor), Optional download via subprocess (W^X blocks exec from writable dirs)
 - **Key insight**: W^X policy blocks `exec()` di `filesDir`/`codeCacheDir` — hanya `nativeLibraryDir` (APK-installed) yang executable. Tapi `dlopen()`/`System.load()` TIDAK di-block di writable dirs. Gomobile JNI pakai `dlopen()`, subprocess pakai `exec()`. Itulah kenapa gomobile JNI enable optional download tapi subprocess tidak.
-- Status: Phase 1 (accept), Phase 2 (TODO), Phase 3 (evaluate post-beta)
+- Status: Phase 1 (accept), Phase 2 (TODO command stripping), Phase 3 (DONE — gomobile JNI migrated; see `TODO_SYNC.md`)
 
 ### 14. M6 Modularization
 - Split 300+ files into :core/:sync/:data/:app modules

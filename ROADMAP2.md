@@ -2,6 +2,7 @@
 
 > Created: 2026-07-05
 > Based on: TODO1.md (16 items) + ROADMAP.md (completed items)
+> Migration update: rclone gomobile JNI migration (item #12) is DONE — see `TODO_SYNC.md`.
 
 ---
 
@@ -167,9 +168,9 @@ to use), we'd need the DB already open.
 ### 11. M6 Modularization (TODO #14)
 - Needs IDE refactor tooling (300+ files, circular deps)
 
-### 12. Rclone gomobile JNI migration (TODO #13 Phase 3)
-- Post-beta architecture cleanup
-- Eliminates subprocess complexity (W^X, 16KB alignment)
+### 12. Rclone gomobile JNI migration (TODO #13 Phase 3) — DONE (2026-07-08)
+- Migrated to gomobile JNI (`libgojni.so` via `dlopen`, RC API). Eliminates subprocess
+  complexity (W^X, 16KB alignment). Verification + leftover audit → `TODO_SYNC.md`.
 
 ---
 

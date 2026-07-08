@@ -1,7 +1,11 @@
 # PhotoZ Development Roadmap
 
-> Last updated: 2026-07-04
+> Last updated: 2026-07-08
 > Status: Active — all items below are planned, not yet implemented unless marked ✅
+>
+> **Recent migration (2026-07-08):** rclone moved from `ProcessBuilder` subprocess
+> (`librclone.so` EXEC) to **gomobile JNI** (`libgojni.so` via `dlopen`, RC API).
+> Verification + leftover-subprocess audit → `TODO_SYNC.md`.
 
 ---
 
@@ -10,7 +14,7 @@
 | Category | Status |
 |---|---|
 | Encryption | AES-256-CBC + VMK + key escrow 2-layer (password wraps phrase, phrase wraps VMK) |
-| Cloud Sync | rclone subprocess (CGO+NDK+16KB aligned), dedup (content-hash), GCM encrypted registry (GZIP compressed), thumbnail packing (5MB packs) |
+| Cloud Sync | rclone gomobile JNI (libgojni.so, RC API, 16KB-aligned), dedup (content-hash), GCM encrypted registry (GZIP compressed), thumbnail packing (5MB packs) |
 | Video | Progressive streaming (playback starts while download in progress) |
 | Media | Photos + files (PDF/ZIP/audio), auto-album from folder path |
 | Security | Auto-lock (persisted), stealth mode, FLAG_SECURE, hash verification (optional), panic wipe |
