@@ -33,7 +33,7 @@ import javax.inject.Inject
 import java.io.IOException
 
 /**
- * F-ENC-024: Typed exceptions for CbcCryptoEngine error paths.
+ * F-ENC-024: Typed exceptions for HybridCryptoEngine error paths.
  * Previously these returned null, which was ambiguous (could mean wrong key,
  * corrupt header, IO error, unsupported version, etc.).
  */
@@ -64,12 +64,12 @@ class UnsupportedAlgorithmException(alg: String) : IOException("Unsupported ciph
  *  - **Decrypt**: reads the version byte from the stream header and dispatches
  *    transparently to the matching cipher (CBC for versions 1, 2; GCM for 3).
  *
- * The class name was kept as `CbcCryptoEngine` to avoid touching the Hilt
+ * The class name was kept as `HybridCryptoEngine` to avoid touching the Hilt
  * binding graph (renaming would require updating the `@Binds` in
  * `EncryptionBindingModule` and the existing unit tests). The class itself
  * is now an "engine" in the abstract sense, not strictly CBC.
  */
-class CbcCryptoEngine
+class HybridCryptoEngine
 	@Inject
 	constructor() : CryptoEngine {
 		override fun createEncryptStream(

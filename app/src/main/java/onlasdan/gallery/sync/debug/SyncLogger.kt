@@ -44,8 +44,10 @@ object SyncLogger {
 	private const val MAX_FILE_BYTES: Long = 500L * 1024L
 	private val seq = AtomicLong(0L)
 	private lateinit var filesDir: File
+	private lateinit var app: Application
 
 	fun init(app: Application) {
+		this.app = app
 		filesDir = app.filesDir
 	}
 
@@ -86,8 +88,8 @@ object SyncLogger {
 					append('\n')
 				}
 
-			trimIfNeeded(file, entry.length.toLong())
-			file.appendText(entry)
+			// F-SYNC-022: delegate to SyncLogRotator (handles rotation + thread safety)
+			SyncLogRotator.append(app, entry)
 		}.onFailure { e ->
 			try {
 				android.util.Log.e("SyncLogger", "FAILED to write sync log", e)
@@ -133,36 +135,11 @@ object SyncLogger {
 					}
 				}
 
-			trimIfNeeded(file, entry.length.toLong())
-			file.appendText(entry)
+			// F-SYNC-022: delegate to SyncLogRotator (handles rotation + thread safety)
+			SyncLogRotator.append(app, entry)
 		}.onFailure { }
 	}
 
-	private fun trimIfNeeded(
-		file: File,
-		newEntrySize: Long,
-	) {
-		if (!file.exists()) return
-		val currentSize = file.length()
-		val projected = currentSize + newEntrySize
-		if (projected <= MAX_FILE_BYTES) return
-
-		val content = file.readText()
-		val blocks = content.split("(?=\n--- )".toRegex()).filter { it.isNotBlank() }
-		if (blocks.isEmpty()) {
-			val keep = content.takeLast((MAX_FILE_BYTES / 2).toInt())
-			file.writeText(keep)
-			return
-		}
-
-		var kept = blocks.toMutableList()
-		var keptSize = kept.sumOf { it.length }
-		while (keptSize + newEntrySize > MAX_FILE_BYTES && kept.size > 1) {
-			kept.removeAt(0)
-			keptSize = kept.sumOf { it.length }
-		}
-		file.writeText(kept.joinToString(separator = ""))
-	}
 
 	fun read(): String =
 		runCatching {

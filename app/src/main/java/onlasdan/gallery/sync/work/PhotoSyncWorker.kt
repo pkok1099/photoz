@@ -1376,7 +1376,7 @@ class PhotoSyncWorker
 						"[UploadWorker] enqueue: SKIPPED — syncAutoUpload=false (user disabled auto-upload in Settings). uuid=${photo.uuid}",
 					)
 					try {
-						java.io.File(context.filesDir, "sync_log.txt").appendText(
+						onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 							"[RcloneDiag] [UploadWorker] enqueue: SKIPPED — syncAutoUpload=false uuid=${photo.uuid}\n",
 						)
 					} catch (_: Exception) {
@@ -1392,7 +1392,7 @@ class PhotoSyncWorker
 					"[UploadWorker] enqueue: BEGIN uuid=${photo.uuid} autoUploadEnabled=$autoUpload wifiOnly=$wifiOnly",
 				)
 				try {
-					java.io.File(context.filesDir, "sync_log.txt").appendText(
+					onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 						"\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid} wifiOnly=$wifiOnly\n",
 					)
 				} catch (_: Exception) {
@@ -1459,7 +1459,7 @@ class PhotoSyncWorker
 					"[UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}",
 				)
 				try {
-					java.io.File(context.filesDir, "sync_log.txt").appendText(
+					onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 						"[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}\n",
 					)
 				} catch (_: Exception) {
@@ -1503,7 +1503,7 @@ class PhotoSyncWorker
 							"[UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo found for $uniqueWorkName — work was never enqueued or was pruned",
 						)
 						try {
-							java.io.File(context.filesDir, "sync_log.txt").appendText(
+							onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 								"[RcloneDiag] [UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo for $uniqueWorkName\n",
 							)
 						} catch (_: Exception) {
@@ -1517,7 +1517,7 @@ class PhotoSyncWorker
 								"outputData=${wi.outputData}"
 						android.util.Log.e("RcloneDiag", "[UploadWorker] $line")
 						try {
-							java.io.File(context.filesDir, "sync_log.txt").appendText(
+							onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 								"[RcloneDiag] [UploadWorker] $line\n",
 							)
 						} catch (_: Exception) {
@@ -1542,7 +1542,7 @@ class PhotoSyncWorker
 					// getWorkInfosByTag("") may not work; use the raw database approach
 					android.util.Log.e("RcloneDiag", "[UploadWorker] dumpAllWorkInfo: querying all work...")
 					try {
-						java.io.File(context.filesDir, "sync_log.txt").appendText(
+						onlasdan.gallery.sync.debug.SyncLogRotator.append(context,
 							"\n[RcloneDiag] [UploadWorker] dumpAllWorkInfo: querying all work...\n",
 						)
 					} catch (_: Exception) {

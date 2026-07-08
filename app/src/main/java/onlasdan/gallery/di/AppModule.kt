@@ -72,6 +72,8 @@ object AppModule {
                                 BootstrapDatabase::class.java,
                                 BootstrapDatabase.DATABASE_NAME,
                         )
+                        // F-ENC-017: register column rename migration (wrappedVMK → wrapped_vmk)
+                        .addMigrations(BootstrapDatabase.MIGRATION_1_2)
                         // Plaintext — must be readable pre-unlock. No SQLCipher.
                         .build()
 

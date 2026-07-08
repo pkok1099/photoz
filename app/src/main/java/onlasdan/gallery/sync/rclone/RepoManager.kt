@@ -257,7 +257,7 @@ class RepoManager
 					"detectRepo: BEGIN remote=${config.syncChosenRemote} repoConfirmed=${config.repoConfirmed}",
 				)
 				try {
-					java.io.File(app.filesDir, "sync_log.txt").appendText(
+					onlasdan.gallery.sync.debug.SyncLogRotator.append(app,
 						"\n[RcloneDiag] detectRepo: BEGIN remote=${config.syncChosenRemote} repoConfirmed=${config.repoConfirmed}\n",
 					)
 				} catch (_: Exception) {

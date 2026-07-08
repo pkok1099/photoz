@@ -17,7 +17,7 @@
 package onlasdan.gallery.encryption.integration
 
 import onlasdan.gallery.encryption.domain.LegacyEncryption
-import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.HybridCryptoEngine
 import onlasdan.gallery.encryption.domain.crypto.KeyGen
 import onlasdan.gallery.encryption.domain.crypto.LegacyGcmCryptoEngine
 import onlasdan.gallery.encryption.domain.models.VaultSession
@@ -38,7 +38,7 @@ import java.io.ByteArrayOutputStream
 @RunWith(RobolectricTestRunner::class)
 class CryptoMigrationV1ToV3Test {
 	private val legacyEngine = LegacyGcmCryptoEngine()
-	private val cbcEngine = CbcCryptoEngine()
+	private val cbcEngine = HybridCryptoEngine()
 	private val legacyEncryption = LegacyEncryption()
 	private val keyGen = KeyGen()
 

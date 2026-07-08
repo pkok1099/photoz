@@ -57,7 +57,7 @@ import javax.inject.Singleton
  *    slightly higher per-byte cost. CBC + HMAC would also work but GCM is a
  *    single primitive and is already exported by [Algorithm.AesGcmNoPadding].
  *  - Photo bodies stay on AES-CBC because they're large and streamed through
- *    [onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine] which
+ *    [onlasdan.gallery.encryption.domain.crypto.HybridCryptoEngine] which
  *    supports random-access reads (the image viewer needs byte-range reads
  *    to decode a region of a JPEG). GCM's auth tag would have to be
  *    recomputed on every random-access read, which is too expensive.

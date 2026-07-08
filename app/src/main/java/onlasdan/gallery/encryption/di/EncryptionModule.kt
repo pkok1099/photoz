@@ -28,7 +28,7 @@ import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.encryption.domain.VaultIdBackfillHook
 import onlasdan.gallery.encryption.domain.VaultIdBackfillUseCase
 import onlasdan.gallery.encryption.domain.VaultProtectionRepository
-import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.HybridCryptoEngine
 import onlasdan.gallery.encryption.domain.crypto.CryptoEngine
 import onlasdan.gallery.encryption.domain.handlers.BiometricVaultProtectionHandler
 import onlasdan.gallery.encryption.domain.handlers.PasswordVaultProtectionHandler
@@ -58,7 +58,7 @@ interface EncryptionBindingModule {
 	fun bindSessionRepository(impl: SessionRepositoryImpl): SessionRepository
 
 	@Binds
-	fun bindCryptoEngine(impl: CbcCryptoEngine): CryptoEngine
+	fun bindCryptoEngine(impl: HybridCryptoEngine): CryptoEngine
 
 	@Binds
 	fun bindRecoveryPhraseStore(impl: RecoveryPhraseStoreImpl): RecoveryPhraseStore

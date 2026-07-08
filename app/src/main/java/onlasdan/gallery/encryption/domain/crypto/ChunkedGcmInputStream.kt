@@ -54,7 +54,7 @@ class ChunkedGcmInputStream(
 
         private fun readHeader() {
                 // NOTE: The version byte (0x04) has ALREADY been consumed by
-                // CbcCryptoEngine.createDecryptStream() before constructing this
+                // HybridCryptoEngine.createDecryptStream() before constructing this
                 // stream. We must NOT read it again — the input stream is now
                 // positioned at the chunk_size field.
                 //

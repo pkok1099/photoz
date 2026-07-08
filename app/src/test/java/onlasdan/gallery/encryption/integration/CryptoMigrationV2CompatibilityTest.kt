@@ -16,7 +16,7 @@
 
 package onlasdan.gallery.encryption.integration
 
-import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.HybridCryptoEngine
 import onlasdan.gallery.encryption.domain.crypto.KeyGen
 import onlasdan.gallery.encryption.domain.models.Algorithm
 import onlasdan.gallery.encryption.domain.models.Kdf
@@ -31,7 +31,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 
 /**
- * Integration test verifying that the 3.x.x [CbcCryptoEngine] can still read
+ * Integration test verifying that the 3.x.x [HybridCryptoEngine] can still read
  * files encrypted in the 2.x.x format (header version 0x01: version + salt + IV + ciphertext).
  *
  * This is the backward-compatibility guarantee: 2.x.x files must always be decryptable
@@ -39,7 +39,7 @@ import javax.crypto.spec.IvParameterSpec
  */
 @RunWith(RobolectricTestRunner::class)
 class CryptoMigrationV2CompatibilityTest {
-	private val cbcEngine = CbcCryptoEngine()
+	private val cbcEngine = HybridCryptoEngine()
 	private val keyGen = KeyGen()
 
 	/**
@@ -48,7 +48,7 @@ class CryptoMigrationV2CompatibilityTest {
 	 * - File header: [0x01][salt (16B)][IV (16B)][ciphertext]
 	 */
 	@Test
-	fun `CbcCryptoEngine decrypts a V1-header file produced by the 2xx format`() {
+	fun `HybridCryptoEngine decrypts a V1-header file produced by the 2xx format`() {
 		val password = "legacy-2xx-password"
 		val salt = ByteArray(16) { (it * 7).toByte() }
 		val iv = ByteArray(16) { (it * 3 + 1).toByte() }
@@ -89,7 +89,7 @@ class CryptoMigrationV2CompatibilityTest {
 	}
 
 	@Test
-	fun `CbcCryptoEngine decrypts a large V1-header file`() {
+	fun `HybridCryptoEngine decrypts a large V1-header file`() {
 		val salt = ByteArray(16) { it.toByte() }
 		val iv = ByteArray(16) { (it + 5).toByte() }
 		val plaintext = ByteArray(1_500_000) { (it % 256).toByte() }

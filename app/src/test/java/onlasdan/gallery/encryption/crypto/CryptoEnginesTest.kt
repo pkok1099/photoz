@@ -17,7 +17,7 @@
 package onlasdan.gallery.encryption.crypto
 
 import onlasdan.gallery.encryption.domain.LegacyEncryption
-import onlasdan.gallery.encryption.domain.crypto.CbcCryptoEngine
+import onlasdan.gallery.encryption.domain.crypto.HybridCryptoEngine
 import onlasdan.gallery.encryption.domain.crypto.GCM_IV_SIZE
 import onlasdan.gallery.encryption.domain.crypto.GCM_TAG_SIZE
 import onlasdan.gallery.encryption.domain.crypto.KeyGen
@@ -47,7 +47,7 @@ import javax.crypto.spec.IvParameterSpec
 class CryptoEnginesTest {
 	private val legacyEngine = LegacyGcmCryptoEngine()
 	private val legacyEncryption = LegacyEncryption()
-	private val cbcEngine = CbcCryptoEngine()
+	private val cbcEngine = HybridCryptoEngine()
 	private val keyGen = KeyGen()
 
 	/**
