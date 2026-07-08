@@ -454,7 +454,29 @@ class HashRegistry
                                         tempFile.writeBytes(encryptedData)
                                         val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
                                         diag("uploadToRemote: uploading ${encryptedData.size} bytes (${entries.size} ours + ${preservedBlobs.size} preserved) → $remotePath")
-                                        rcloneController.uploadFile(tempFile.absolutePath, remotePath).getOrThrow()
+                                        // F-SYNC-014: Optimistic concurrency — re-download the remote registry
+                                                                // RIGHT BEFORE uploading to catch concurrent writes from other devices.
+                                                                try {
+                                                                        val recheckTemp = File(app.cacheDir, "registry-recheck-" + System.currentTimeMillis() + ".crypt")
+                                                                        val recheckResult = rcloneController.downloadFile(remotePath, recheckTemp.absolutePath)
+                                                                        if (recheckResult.isSuccess && recheckTemp.exists()) {
+                                                                                val recheckData = recheckTemp.readBytes()
+                                                                                recheckTemp.delete()
+                                                                                if (recheckData.isNotEmpty() && recheckData[0] == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
+                                                                                        val recheckBlobs = extractRawBlobs(recheckData)
+                                                                                        val recheckPreserved = recheckBlobs.filterNot { canDecryptBlob(it, vmkBytes) }
+                                                                                        if (recheckPreserved.size != preservedBlobs.size) {
+                                                                                                diag("uploadToRemote: F-SYNC-014 detected concurrent write — re-merging with " + recheckPreserved.size + " preserved (was " + preservedBlobs.size + ")")
+                                                                                                val remergedData = serializeMergedEncrypted(entries, recheckPreserved, vmkBytes)
+                                                                                                tempFile.writeBytes(remergedData)
+                                                                                        }
+                                                                                }
+                                                                        }
+                                                                } catch (e: Exception) {
+                                                                        diag("uploadToRemote: F-SYNC-014 recheck failed (non-fatal): " + e.message)
+                                                                }
+
+                                                                rcloneController.uploadFile(tempFile.absolutePath, remotePath).getOrThrow()
                                         diag("uploadToRemote: OK")
                                 } finally {
                                         tempFile.delete()

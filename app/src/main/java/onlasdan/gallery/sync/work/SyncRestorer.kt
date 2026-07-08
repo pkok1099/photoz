@@ -38,201 +38,199 @@ import javax.inject.Singleton
  */
 @Singleton
 class SyncRestorer
-	@Inject
-	constructor(
-		private val app: Application,
-		private val photoDao: PhotoDao,
-		private val rcloneController: RcloneController,
-		private val config: Config,
-	) {
-		suspend fun ensureLocalOriginal(uuid: String): Result<Unit> =
-			withContext(Dispatchers.IO) {
-				runCatching {
-					val photo =
-						try {
-							photoDao.get(uuid)
-						} catch (e: Exception) {
-							Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
-							return@runCatching
-						}
+        @Inject
+        constructor(
+                private val app: Application,
+                private val photoDao: PhotoDao,
+                private val rcloneController: RcloneController,
+                private val config: Config,
+        ) {
+                suspend fun ensureLocalOriginal(uuid: String): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                runCatching {
+                                        val photo =
+                                                try {
+                                                        photoDao.get(uuid)
+                                                } catch (e: Exception) {
+                                                        Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+                                                        return@runCatching
+                                                }
 
-					// Sprint 10+ / M10 Part 3 fix: use photo.internalFileName which
-					// resolves canonicalUuid (symlink). If this photo is a symlink,
-					// the file lives under the canonical's UUID on the remote — not
-					// under this photo's UUID. Using raw internalFileName(uuid) would
-					// try to download from the wrong remote path → 404.
-					val localFile = File(app.filesDir, photo.internalFileName)
-					if (localFile.exists() && localFile.length() > 0) {
-						return@runCatching
-					}
+                                        // Sprint 10+ / M10 Part 3 fix: use photo.internalFileName which
+                                        // resolves canonicalUuid (symlink). If this photo is a symlink,
+                                        // the file lives under the canonical's UUID on the remote — not
+                                        // under this photo's UUID. Using raw internalFileName(uuid) would
+                                        // try to download from the wrong remote path → 404.
+                                        val localFile = File(app.filesDir, photo.internalFileName)
+                                        if (localFile.exists() && localFile.length() > 0) {
+                                                return@runCatching
+                                        }
 
-					if (photo.syncState != SyncState.UPLOADED) {
-						Timber.d(
-							"SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
-							uuid,
-							photo.syncState,
-						)
-						return@runCatching
-					}
+                                        if (photo.syncState != SyncState.UPLOADED) {
+                                                Timber.d(
+                                                        "SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
+                                                        uuid,
+                                                        photo.syncState,
+                                                )
+                                                return@runCatching
+                                        }
 
-					val remote = config.syncChosenRemote
-					if (remote == null) {
-						Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
-						return@runCatching
-					}
+                                        val remote = config.syncChosenRemote
+                                        if (remote == null) {
+                                                Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
+                                                return@runCatching
+                                        }
 
-					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
-					Timber.i("SyncRestorer: downloading %s ← %s", localFile.absolutePath, remoteOrig)
-					rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
-				}
-			}
+                                        val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+                                        Timber.i("SyncRestorer: downloading %s ← %s", localFile.absolutePath, remoteOrig)
+                                        rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+                                }
+                        }
 
-		/**
-		 * On-demand restore of an encrypted original from the remote, with
-		 * periodic progress callbacks.
-		 *
-		 * Same as [ensureLocalOriginal] but emits download-progress estimates to
-		 * [onProgress] while the rclone `operations/copyfile` call is in flight.
-		 * The progress is a size-based estimate (same approach as
-		 * [onlasdan.gallery.sync.rclone.RcloneController.uploadFileWithProgress])
-		 * because rclone's `core/stats` doesn't track `operations/copyfile`
-		 * transfers — the estimate under-promises on fast networks (the bar
-		 * jumps to 100% before the estimate would have reached it) and slightly
-		 * over-promises on very slow networks (the bar sits at 95% for a while
-		 * before the real download finishes). Both failure modes are acceptable —
-		 * the alternative is an indeterminate spinner, which gives the user zero
-		 * feedback.
-		 *
-		 * Used by the video viewer path
-		 * ([onlasdan.gallery.imageviewer.ui.ImageViewerViewModel]) so the user
-		 * sees a determinate "Downloading video…" progress bar instead of an
-		 * indeterminate spinner while a remote-only video is fetched back to
-		 * local storage before ExoPlayer can play it.
-		 *
-		 * @param uuid the photo UUID to restore
-		 * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as
-		 *   the download. May be called zero or more times; never called with a
-		 *   value outside `0f..100f`. The final call (after the download
-		 *   completes) is always `100f`. Callers are responsible for
-		 *   rate-limiting UI updates triggered from this callback.
-		 *
-		 * @since video-loading-indicator feature — on-demand video download with
-		 *   visible progress
-		 */
-		suspend fun ensureLocalOriginalWithProgress(
-			uuid: String,
-			onProgress: (Float) -> Unit,
-		): Result<Unit> =
-			withContext(Dispatchers.IO) {
-				runCatching {
-					val photo =
-						try {
-							photoDao.get(uuid)
-						} catch (e: Exception) {
-							Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
-							return@runCatching
-						}
+                /**
+                 * On-demand restore of an encrypted original from the remote, with
+                 * periodic progress callbacks.
+                 *
+                 * Same as [ensureLocalOriginal] but emits download-progress estimates to
+                 * [onProgress] while the rclone `operations/copyfile` call is in flight.
+                 * The progress is a size-based estimate (same approach as
+                 * [onlasdan.gallery.sync.rclone.RcloneController.uploadFileWithProgress])
+                 * because rclone's `core/stats` doesn't track `operations/copyfile`
+                 * transfers — the estimate under-promises on fast networks (the bar
+                 * jumps to 100% before the estimate would have reached it) and slightly
+                 * over-promises on very slow networks (the bar sits at 95% for a while
+                 * before the real download finishes). Both failure modes are acceptable —
+                 * the alternative is an indeterminate spinner, which gives the user zero
+                 * feedback.
+                 *
+                 * Used by the video viewer path
+                 * ([onlasdan.gallery.imageviewer.ui.ImageViewerViewModel]) so the user
+                 * sees a determinate "Downloading video…" progress bar instead of an
+                 * indeterminate spinner while a remote-only video is fetched back to
+                 * local storage before ExoPlayer can play it.
+                 *
+                 * @param uuid the photo UUID to restore
+                 * @param onProgress invoked on the same dispatcher (Dispatchers.IO) as
+                 *   the download. May be called zero or more times; never called with a
+                 *   value outside `0f..100f`. The final call (after the download
+                 *   completes) is always `100f`. Callers are responsible for
+                 *   rate-limiting UI updates triggered from this callback.
+                 *
+                 * @since video-loading-indicator feature — on-demand video download with
+                 *   visible progress
+                 */
+                suspend fun ensureLocalOriginalWithProgress(
+                        uuid: String,
+                        onProgress: (Float) -> Unit,
+                ): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                runCatching {
+                                        val photo =
+                                                try {
+                                                        photoDao.get(uuid)
+                                                } catch (e: Exception) {
+                                                        Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+                                                        return@runCatching
+                                                }
 
-					// Sprint 10+ / M10 Part 3 fix: resolve symlink via photo.internalFileName
-					val localFile = File(app.filesDir, photo.internalFileName)
-					if (localFile.exists() && localFile.length() > 0) {
-						onProgress(100f)
-						return@runCatching
-					}
+                                        // Sprint 10+ / M10 Part 3 fix: resolve symlink via photo.internalFileName
+                                        val localFile = File(app.filesDir, photo.internalFileName)
+                                        if (localFile.exists() && localFile.length() > 0) {
+                                                onProgress(100f)
+                                                return@runCatching
+                                        }
 
-					if (photo.syncState != SyncState.UPLOADED) {
-						Timber.d(
-							"SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
-							uuid,
-							photo.syncState,
-						)
-						return@runCatching
-					}
+                                        if (photo.syncState != SyncState.UPLOADED) {
+                                                Timber.d(
+                                                        "SyncRestorer: %s has syncState=%s (not UPLOADED); cannot restore from remote",
+                                                        uuid,
+                                                        photo.syncState,
+                                                )
+                                                return@runCatching
+                                        }
 
-					val remote = config.syncChosenRemote
-					if (remote == null) {
-						Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
-						return@runCatching
-					}
+                                        val remote = config.syncChosenRemote
+                                        if (remote == null) {
+                                                Timber.w("SyncRestorer: no remote chosen; cannot restore %s", uuid)
+                                                return@runCatching
+                                        }
 
-					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
-					Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
-					// JNI migration note: the new RcloneController.downloadFile() does
-					// not accept expectedSize / onProgress. Until we wire up rclone
-					// job/status polling, the caller's onProgress will only see the
-					// terminal 100f tick — UI degrades from a determinate bar to an
-					// indeterminate spinner. Re-add progress estimation in a follow-up.
-					rcloneController
-						.downloadFile(
-							remotePath = remoteOrig,
-							localPath = localFile.absolutePath,
-						).getOrThrow()
-					onProgress(100f)
-				}
-			}
+                                        val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+                                        Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
+                                        // F-SYNC-021: use async RC API with job/status polling for real
+                                        // progress (was: single 100f tick — UI degraded to indeterminate spinner).
+                                        rcloneController
+                                                .downloadFileWithProgress(
+                                                        remotePath = remoteOrig,
+                                                        localPath = localFile.absolutePath,
+                                                        onProgress = onProgress,
+                                                ).getOrThrow()
+                                        onProgress(100f)
+                                }
+                        }
 
-		/**
-		 * Restore ALL uploaded photos from the remote back to local storage.
-		 *
-		 * Downloads every photo whose syncState is UPLOADED but whose local original
-		 * file is missing (e.g. after a fresh-install login, or after local files
-		 * were cleared). The decrypted files land in the app's private storage
-		 * (filesDir), preserving the 1:1 path structure via [Photo.albumPath] —
-		 * the gallery's album view reflects the original folder structure.
-		 *
-		 * This is the "Restore from backup" action: remote → local, path 1:1,
-		 * inside PhotoZ's managed storage (NOT the public filesystem).
-		 *
-		 * @return count of originals successfully downloaded
-		 */
-		suspend fun restoreAllOriginals(): Int =
-			withContext(Dispatchers.IO) {
-				val remote = config.syncChosenRemote
-				if (remote.isNullOrBlank()) {
-					android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: no remote chosen")
-					return@withContext 0
-				}
+                /**
+                 * Restore ALL uploaded photos from the remote back to local storage.
+                 *
+                 * Downloads every photo whose syncState is UPLOADED but whose local original
+                 * file is missing (e.g. after a fresh-install login, or after local files
+                 * were cleared). The decrypted files land in the app's private storage
+                 * (filesDir), preserving the 1:1 path structure via [Photo.albumPath] —
+                 * the gallery's album view reflects the original folder structure.
+                 *
+                 * This is the "Restore from backup" action: remote → local, path 1:1,
+                 * inside PhotoZ's managed storage (NOT the public filesystem).
+                 *
+                 * @return count of originals successfully downloaded
+                 */
+                suspend fun restoreAllOriginals(): Int =
+                        withContext(Dispatchers.IO) {
+                                val remote = config.syncChosenRemote
+                                if (remote.isNullOrBlank()) {
+                                        android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: no remote chosen")
+                                        return@withContext 0
+                                }
 
-				val photos =
-					try {
-						photoDao.getAll()
-					} catch (e: Exception) {
-						android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: failed to query photos: ${e.message}", e)
-						return@withContext 0
-					}
+                                val photos =
+                                        try {
+                                                photoDao.getAll()
+                                        } catch (e: Exception) {
+                                                android.util.Log.e("RcloneDiag", "[SyncRestorer] restoreAllOriginals: failed to query photos: ${e.message}", e)
+                                                return@withContext 0
+                                        }
 
-				var restored = 0
-				for (photo in photos) {
-					if (photo.syncState != SyncState.UPLOADED) continue
+                                var restored = 0
+                                for (photo in photos) {
+                                        if (photo.syncState != SyncState.UPLOADED) continue
 
-					val localFile = File(app.filesDir, photo.internalFileName)
-					if (localFile.exists() && localFile.length() > 0) continue // already local
+                                        val localFile = File(app.filesDir, photo.internalFileName)
+                                        if (localFile.exists() && localFile.length() > 0) continue // already local
 
-					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
-					try {
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: downloading ${photo.uuid} (${photo.fileName}) ← $remoteOrig",
-						)
-						rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
-						restored++
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: OK ${photo.uuid} (${localFile.length()} bytes)",
-						)
-					} catch (e: Exception) {
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: FAILED for ${photo.uuid}: ${e.message}",
-							e,
-						)
-					}
-				}
+                                        val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+                                        try {
+                                                android.util.Log.e(
+                                                        "RcloneDiag",
+                                                        "[SyncRestorer] restoreAllOriginals: downloading ${photo.uuid} (${photo.fileName}) ← $remoteOrig",
+                                                )
+                                                rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+                                                restored++
+                                                android.util.Log.e(
+                                                        "RcloneDiag",
+                                                        "[SyncRestorer] restoreAllOriginals: OK ${photo.uuid} (${localFile.length()} bytes)",
+                                                )
+                                        } catch (e: Exception) {
+                                                android.util.Log.e(
+                                                        "RcloneDiag",
+                                                        "[SyncRestorer] restoreAllOriginals: FAILED for ${photo.uuid}: ${e.message}",
+                                                        e,
+                                                )
+                                        }
+                                }
 
-				android.util.Log.e(
-					"RcloneDiag",
-					"[SyncRestorer] restoreAllOriginals: DONE — restored $restored of ${photos.size} photos",
-				)
-				restored
-			}
-	}
+                                android.util.Log.e(
+                                        "RcloneDiag",
+                                        "[SyncRestorer] restoreAllOriginals: DONE — restored $restored of ${photos.size} photos",
+                                )
+                                restored
+                        }
+        }

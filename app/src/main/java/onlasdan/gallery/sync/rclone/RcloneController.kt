@@ -20,6 +20,7 @@ import android.app.Application
 import java.io.IOException
 import java.lang.reflect.Method
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -167,14 +168,14 @@ class RcloneController
                                 // F-SYNC-002: wrap JNI invoke in withTimeoutOrNull to prevent rclone
                                 // hangs from freezing the worker forever. On timeout, throw IOException.
                                 // F-SYNC-002: runBlocking is safe here — rpc() is always called from
-				// withContext(Dispatchers.IO) in suspend callers, so we are on a
-				// background thread. The timeout prevents rclone hangs from freezing
-				// the worker forever.
-				val resultObj = runBlocking {
-					withTimeoutOrNull(RPC_TIMEOUT_MS) {
-						rpcMethod?.invoke(null, method, input)
-					}
-				} ?: throw IOException("RPC timeout after " + RPC_TIMEOUT_MS + "ms: method=" + method)
+                                // withContext(Dispatchers.IO) in suspend callers, so we are on a
+                                // background thread. The timeout prevents rclone hangs from freezing
+                                // the worker forever.
+                                val resultObj = runBlocking {
+                                        withTimeoutOrNull(RPC_TIMEOUT_MS) {
+                                                rpcMethod?.invoke(null, method, input)
+                                        }
+                                } ?: throw IOException("RPC timeout after " + RPC_TIMEOUT_MS + "ms: method=" + method)
                                 val output = getOutputMethod?.invoke(resultObj) as? String
                                         ?: error("getOutput returned null")
                                 output
@@ -236,6 +237,69 @@ class RcloneController
                                         }
                                 } catch (e: Exception) {
                                         Timber.e("downloadFile failed: ${e.message}")
+                                        Result.failure(e)
+                                }
+                        }
+
+                /**
+                 * F-SYNC-021: Download a file with periodic progress callbacks.
+                 *
+                 * Uses rclone async RC API: operations/copyfile with _async=true
+                 * returns a jobid, then poll job/status every 500ms for progress.
+                 *
+                 * On coroutine cancellation, calls job/stop to cancel the rclone job.
+                 */
+                suspend fun downloadFileWithProgress(
+                        remotePath: String,
+                        localPath: String,
+                        onProgress: (Float) -> Unit,
+                ): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                var jobid: Long? = null
+                                try {
+                                        val (remote, path) = parseRemotePath(remotePath)
+                                        val startInput = """{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":"","_async":true}"""
+                                        val startResult = rpc("operations/copyfile", startInput)
+                                        if (hasRpcError(startResult)) {
+                                                return@withContext Result.failure(IOException("rclone async start error: $startResult"))
+                                        }
+                                        val startJson = JSONObject(startResult)
+                                        jobid = startJson.optLong("jobid", -1)
+                                        if (jobid < 0) {
+                                                Timber.w("downloadFileWithProgress: no jobid, falling back to sync download")
+                                                return@withContext downloadFile(remotePath, localPath).also {
+                                                        if (it.isSuccess) onProgress(100f)
+                                                }
+                                        }
+
+                                        onProgress(0f)
+                                        while (true) {
+                                                delay(500)
+                                                val statusResult = rpc("job/status", """{"jobid":$jobid}""")
+                                                if (hasRpcError(statusResult)) break
+                                                val statusJson = JSONObject(statusResult)
+                                                val finished = statusJson.optBoolean("finished", false)
+                                                val completed = statusJson.optLong("completed", -1L)
+                                                val total = statusJson.optLong("total", -1L)
+                                                if (total > 0 && completed >= 0) {
+                                                        onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
+                                                }
+                                                if (finished) {
+                                                        val success = statusJson.optBoolean("success", false)
+                                                        if (!success) {
+                                                                val errorMsg = statusJson.optString("error", "unknown error")
+                                                                return@withContext Result.failure(IOException("rclone job $jobid failed: $errorMsg"))
+                                                        }
+                                                        onProgress(100f)
+                                                        return@withContext Result.success(Unit)
+                                                }
+                                        }
+                                        Result.success(Unit)
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                        jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
+                                        throw e
+                                } catch (e: Exception) {
+                                        Timber.e(e, "downloadFileWithProgress failed")
                                         Result.failure(e)
                                 }
                         }
