@@ -498,7 +498,7 @@ class Config(
 		val GALLERY_START_PAGE_DEFAULT = StartPage.AllFiles
 
 		const val SECURITY_ALLOW_SCREENSHOTS = "security^allowScreenshots"
-		const val SECURITY_ALLOW_SCREENSHOTS_DEFAULT = false
+		val SECURITY_ALLOW_SCREENSHOTS_DEFAULT = BuildConfig.DEBUG
 
 		const val SECURITY_PASSWORD = "security^password"
 		const val SECURITY_PASSWORD_DEFAULT = ""
