@@ -214,9 +214,9 @@ class PhotoRepository
 						fastStartTempFile = fastStartedFile
 						effectiveInputStream = java.io.FileInputStream(fastStartedFile)
 						effectiveSize = fastStartedFile.length()
-						android.util.Log.i(
-							"RcloneDiag",
-							"[FastStart] Using faststarted file for import (${fastStartedFile.length()} bytes)",
+						Timber.i(
+						"[FastStart] Using faststarted file for import (${fastStartedFile.length()} bytes)",
+					)} bytes)",
 						)
 					}
 				} catch (e: Exception) {

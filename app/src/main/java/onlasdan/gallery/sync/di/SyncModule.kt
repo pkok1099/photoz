@@ -122,6 +122,9 @@ object SyncModule {
 		Configuration
 			.Builder()
 			.setWorkerFactory(workerFactory)
-			.setMinimumLoggingLevel(android.util.Log.INFO)
+			.setMinimumLoggingLevel(
+			if (onlasdan.gallery.BuildConfig.DEBUG) android.util.Log.INFO
+			else android.util.Log.WARN
+		)
 			.build()
 }

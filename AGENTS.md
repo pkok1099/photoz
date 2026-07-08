@@ -32,7 +32,7 @@ Key features: gallery, albums, backup/restore, biometric unlock, recovery phrase
 
 ## Repository Layout
 
-The top-level directory contains `app/`, `gradle/`, `adr/`, `ENCRYPTION.md`, and this file. All source code lives under `app/src/main/java/dev/leonlatsch/photok/`.
+The top-level directory contains `app/`, `gradle/`, `adr/`, `ENCRYPTION.md`, and this file. All source code lives under `app/src/main/java/onlasdan/gallery/`.
 
 To orient yourself, browse that root package — each top-level directory is a self-contained feature. The current list of features is the live source of truth; do not rely on any enumeration in this file.
 
@@ -148,7 +148,7 @@ Check `app/build.gradle.kts` for the current library list. Key areas to know:
 
 - **Jetpack Compose + Material3** — all new UI.
 - **Hilt / Dagger** — DI throughout.
-- **Room** — SQLite ORM with auto-migrations.
+- **Room** — SQLite ORM with auto-migrations. Current schema version is 16 (see `PhotokDatabase.kt`).
 - **Navigation Component** — single-activity fragment navigation, with Safe Args.
 - **Coil** — image loading; there is a custom `EncryptedImageFetcher` in `transcoding/` that decrypts on-the-fly.
 - **ExoPlayer / Media3** — video playback.

@@ -357,15 +357,7 @@ class VaultService
 			val protectionsAreSetup = passwordSetup || biometricSetup || recoveryPhraseSetup
 			val canMigrate = passwordProtectionHandler.canMigrate() || biometricProtectionHandler.canMigrate()
 
-			android.util.Log.e(
-				"RcloneDiag",
-				"VaultService.canUnlock: passwordSetup=$passwordSetup biometricSetup=$biometricSetup " +
-					"recoveryPhraseSetup=$recoveryPhraseSetup " +
-					"protectionsAreSetup=$protectionsAreSetup canMigrate=$canMigrate → " +
-					"result=${protectionsAreSetup || canMigrate}",
-			)
-
-			return protectionsAreSetup || canMigrate
+return protectionsAreSetup || canMigrate
 		}
 	}
 

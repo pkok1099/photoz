@@ -159,11 +159,7 @@ class CacheRotationUseCase
 					maxAgeDays,
 					maxSizeMb,
 				)
-				android.util.Log.i(
-					"RcloneDiag",
-					"CacheRotation: deleted $deleted thumbnails (ageDays=$maxAgeDays, sizeMb=$maxSizeMb)",
-				)
-			}
+				}
 			return deleted
 		}
 	}

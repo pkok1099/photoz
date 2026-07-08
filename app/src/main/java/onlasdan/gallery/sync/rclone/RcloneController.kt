@@ -17,10 +17,13 @@
 package onlasdan.gallery.sync.rclone
 
 import android.app.Application
-import android.util.Log
 import java.io.IOException
+import java.lang.reflect.Method
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,15 +52,31 @@ class RcloneController
 	) {
 		companion object {
 			private const val TAG = "RcloneController"
-			private var initialized = false
-			private var configPathApplied: String? = null
+			@Volatile private var initialized = false
+			@Volatile private var configPathApplied: String? = null
+			@Volatile private var initError: Throwable? = null
+
+			// Cached reflection handles — looked up once via lazy, reused across all rpc() calls.
+			// F-SYNC-010: previously Class.forName + getMethod ran on every call.
+			private val gomobileClass: Class<*>? by lazy {
+				runCatching { Class.forName("gomobile.Gomobile") }.getOrNull()
+			}
+			private val initMethod: Method? by lazy { gomobileClass?.getMethod("rcloneInitialize") }
+			private val rpcMethod: Method? by lazy {
+				gomobileClass?.getMethod("rcloneRPC", String::class.java, String::class.java)
+			}
+			private val finalizeMethod: Method? by lazy { gomobileClass?.getMethod("rcloneFinalize") }
+			private val getOutputMethod: Method? by lazy {
+				runCatching { Class.forName("gomobile.RcloneRPCResult") }.getOrNull()?.getMethod("getOutput")
+			}
 
 			init {
 				try {
 					System.loadLibrary("gojni")
-					Log.i(TAG, "libgojni.so loaded via dlopen (W^X safe)")
+					Timber.i("libgojni.so loaded via dlopen (W^X safe)")
 				} catch (e: UnsatisfiedLinkError) {
-					Log.e(TAG, "Failed to load libgojni.so: ${e.message}")
+					Timber.e(e, "Failed to load libgojni.so")
+					initError = e
 				}
 			}
 		}
@@ -68,12 +87,12 @@ class RcloneController
 		suspend fun checkRcloneAlive(): Boolean =
 			withContext(Dispatchers.IO) {
 				try {
-					Log.i(TAG, "Checking if rclone is alive...")
+					Timber.i("Checking if rclone is alive...")
 					val result = rpc("core/version", "{}")
-					Log.i(TAG, "rclone version info: $result")
-					!result.contains("\"error\"")
+					Timber.i("rclone version info: $result")
+					!hasRpcError(result)
 				} catch (e: Exception) {
-					Log.e(TAG, "rclone is NOT alive: ${e.message}")
+					Timber.e("rclone is NOT alive: ${e.message}")
 					false
 				}
 			}
@@ -82,21 +101,19 @@ class RcloneController
 		 * Initialize rclone. Must be called once before any RC operations.
 		 */
 		fun ensureInitialized() {
-			if (!initialized) {
-				try {
-					// gomobile-generated Gomobile class
-					// The class name depends on the gomobile package path.
-					// rclone/librclone/gomobile produces package "gomobile"
-					val clazz = Class.forName("gomobile.Gomobile")
-					val initMethod = clazz.getMethod("rcloneInitialize")
-					initMethod.invoke(null)
-					initialized = true
-					Log.i(TAG, "rclone initialized via JNI")
-					// Point rclone at the imported config before any RC op can read it.
-					applyConfigPath(clazz)
-				} catch (e: Exception) {
-					Log.e(TAG, "rclone init failed: ${e.message}")
-				}
+			if (initialized) return
+			initError?.let { return }  // already failed; dont retry silently
+			try {
+				// F-SYNC-010: use cached reflection handles (looked up once via lazy).
+				val clazz = gomobileClass ?: error("gomobile.Gomobile class not found in AAR")
+				initMethod?.invoke(null) ?: error("rcloneInitialize method not found")
+				initialized = true
+				Timber.i("rclone initialized via JNI")
+				applyConfigPath(clazz)
+			} catch (t: Throwable) {
+				// F-SYNC-008: catch Throwable (not Exception) so Error subtypes are surfaced.
+				initError = t
+				Timber.e(t, "rclone init failed")
 			}
 		}
 
@@ -119,12 +136,12 @@ class RcloneController
 			if (path == configPathApplied) return
 			val input = "{\"path\":\"$path\"}"
 			try {
-				val rpcMethod = clazz.getMethod("rcloneRPC", String::class.java, String::class.java)
-				val result = rpcMethod.invoke(null, "config/setpath", input) as String
+				val result = rpcMethod?.invoke(null, "config/setpath", input) as? String
+					?: error("rcloneRPC method not available")
 				configPathApplied = path
-				Log.i(TAG, "Applied rclone config path via config/setpath: $path -> $result")
+				Timber.i("Applied rclone config path via config/setpath: $path -> $result")
 			} catch (e: Exception) {
-				Log.e(TAG, "Failed to apply rclone config path: ${e.message}")
+				Timber.e("Failed to apply rclone config path: ${e.message}")
 			}
 		}
 
@@ -147,7 +164,7 @@ class RcloneController
 				val output = getOutputMethod.invoke(resultObj) as String
 				output
 			} catch (e: Exception) {
-				Log.e(TAG, "RPC call failed: method=$method error=${e.message}")
+				Timber.e("RPC call failed: method=$method error=${e.message}")
 				"{\"error\":\"${e.message}\"}"
 			}
 		}
@@ -168,14 +185,14 @@ class RcloneController
 						{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path"}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
-					Log.d(TAG, "uploadFile result: $result")
-					if (result.contains("\"error\":")) {
+					Timber.d("uploadFile result: $result")
+					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
 					} else {
 						Result.success(Unit)
 					}
 				} catch (e: Exception) {
-					Log.e(TAG, "uploadFile failed: ${e.message}")
+					Timber.e("uploadFile failed: ${e.message}")
 					Result.failure(e)
 				}
 			}
@@ -196,14 +213,14 @@ class RcloneController
 						{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":""}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
-					Log.d(TAG, "downloadFile result: $result")
-					if (result.contains("\"error\":")) {
+					Timber.d("downloadFile result: $result")
+					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
 					} else {
 						Result.success(Unit)
 					}
 				} catch (e: Exception) {
-					Log.e(TAG, "downloadFile failed: ${e.message}")
+					Timber.e("downloadFile failed: ${e.message}")
 					Result.failure(e)
 				}
 			}
@@ -219,7 +236,7 @@ class RcloneController
 				try {
 					val input = """{"fs":"$remoteFs","remote":"$remoteDir"}"""
 					val result = rpc("operations/list", input)
-					if (result.contains("\"error\":")) {
+					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
 					} else {
 						// Parse JSON response — list is in "list" array
@@ -227,7 +244,7 @@ class RcloneController
 						Result.success(files)
 					}
 				} catch (e: Exception) {
-					Log.e(TAG, "listRemote failed: ${e.message}")
+					Timber.e("listRemote failed: ${e.message}")
 					Result.failure(e)
 				}
 			}
@@ -241,7 +258,7 @@ class RcloneController
 					val (remote, path) = parseRemotePath(remotePath)
 					val input = """{"fs":"$remote:","remote":"$path"}"""
 					val result = rpc("operations/deletefile", input)
-					if (result.contains("\"error\":")) Result.failure(IOException(result)) else Result.success(Unit)
+					if (hasRpcError(result)) Result.failure(IOException(result)) else Result.success(Unit)
 				} catch (e: Exception) {
 					Result.failure(e)
 				}
@@ -275,7 +292,7 @@ class RcloneController
 				try {
 					val input = """{"fs":"$remoteName:"}"""
 					val result = rpc("operations/about", input)
-					Result.success(!result.contains("\"error\""))
+					Result.success(!hasRpcError(result))
 				} catch (e: Exception) {
 					Result.failure(e)
 				}
@@ -288,20 +305,38 @@ class RcloneController
 			withContext(Dispatchers.IO) {
 				if (initialized) {
 					try {
-						val clazz = Class.forName("gomobile.Gomobile")
-						val finalizeMethod = clazz.getMethod("rcloneFinalize")
-						finalizeMethod.invoke(null)
+						finalizeMethod?.invoke(null)
 						initialized = false
 						configPathApplied = null
-						Log.i(TAG, "rclone finalized")
+						Timber.i("rclone finalized")
 					} catch (e: Exception) {
-						Log.w(TAG, "rclone finalize failed (non-fatal): ${e.message}")
+						Timber.w("rclone finalize failed (non-fatal): ${e.message}")
 					}
 				}
 			}
 		}
 
 		// ─── Helpers ──────────────────────────────────────────────────────
+
+		/**
+		 * F-SYNC-001: JSON-based error detection — replaces fragile substring
+		 * sniffing that false-matched on filenames containing the word error.
+		 */
+		private fun hasRpcError(output: String): Boolean {
+			return try {
+				JSONObject(output).has("error")
+			} catch (e: Exception) {
+				// Not valid JSON — treat as error (rclone always returns JSON on success).
+				true
+			}
+		}
+
+		/**
+		 * F-SYNC-006: Called by RcloneConfigManager.clear() to invalidate rclone cached config.
+		 */
+		fun invalidateConfigPath() {
+			configPathApplied = null
+		}
 
 		/**
 		 * Parse "myremote:path/to/file" into ("myremote", "path/to/file").
@@ -320,25 +355,19 @@ class RcloneController
 		 * Simplified parser — extracts name + size from the list array.
 		 */
 		private fun parseListResult(json: String): List<RemoteFileInfo> {
-			val files = mutableListOf<RemoteFileInfo>()
-			// Simple JSON parsing — look for "Name" and "Size" fields
-			val nameRegex = """"Name"\s*:\s*"([^"]+)"""".toRegex()
-			val sizeRegex = """"Size"\s*:\s*(\d+)""".toRegex()
-			// Split by "Path" entries
-			val entries = json.split("""{"Path":""".dropLast(1))
-			for (entry in entries.drop(1)) { // skip first (before first entry)
-				val nameMatch = nameRegex.find(entry)
-				val sizeMatch = sizeRegex.find(entry)
-				if (nameMatch != null) {
-					files.add(
-						RemoteFileInfo(
-							name = nameMatch.groupValues[1],
-							size = sizeMatch?.groupValues[1]?.toLongOrNull() ?: 0L,
-						),
-					)
+			// F-SYNC-013: use JSONArray instead of regex — handles escaped quotes.
+			return try {
+				val arr = JSONObject(json).optJSONArray("list") ?: return emptyList()
+				(0 until arr.length()).mapNotNull { i ->
+					val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+					val name = obj.optString("Name")
+					if (name.isEmpty()) null
+					else RemoteFileInfo(name = name, size = obj.optLong("Size", 0L))
 				}
+			} catch (e: Exception) {
+				Timber.w(e, "parseListResult: JSON parse failed")
+				emptyList()
 			}
-			return files
 		}
 	}
 

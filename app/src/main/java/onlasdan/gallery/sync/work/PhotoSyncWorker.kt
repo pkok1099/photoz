@@ -678,22 +678,21 @@ class PhotoSyncWorker
 				rcloneController.verifyRemote(remoteOrig).getOrThrow()
 				diag("performUpload: remote verification OK")
 			} catch (e: Exception) {
-				diag("performUpload: remote verification skipped — ${e.message}")
-				Timber.w(
-					"PhotoSyncWorker: verification skipped for %s — %s",
-					uuid,
-					e.message ?: "unknown",
-				)
-				SyncLogger.logStateTransition(
-					uuid,
-					"UPLOAD_PENDING",
-					"UPLOADED",
-					"hash skipped (unsupported), size verified OK",
-				)
-			} catch (e: Exception) {
-				diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
-				reportUploadFailureNotification(photo.fileName, batchState)
-				throw e
+				// F-SYNC-003: Merged duplicate catch — benign hash-unsupported errors
+				// fall through; real errors are re-thrown so the worker retries.
+				val msg = e.message ?: ""
+				val isBenign = msg.contains("hash", ignoreCase = true) ||
+					msg.contains("unsupported", ignoreCase = true) ||
+					msg.contains("not supported", ignoreCase = true)
+				if (isBenign) {
+					diag("performUpload: remote verification skipped — ${e.message}")
+					Timber.w("PhotoSyncWorker: verification skipped for %s — %s", uuid, e.message ?: "unknown")
+					SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "hash skipped (unsupported), size verified OK")
+				} else {
+					diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+					reportUploadFailureNotification(photo.fileName, batchState)
+					throw e
+				}
 			}
 
 			// ─── Item 3: optional full hash verification by re-download + decrypt ──

@@ -155,18 +155,18 @@ PhotoZ is a standard Android Gradle project. Build variants:
 ./gradlew :app:assemblePlayRelease
 ```
 
-The cloud-sync feature uses an embedded `rclone` binary (started as an rcd
-child process on first use). The binary is bundled per-ABI; no additional
-setup is required.
+The cloud-sync feature uses an embedded rclone **shared library** (loaded via
+gomobile JNI / `dlopen` from `app/libs/librclone.aar`). No subprocess is spawned;
+this is W^X-safe on Android 16.
 
 ### Database
 
-PhotoZ uses a Room database (`photok.db`). The current schema version is 9.
-Schema changes use Room auto-migrations declared in
-`PhotokDatabase.kt`. The v9 followup changes (packed thumbnails, encrypted
-escrow .crypt files, metadata backfill) are format-level only — no schema
-migration was needed (the `hash_registry` table already had
-`thumbnail_pack` / `thumbnail_offset` / `thumbnail_length` columns).
+PhotoZ uses a Room database (`photok.db`). The current schema version is 16.
+Schema changes use Room auto-migrations declared in `PhotokDatabase.kt` (file
+name) / `PhotoZDatabase` class. Since v16, the main DB is encrypted at-rest
+with SQLCipher (key backed by Android Keystore); a separate plaintext
+`BootstrapDatabase` (`photok_meta.db`) holds the `vault_protection` table so
+it can be read before the encrypted DB is unlocked.
 
 ## Community
 

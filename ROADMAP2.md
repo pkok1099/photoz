@@ -13,8 +13,9 @@ Dari 16 item di TODO1.md, status:
 | Status | Count | Items |
 |---|---|---|
 | ✅ DONE | 4 | #1 QtFastStart, #5 Jetpack Security (verified skip), #7 VMK zeroing, #8 FLAG_SECURE, #10 Duress PIN |
-| 📝 TODO | 8 | #2 Chunked encryption, #3 Argon2id, #4 TEE audit, #6 SQLCipher, #9 Root detection, #13 Rclone Phase 2, #15 TFLite, #16 M7 v2 merge |
+| 📝 TODO | 7 | #2 Chunked encryption, #3 Argon2id, #4 TEE audit, #9 Root detection, #13 Rclone Phase 2, #15 TFLite, #16 M7 v2 merge |
 | ⏸️ DEFERRED | 3 | #11 Key Attestation, #12 Play Integrity, #14 M6 Modularization |
+| ✅ DONE (this cycle) | 1 | #6 SQLCipher — implemented in v16 (Sprint 3), see `SqlCipherKeyProvider.kt` + `BootstrapDatabase.kt` + `MIGRATION_15_16` |
 
 **Sisa TODO yang perlu dikerjakan: 8 item**
 

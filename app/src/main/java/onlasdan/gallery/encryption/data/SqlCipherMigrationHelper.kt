@@ -243,7 +243,10 @@ class SqlCipherMigrationHelper
 				Timber.d("SqlCipherMigration: migration complete — DB is now SQLCipher-encrypted")
 				return true
 			} catch (e: Exception) {
-				Timber.e(e, "SqlCipherMigration: migration failed")
+				// F-ENC-002: Do NOT log the exception detail — the ATTACH SQL contains
+				// the SQLCipher passphrase hex. Log only the exception class + safe msg.
+				val safeMsg = e.message?.take(60)?.replace(Regex("'x\\\"[0-9a-f]+\\"'"), "'<REDACTED>'")
+				Timber.e("SqlCipherMigration: migration failed (${e.javaClass.simpleName}: $safeMsg)")
 				// Clean up partial state.
 				try {
 					plaintextDb?.close()

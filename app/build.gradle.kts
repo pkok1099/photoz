@@ -132,37 +132,18 @@ android {
 	}
 	namespace = "onlasdan.gallery"
 
-	// ─── Native library packaging — fix for "rclone binary not found" on Android 14+ ─────
+	// ─── Native library packaging — gomobile JNI (libgojni.so via dlopen) ──────────
 	//
-	// The app bundles a real Go-built CLI executable (rclone v1.68.2, statically linked,
-	// ELF type EXEC) under `jniLibs/<abi>/librclone.so` and runs it via `ProcessBuilder`.
+	// rclone is loaded via System.loadLibrary("gojni") (gomobile JNI, dlopen — NOT exec).
+	// useLegacyPackaging = false (default for minSdk >= 23): .so files are mmap`d from APK.
 	//
-	// AGP's default since 4.2 (and the only behavior with minSdk >= 23) is
-	// `useLegacyPackaging = null` → `extractNativeLibs = false`: `.so` files are stored
-	// UNCOMPRESSED + page-aligned inside the APK and `mmap`'d directly from the APK zip
-	// by `dlopen` at runtime. They are NEVER extracted to `nativeLibraryDir` on disk.
-	//
-	// This is fine for genuine shared libraries loaded via `System.loadLibrary()`, but
-	// fatal for our use case: there is no on-disk file for `ProcessBuilder.start()` to
-	// `execve()`. Symptom on Android 14/15/16:
-	//   `nativeLibraryDir=.../lib/arm64`
-	//   `nativeSrcLib(librclone.so) exists=false size=0 canRead=false`
-	//
-	// Setting `useLegacyPackaging = true` forces the OS to extract `.so` files to
-	// `nativeLibraryDir` as real files at install time — restoring the pre-AGP-4.2
-	// behavior that `ProcessBuilder` needs. Termux and PojavLauncher rely on this exact
-	// setting for the same reason (bundling real executables in jniLibs).
-	//
-	// Source: https://developer.android.com/guide/practices/page-sizes
-	// Source: https://developer.android.com/reference/tools/gradle-api/8.0/com/android/build/api/dsl/JniLibsPackagingOptions
-	// Source: https://github.com/termux/termux-packages/wiki/For-maintainers
-	//
-	// NOTE: this is the AGP DSL setting; the manifest `android:extractNativeLibs` attribute
-	// is IGNORED by AGP 9.0+ and replaced by this DSL flag. Do not also set the manifest
-	// attribute — they would conflict.
+	// F-MAIN-002: OLD useLegacyPackaging = true was for the subprocess approach
+	// (ProcessBuilder.start() needs on-disk file to execve()), removed in gomobile migration.
+	// Switching to false saves ~110 MB disk + faster install.
+	// 16KB page alignment verified by scripts/build-rclone-gomobile.sh.
 	packaging {
 		jniLibs {
-			useLegacyPackaging = true
+			useLegacyPackaging = false
 		}
 	}
 }

@@ -10,7 +10,7 @@
 - **Result**: ExoPlayer bisa baca metadata dari awal → play dalam 1-2 detik (progressive streaming benar-benar bekerja)
 - **Scope**: Hanya MP4/MOV (WEBM/MKV sudah streaming-friendly by design)
 - **Integration point**: `PhotoRepository.createPhotoFile()` — setelah baca plaintext, sebelum encrypt
-- **Status**: TODO
+- **Status**: DONE — see `FastStartUseCase.kt` + commits 8355dce5, 80b8838e
 
 ### 2. Chunked streaming encryption untuk file besar (video)
 - **Issue**: AES-GCM `doFinal()` pada seluruh file video butuh memory besar + tidak ada integrity check per-chunk

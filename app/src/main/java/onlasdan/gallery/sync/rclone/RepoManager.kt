@@ -522,17 +522,15 @@ class RepoManager
 					// ANY phrase-based restore is possible on this fresh install.
 					val escrowResult = downloadVaultProtectionEscrow()
 					if (escrowResult.isFailure) {
-						// Don't block login — the user can still get into the gallery via the
-						// normal vault PIN/password path; just no recovery-phrase restore on
-						// this fresh install. Surface as "not available" rather than an error.
-						val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
-						diag(
-							"loginRepo: Layer 1 escrow download failed (non-fatal): $err",
-							escrowResult.exceptionOrNull(),
-						)
-						// Reset any stale wrapped-phrase from a prior login attempt.
-						downloadedWrappedPhrase = null
-						return@runCatching LoginResult.Success(EscrowType.NONE)
+						// F-SYNC-004: A download ERROR is NOT "no escrow on remote". Treating it as
+					// EscrowType.NONE routes user to SetupFragment -> new VMK -> data loss.
+					// Surface as login FAILURE so user can retry on stable network.
+					val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
+					diag("loginRepo: Layer 1 escrow download FAILED (blocking): $err", escrowResult.exceptionOrNull())
+					downloadedWrappedPhrase = null
+					return@runCatching LoginResult.Failure(
+						"Layer 1 escrow download failed: $err. Do NOT continue — retry on a stable network.",
+					)
 					}
 
 					val layer1 = escrowResult.getOrNull()
@@ -549,13 +547,17 @@ class RepoManager
 					// phrase-entry UI).
 					val wrappedResult = downloadWrappedPhraseEscrow()
 					if (wrappedResult.isFailure) {
-						diag(
-							"loginRepo: Layer 2 escrow download failed (non-fatal, fall back to PHRASE_ONLY): " +
-								"${wrappedResult.exceptionOrNull()?.message}",
-							wrappedResult.exceptionOrNull(),
-						)
-						downloadedWrappedPhrase = null
-						return@runCatching LoginResult.Success(EscrowType.PHRASE_ONLY)
+						// F-SYNC-012: A download ERROR is NOT "no Layer 2 on remote". Falling back to
+					// PHRASE_ONLY forces phrase-entry UI which user may not complete -> data loss.
+					diag(
+						"loginRepo: Layer 2 escrow download FAILED (blocking): " +
+							"${wrappedResult.exceptionOrNull()?.message}",
+						wrappedResult.exceptionOrNull(),
+					)
+					downloadedWrappedPhrase = null
+					return@runCatching LoginResult.Failure(
+						"Layer 2 escrow download failed: ${wrappedResult.exceptionOrNull()?.message}. Retry on a stable network.",
+					)
 					}
 
 					val layer2 = wrappedResult.getOrNull()

@@ -662,13 +662,14 @@ class RepoSetupViewModel
 									"canUnlock will return true on next open",
 							)
 						} catch (e: Exception) {
-							android.util.Log.e(
-								"RcloneDiag",
-								"submitPassword: FAILED to create local VaultProtection(Password) — " +
-									"next open may re-trigger setup (data-loss risk!): ${e.message}",
-								e,
-							)
+							// F-SYNC-005: Do NOT navigate to gallery. Without a local
+							// VaultProtection(Password) row, next canUnlock() returns false
+							// -> SetupFragment -> new VMK -> all photos undecryptable.
 							Timber.e(e, "submitPassword: createPasswordProtectionFromSession failed")
+							_state.value = RepoSetupState.Error(
+								"Critical: unable to persist vault password. Do not close the app. Contact support. Error: ${e.message}",
+							)
+							return@launch
 						}
 
 						_state.value = RepoSetupState.Unlocked

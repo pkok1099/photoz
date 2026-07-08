@@ -11,10 +11,10 @@
 -keepattributes *Annotation*
 
 # Keep fields
--keepclassmembers class dev.leonlatsch.photok.** {
+-keepclassmembers class onlasdan.gallery.** {
     <fields>;
 }
--keep class dev.leonlatsch.photok.**
+-keep class onlasdan.gallery.**
 
 # Keep TypeToken
 -keep class com.google.gson.reflect.TypeToken { *; }
@@ -51,8 +51,8 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# rclone binary (librclone.so) — keep the JNI-bound wrapper classes that load
-# and invoke the bundled Go executable via ProcessBuilder.
+# rclone gomobile — keep the JNI-bound wrapper classes (RcloneController uses
+# reflection to invoke gomobile.Gomobile.rcloneInitialize/rcloneRPC/rcloneFinalize).
 -keep class onlasdan.gallery.sync.rclone.** { *; }
 
 # Crypto — keep cipher classes (Algorithm/Kdf enums are referenced by name
