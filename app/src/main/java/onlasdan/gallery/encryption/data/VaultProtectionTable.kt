@@ -45,7 +45,7 @@ import onlasdan.gallery.encryption.domain.models.VaultProtectionType
  * uniformity — the DAO-level queries enforce single-row semantics where
  * needed.
  *
- * ## Sprint 3 / TODO #6 — SQLCipher DB encryption
+ * ## Sprint 3 / (roadmap #6) — SQLCipher DB encryption
  *
  * This table now lives in the plaintext [BootstrapDatabase] (separate
  * file `photok_meta.db`). It must be readable BEFORE the encrypted

@@ -26,7 +26,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * TODO #2 — Chunked GCM InputStream.
+ * (roadmap #2) — Chunked GCM InputStream.
  *
  * Decrypts data from version 0x04 (chunked GCM) format. Reads chunks
  * sequentially, decrypting each independently with its own nonce + auth

@@ -64,7 +64,7 @@ class CbcCryptoEngine
 
 			try {
 				if (useGcm) {
-					// ─── TODO #2: Chunked GCM (version 0x04) for ALL new files ──
+					// ─── (roadmap #2): Chunked GCM (version 0x04) for ALL new files ──
 					// Replaces single-stream GCM (0x03) with per-chunk encryption:
 					// - Per-chunk auth tag (tamper detection per 1MB)
 					// - Random access decryption (seek to chunk N)
@@ -110,9 +110,9 @@ class CbcCryptoEngine
 					EncryptionVersionByte.One -> {
 						// Legacy v1: [0x01][SALT(16)][IV(16)][CBC ciphertext]
 						val salt = ByteArray(SALT_SIZE)
-						input.read(salt, 0, salt.size)
+						readFully(input, salt)
 						val iv = ByteArray(IV_SIZE)
-						input.read(iv, 0, iv.size)
+						readFully(input, iv)
 
 						val cipher =
 							Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
@@ -123,7 +123,7 @@ class CbcCryptoEngine
 					EncryptionVersionByte.Two -> {
 						// v2: [0x02][IV(16)][CBC ciphertext]
 						val iv = ByteArray(IV_SIZE)
-						input.read(iv, 0, iv.size)
+						readFully(input, iv)
 
 						val cipher =
 							Cipher.getInstance(Algorithm.AesCbcPkcs7Padding.value).apply {
@@ -139,7 +139,7 @@ class CbcCryptoEngine
 						// AEADBadTagException is thrown on read/close — callers
 						// should catch and treat as corruption.
 						val iv = ByteArray(GCM_IV_SIZE)
-						input.read(iv, 0, iv.size)
+						readFully(input, iv)
 
 						val cipher =
 							Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
@@ -159,5 +159,18 @@ class CbcCryptoEngine
 				Timber.e("Error creating CipherInputStream: $e")
 				return null
 			}
+		}
+	}
+
+	/**
+	 * (roadmap #20): Read exactly [buf.size] bytes from [input], looping if necessary.
+	 * InputStream.read(buf, off, len) is NOT guaranteed to fill the buffer.
+	 */
+	private fun readFully(input: java.io.InputStream, buf: ByteArray) {
+		var offset = 0
+		while (offset < buf.size) {
+			val n = input.read(buf, offset, buf.size - offset)
+			if (n <= 0) throw java.io.IOException("Unexpected EOF: needed ${buf.size} bytes, got $offset")
+			offset += n
 		}
 	}

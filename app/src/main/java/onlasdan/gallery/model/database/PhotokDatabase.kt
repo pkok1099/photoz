@@ -210,7 +210,7 @@ const val DATABASE_NAME = "photok.db"
 			from = 14,
 			to = 15,
 		),
-		// v15 → v16: Sprint 3 / TODO #6 — SQLCipher at-rest encryption.
+		// v15 → v16: Sprint 3 / (roadmap #6) — SQLCipher at-rest encryption.
 		//   No schema change to the entities remaining in [PhotoZDatabase]
 		//   (Photo / AlbumTable / AlbumPhotoCrossRefTable / SortTable /
 		//   HashRegistryEntry). The ONLY change is that VaultProtectionTable

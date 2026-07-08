@@ -47,7 +47,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Sprint 8 / TODO #15 — Semantic Search settings section.
+ * Sprint 8 / (roadmap #15) — Semantic Search settings section.
  *
  * Shows:
  * - Toggle to enable/disable on-device TFLite tag inference

@@ -76,7 +76,7 @@ class RestoreBackupV1
 			while (ze != null) {
 				val photoBackup =
 					metaData.photos.find {
-						ze.name.contains(it.uuid)
+						ze.name.startsWith(it.uuid + ".")
 					}
 
 				if (photoBackup == null) {

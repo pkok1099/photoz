@@ -27,7 +27,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * TODO #1 — QtFastStart: MP4 MOOV atom relocation for progressive streaming.
+ * (roadmap #1) — QtFastStart: MP4 MOOV atom relocation for progressive streaming.
  *
  * When a user imports an MP4/MOV video, the MOOV atom (metadata required
  * for playback) is often at the END of the file. ExoPlayer must seek to
@@ -47,7 +47,7 @@ import javax.inject.Singleton
  * A warning toast is shown to the user so they know progressive
  * streaming may not work for this video.
  *
- * @since TODO #1 — progressive video streaming
+ * @since (roadmap #1) — progressive video streaming
  */
 @Singleton
 class FastStartUseCase

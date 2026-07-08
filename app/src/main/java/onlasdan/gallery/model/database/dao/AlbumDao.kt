@@ -96,8 +96,8 @@ abstract class AlbumDao {
 
 	@Query("INSERT OR IGNORE INTO album_photos_cross_ref (album_uuid, photo_uuid, linked_at) VALUES (:albumId, :photoId, :linkedAt)")
 	protected abstract suspend fun internalLink(
-		photoId: String,
 		albumId: String,
+		photoId: String,
 		linkedAt: Long,
 	)
 

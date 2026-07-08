@@ -249,7 +249,7 @@ class RepoManager
 			withContext(Dispatchers.IO) {
 				// ─── DIAGNOSTIC LOGGING (Step B) ─────────────────────────────────
 				// detectRepo() is the user-facing entry point for the bug: it's the first
-				// call that triggers locateRcloneBinary() during login/repo-init. If we
+				// call that triggers rclone RPC during login/repo-init. If we
 				// never see this log line, the bug is in the call chain ABOVE detectRepo
 				// (e.g. the ViewModel doesn't call it, or short-circuits before).
 				android.util.Log.e(
@@ -286,14 +286,10 @@ class RepoManager
 						// that would also match "rclone binary not found" from locateRcloneBinary(),
 						// swallowing a real infrastructure error as a false "repo doesn't exist yet".
 						// @since PR1 sync — fix for error-swallowing bug that hid binary-not-found
-						val isDirNotFound =
+												val isDirNotFound =
 							err.contains("directory not found", ignoreCase = true) ||
-								err.contains("error in ListJSON", ignoreCase = true) ||
-								(
-									err.contains("not found", ignoreCase = true) &&
-										!err.contains("binary", ignoreCase = true) &&
-										!err.contains("rclone", ignoreCase = true)
-								)
+							err.contains("error in ListJSON", ignoreCase = true) ||
+							err.contains("not found", ignoreCase = true)
 						if (isDirNotFound) {
 							android.util.Log.e("RcloneDiag", "detectRepo: classifying as NOT_INITIALIZED (dir not found)")
 							return@withContext RepoState.NOT_INITIALIZED

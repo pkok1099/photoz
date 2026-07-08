@@ -51,7 +51,7 @@ class ChangePasswordUseCase
 				val newSalt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
 				val newIv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-				// ─── TODO #3 — Argon2id IV encoding ──────────────────────────────
+				// ─── (roadmap #3) — Argon2id IV encoding ──────────────────────────────
 				// For Argon2id, the `iv` field stores a 4-byte big-endian memory cost
 				// prefix followed by the 16-byte AES wrapping IV (total 20 bytes).
 				// For PBKDF2, the `iv` field is just the 16-byte IV.

@@ -55,7 +55,7 @@ class VaultService
                  */
                 private val breakInDetector: onlasdan.gallery.security.BreakInDetector,
                 /**
-                 * TODO #9 — Root/debugger detection. Checked on unlock to warn the user.
+                 * (roadmap #9) — Root/debugger detection. Checked on unlock to warn the user.
                  */
                 private val securityChecker: onlasdan.gallery.security.SecurityChecker,
                 /**
@@ -171,7 +171,7 @@ class VaultService
                                         // inactivity. Updated on every successful unlock.
                                         config.lastUnlockAt = System.currentTimeMillis()
 
-                                        // ─── TODO #9 — Security warning on unlock ──────────────────────
+                                        // ─── (roadmap #9) — Security warning on unlock ──────────────────────
                                         // Check for root/debugger and log a warning. The UI can poll
                                         // SecurityChecker.getSecurityWarning() to display a dialog.
                                         try {
@@ -212,12 +212,16 @@ class VaultService
                         for (protection in passwordProtections) {
                                 try {
                                         return passwordProtectionHandler.unlock(request, protection)
-                                } catch (e: Exception) {
-                                        // Auth tag verification failed (wrong password for THIS row) —
-                                        // try the next row. The exception type varies (AEADBadTagException
-                                        // for GCM, BadPaddingException for CBC) so we catch broadly.
-                                        Timber.d("unlockMultiVaultPassword: row ${protection.id} rejected password — trying next")
+                                } catch (e: javax.crypto.AEADBadTagException) {
+                                        // F-ENC-019: GCM auth tag verification failed (wrong password for THIS row).
+                                        // Try the next row — multi-vault unlock iterates all Password rows.
+                                        Timber.d("unlockMultiVaultPassword: row ${protection.id} rejected password (GCM auth) — trying next")
+                                } catch (e: javax.crypto.BadPaddingException) {
+                                        // F-ENC-019: CBC padding failure (wrong password for legacy row). Try next.
+                                        Timber.d("unlockMultiVaultPassword: row ${protection.id} rejected password (CBC padding) — trying next")
                                 }
+                                // F-ENC-019: Other exceptions (IOException, IllegalStateException, etc.) now
+                                // propagate as real errors instead of being silently treated as "wrong password".
                         }
                         throw IllegalStateException("Password did not unlock any vault")
                 }

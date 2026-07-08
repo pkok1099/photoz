@@ -59,7 +59,7 @@ class PasswordVaultProtectionHandler
 			requireNotNull(params.keySize)
 			requireNotNull(params.algorithm)
 
-			// TODO #3 — For Argon2id, the `iv` field contains a 4-byte memory cost
+			// (roadmap #3) — For Argon2id, the `iv` field contains a 4-byte memory cost
 			// prefix followed by the 16-byte AES wrapping IV. For PBKDF2, the `iv`
 			// field is just the 16-byte IV (no prefix).
 			val ivBytes = Base64.decode(params.iv)
@@ -105,7 +105,7 @@ class PasswordVaultProtectionHandler
 			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
 			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
 
-			// TODO #3 — New vaults use Argon2id (memory-hard KDF, 2025 standard).
+			// (roadmap #3) — New vaults use Argon2id (memory-hard KDF, 2025 standard).
 			// Old vaults stay PBKDF2 (backwards compatible — unlock dispatches by kdf type).
 			val kdf = Kdf.Argon2id
 			val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
@@ -174,7 +174,7 @@ class PasswordVaultProtectionHandler
 		): VaultProtection {
 			val salt = ByteArray(SALT_SIZE).also { SecureRandom().nextBytes(it) }
 			val iv = ByteArray(IV_SIZE).also { SecureRandom().nextBytes(it) }
-			// TODO #3 — use Argon2id for new wrappings
+			// (roadmap #3) — use Argon2id for new wrappings
 			val kdf = Kdf.Argon2id
 			val kdfIterations = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_ITERATIONS
 			val argon2MemoryKB = onlasdan.gallery.encryption.domain.crypto.KeyGen.DEFAULT_ARGON2_MEMORY_KB

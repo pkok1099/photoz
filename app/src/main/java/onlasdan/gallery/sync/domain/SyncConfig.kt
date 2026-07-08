@@ -41,7 +41,7 @@ object SyncConfig {
 	//   <remote>:photoz-backup/thumbnails/<uuid>.crypt.tn
 	//   <remote>:photoz-backup/videos/<uuid>.crypt.vp
 	//   <remote>:photoz-backup/registry.json.crypt        (v9 — dedup registry)
-	//   <remote>:photoz-backup/thumbnails/pack-*.pack     (future — 50MB packs)
+	//   <remote>:photoz-backup/thumbnails/pack-*.pack     (future — 5MB packs per SyncConfig.THUMBNAIL_PACK_SIZE_BYTES)
 	//   <remote>:photoz-backup/repo-config.json
 	//   <remote>:photoz-backup/vault-protection/recovery-phrase.json
 	//   <remote>:photoz-backup/vault-protection/wrapped-phrase.json

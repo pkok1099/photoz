@@ -40,7 +40,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class ImportBottomSheetDialogFragment(
 	uris: List<Uri>,
-	private val albumUUID: String? = "",
+	private val albumUUID: String? = null,
 	private val importSource: ImportSource,
 	/**
 	 * Sprint 3 / M10 — Optional album-name override for the Photo Picker flow.

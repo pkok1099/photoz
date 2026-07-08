@@ -42,7 +42,7 @@ class SessionRepositoryImpl
 		override fun require(): VaultSession = session ?: error("Vault is locked")
 
 		override fun reset() {
-			// Sprint 10+ / TODO #7 — Explicitly zero the VMK bytes before
+			// Sprint 10+ / (roadmap #7) — Explicitly zero the VMK bytes before
 			// dereferencing the session. Kotlin/JVM does NOT guarantee when
 			// GC will collect the SecretKey object — the raw key bytes can
 			// linger in heap for seconds to minutes after reset().

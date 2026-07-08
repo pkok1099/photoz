@@ -31,7 +31,7 @@ enum class Kdf(
 	PBKDF2WithHmacSHA256("PBKDF2WithHmacSHA256"),
 
 	/**
-	 * TODO #3 — Argon2id: memory-hard KDF (2025 standard).
+	 * (roadmap #3) — Argon2id: memory-hard KDF (2025 standard).
 	 *
 	 * Resistant to GPU/ASIC brute force (memory bandwidth bottleneck).
 	 * PBKDF2 is only CPU-hard — GPUs can parallelize it efficiently.

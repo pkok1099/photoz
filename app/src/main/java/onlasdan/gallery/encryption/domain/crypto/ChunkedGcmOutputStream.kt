@@ -27,7 +27,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * TODO #2 — Chunked GCM OutputStream.
+ * (roadmap #2) — Chunked GCM OutputStream.
  *
  * Encrypts data in fixed-size chunks (default 1MB). Each chunk gets its
  * own fresh nonce + GCM auth tag. This enables:

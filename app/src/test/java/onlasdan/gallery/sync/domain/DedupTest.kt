@@ -62,7 +62,7 @@ class DedupTest {
 	fun `same content hash in registry returns skip=true`() =
 		runTest {
 			val hash = "abc123def456"
-			coEvery { dao.findByHash(hash) } returns entryFor(hash)
+			coEvery { dao.findByHashAnyVault(hash) } returns entryFor(hash)
 
 			assertTrue("Entry exists for hash → must skip upload", dedup.shouldSkip(hash))
 		}
@@ -72,8 +72,8 @@ class DedupTest {
 		runTest {
 			val knownHash = "known-hash"
 			val newHash = "different-hash"
-			coEvery { dao.findByHash(knownHash) } returns entryFor(knownHash)
-			coEvery { dao.findByHash(newHash) } returns null
+			coEvery { dao.findByHashAnyVault(knownHash) } returns entryFor(knownHash)
+			coEvery { dao.findByHashAnyVault(newHash) } returns null
 
 			assertFalse("No entry for new hash → must upload", dedup.shouldSkip(newHash))
 		}
@@ -96,7 +96,7 @@ class DedupTest {
 		runTest {
 			val hash = "canonical-lookup-hash"
 			val entry = entryFor(hash, uuid = "canonical-uuid-1234")
-			coEvery { dao.findByHash(hash) } returns entry
+			coEvery { dao.findByHashAnyVault(hash) } returns entry
 
 			val result = dedup.findCanonical(hash)
 			assertEquals(entry, result)
@@ -107,7 +107,7 @@ class DedupTest {
 	fun `findCanonical returns null when hash not in registry`() =
 		runTest {
 			val hash = "missing-hash"
-			coEvery { dao.findByHash(hash) } returns null
+			coEvery { dao.findByHashAnyVault(hash) } returns null
 
 			assertNull(dedup.findCanonical(hash))
 		}
@@ -123,7 +123,7 @@ class DedupTest {
 	fun `shouldSkip and findCanonical agree for an existing hash`() =
 		runTest {
 			val hash = "agreement-hash"
-			coEvery { dao.findByHash(hash) } returns entryFor(hash)
+			coEvery { dao.findByHashAnyVault(hash) } returns entryFor(hash)
 
 			assertTrue(dedup.shouldSkip(hash))
 			assertEquals(entryFor(hash), dedup.findCanonical(hash))
@@ -133,7 +133,7 @@ class DedupTest {
 	fun `shouldSkip and findCanonical agree for a missing hash`() =
 		runTest {
 			val hash = "missing-agreement-hash"
-			coEvery { dao.findByHash(hash) } returns null
+			coEvery { dao.findByHashAnyVault(hash) } returns null
 
 			assertFalse(dedup.shouldSkip(hash))
 			assertNull(dedup.findCanonical(hash))
@@ -146,7 +146,7 @@ class DedupTest {
 			// so a tombstoned entry returns null from the DAO. Dedup must then say
 			// "upload" (the content is no longer referenced by any live photo).
 			val hash = "tombstoned-hash"
-			coEvery { dao.findByHash(hash) } returns null
+			coEvery { dao.findByHashAnyVault(hash) } returns null
 
 			assertFalse("Tombstoned entry must not block re-upload", dedup.shouldSkip(hash))
 		}

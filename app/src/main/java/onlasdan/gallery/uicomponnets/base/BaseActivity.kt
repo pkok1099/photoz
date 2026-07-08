@@ -32,7 +32,7 @@ import onlasdan.gallery.settings.data.Config
  */
 abstract class BaseActivity : AppCompatActivity() {
 	/**
-	 * Sprint 10+ / TODO #8 — AAPM (Advanced Protection Mode) awareness.
+	 * Sprint 10+ / (roadmap #8) — AAPM (Advanced Protection Mode) awareness.
 	 * When AAPM is on, FLAG_SECURE is forced regardless of the user's
 	 * "Allow Screenshots" setting.
 	 */

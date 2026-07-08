@@ -131,7 +131,7 @@ class Config(
                 set(value) = putLong(TIMESTAMP_LAST_RECOVERY_START, value)
 
         /**
-         * Sprint 3 / TODO #6 — SQLCipher migration completed flag.
+         * Sprint 3 / (roadmap #6) — SQLCipher migration completed flag.
          *
          * `true` once the one-time plaintext → SQLCipher-encrypted migration
          * has finished successfully (or fresh install where no migration was
@@ -322,7 +322,7 @@ class Config(
                 set(value) = putBoolean(SEMANTIC_SEARCH_ENABLED, value)
 
         /**
-         * Sprint 8 / TODO #15 — TFLite model download URL.
+         * Sprint 8 / (roadmap #15) — TFLite model download URL.
          * Configurable so users can point to a mirror if the default is slow.
          * @since Sprint 8 — TFLite activation
          */
@@ -331,7 +331,7 @@ class Config(
                 set(value) = putString(TFLITE_MODEL_URL, value)
 
         /**
-         * Sprint 8 / TODO #15 — TFLite model download status.
+         * Sprint 8 / (roadmap #15) — TFLite model download status.
          * - 0 = not downloaded
          * - 1 = downloading
          * - 2 = downloaded (ready to use)
@@ -645,7 +645,7 @@ class Config(
                 const val SEMANTIC_SEARCH_ENABLED_DEFAULT = false
 
                 /**
-                 * Sprint 8 / TODO #15 — TFLite model config.
+                 * Sprint 8 / (roadmap #15) — TFLite model config.
                  * @since Sprint 8 — TFLite activation
                  */
                 const val TFLITE_MODEL_URL = "tflite^modelUrl"
@@ -681,7 +681,7 @@ class Config(
                 const val PANIC_DIAL_CODE_DEFAULT = "9111"
 
                 /**
-                 * Sprint 3 / TODO #6 — SQLCipher migration completed flag.
+                 * Sprint 3 / (roadmap #6) — SQLCipher migration completed flag.
                  *
                  * @since v16 — Sprint 3 / TODO #6 SQLCipher
                  */

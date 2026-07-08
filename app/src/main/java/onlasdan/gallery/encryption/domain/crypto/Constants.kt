@@ -24,7 +24,7 @@ const val BLOCK_SIZE = 16
 const val GCM_IV_SIZE = 12
 const val GCM_TAG_SIZE = 16
 
-// ─── TODO #2: Chunked streaming encryption ─────────────────────────────────
+// ─── (roadmap #2): Chunked streaming encryption ─────────────────────────────────
 // Chunk size for version 0x04 (chunked GCM). 1MB is a good balance:
 // - Per-chunk overhead: 12 (nonce) + 16 (tag) = 28 bytes
 // - For 100MB video: ~100 chunks, ~2.8KB overhead (0.003%)

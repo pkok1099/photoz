@@ -674,7 +674,7 @@ fun SettingsContent(
                                 }
                         }
 
-                        // Sprint 8 / TODO #15 — Semantic Search settings section
+                        // Sprint 8 / (roadmap #15) — Semantic Search settings section
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val config = remember { onlasdan.gallery.settings.data.Config(context) }
                         SemanticSearchSettings(

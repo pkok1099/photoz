@@ -25,7 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * TODO #9 — Root + debugger detection.
+ * (roadmap #9) — Root + debugger detection.
  *
  * Casual root detection via multiple heuristics. NOT bulletproof — a
  * determined attacker with Magisk Hide / Zygisk can bypass all of these.
@@ -35,7 +35,7 @@ import javax.inject.Singleton
  * Also detects if a debugger is attached at critical paths (unlock, encrypt).
  * This prevents runtime memory inspection via `adb` attach.
  *
- * @since TODO #9 — root/debugger detection
+ * @since (roadmap #9) — root/debugger detection
  */
 @Singleton
 class SecurityChecker

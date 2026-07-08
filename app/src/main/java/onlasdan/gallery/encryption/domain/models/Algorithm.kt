@@ -63,7 +63,7 @@ enum class EncryptionVersionByte(
 	Three(0x03),
 
 	/**
-	 * TODO #2 — Chunked GCM encryption.
+	 * (roadmap #2) — Chunked GCM encryption.
 	 *
 	 * Format:
 	 * ```

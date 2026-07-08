@@ -181,7 +181,7 @@ class AesCbcRandomAccessDataSource(
 				)
 			}
 			EncryptionVersionByte.Four -> {
-				// TODO #2 — Chunked GCM random access.
+				// (roadmap #2) — Chunked GCM random access.
 				// Defer to ChunkedGcmRandomAccessDataSource for version 0x04.
 				// This is handled by the caller (ImageViewerViewModel) which
 				// checks the version byte and dispatches. If we reach here,

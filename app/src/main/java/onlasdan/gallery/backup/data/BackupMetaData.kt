@@ -35,7 +35,9 @@ sealed interface BackupMetaData {
                 @Expose override val photos: List<PhotoBackup>,
                 @Expose val password: String,
                 @Expose val albums: List<AlbumBackup>,
-                @Expose val albumPhotoRefs: List<AlbumPhotoRefBackup>,
+                @Expose val albumPhotoRefs: List<AlbumPhotoRefBackup>,		// F-BACK-012: albums and albumPhotoRefs are declared for Gson deserialization
+		// tolerance but are always empty in V1 backups; V1 restore ignores them.
+
                 @Expose override val createdAt: Long = System.currentTimeMillis(),
                 @Expose override val backupVersion: Int,
         ) : BackupMetaData

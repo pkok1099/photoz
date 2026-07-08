@@ -496,7 +496,7 @@ class PhotoSyncWorker
 			if (!contentHash.isNullOrBlank()) {
 				val existing =
 					try {
-						hashRegistry.findExisting(contentHash)
+						hashRegistry.findExisting(contentHash, runCatching { sessionRepository.get()?.vaultId }.getOrNull())
 					} catch (e: Exception) {
 						diag("performUpload: dedup lookup FAILED (non-fatal, will upload normally): ${e.message}", e)
 						null

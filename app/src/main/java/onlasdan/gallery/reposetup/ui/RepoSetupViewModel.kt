@@ -593,8 +593,7 @@ class RepoSetupViewModel
 						// flushes from this device.
 						try {
 							val loaded = repoManager.downloadRegistry(session.vmk.encoded)
-							android.util.Log.e(
-								"RcloneDiag",
+							Timber.e(
 								"submitPassword: downloadRegistry loaded $loaded entries into local cache",
 							)
 
@@ -614,8 +613,7 @@ class RepoSetupViewModel
 							// original-fetch path corrects it — see the data-loss
 							// bug report ("metadata hilang saat reinstall").
 							val backfilled = repoManager.applyRegistryMetadataToPhotos()
-							android.util.Log.e(
-								"RcloneDiag",
+							Timber.e(
 								"submitPassword: applyRegistryMetadataToPhotos backfilled $backfilled placeholder rows",
 							)
 
@@ -629,13 +627,11 @@ class RepoSetupViewModel
 							// round-trips. Also handles legacy individual thumbnails
 							// (for old repos) as a fallback.
 							val packRestored = repoManager.restoreThumbnailsFromPacks()
-							android.util.Log.e(
-								"RcloneDiag",
+							Timber.e(
 								"submitPassword: restoreThumbnailsFromPacks restored $packRestored thumbnails from packs (and/or legacy individual)",
 							)
 						} catch (e: Exception) {
-							android.util.Log.e(
-								"RcloneDiag",
+							Timber.e(
 								"submitPassword: downloadRegistry FAILED (non-fatal — uploads will still work, just no dedup): ${e.message}",
 								e,
 							)
@@ -656,8 +652,7 @@ class RepoSetupViewModel
 						// password → same VMK → photos decrypt correctly.
 						try {
 							vaultService.createPasswordProtectionFromSession(password, session)
-							android.util.Log.e(
-								"RcloneDiag",
+							Timber.e(
 								"submitPassword: created local VaultProtection(Password) — " +
 									"canUnlock will return true on next open",
 							)

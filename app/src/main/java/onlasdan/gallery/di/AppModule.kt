@@ -190,7 +190,7 @@ object AppModule {
 	fun provideAppScope() = CoroutineScope(Dispatchers.Default)
 
 	/**
-	 * Sprint 8 / TODO #15 — TFLite tag extractor temporarily disabled
+	 * Sprint 8 / (roadmap #15) — TFLite tag extractor temporarily disabled
 	 * for startup crash debugging. Using StubTagExtractor instead.
 	 * @since Sprint 8 — TFLite disabled for debugging
 	 */

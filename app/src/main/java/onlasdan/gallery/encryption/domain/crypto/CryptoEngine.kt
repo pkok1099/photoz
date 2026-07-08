@@ -30,7 +30,7 @@ import java.io.OutputStream
  * video previews, PDF/ZIP/audio) default to GCM for the authentication tag
  * protection (Sprint 1 / P6).
  *
- * TODO #2 — The encrypt path now returns [OutputStream] (not [CipherOutputStream])
+ * (roadmap #2) — The encrypt path now returns [OutputStream] (not [CipherOutputStream])
  * because chunked GCM (version 0x04) uses a custom [ChunkedGcmOutputStream] that
  * doesn't extend CipherOutputStream. The decrypt path returns [InputStream] for
  * the same reason ([ChunkedGcmInputStream] doesn't extend CipherInputStream).
