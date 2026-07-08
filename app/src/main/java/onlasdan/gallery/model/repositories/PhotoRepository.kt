@@ -214,11 +214,8 @@ class PhotoRepository
 						fastStartTempFile = fastStartedFile
 						effectiveInputStream = java.io.FileInputStream(fastStartedFile)
 						effectiveSize = fastStartedFile.length()
-						Timber.i(
-						"[FastStart] Using faststarted file for import (${fastStartedFile.length()} bytes)",
-					)} bytes)",
-						)
-					}
+						Timber.i("[FastStart] Using faststarted file for import (${fastStartedFile.length()} bytes)")
+						}
 				} catch (e: Exception) {
 					Timber.w(e, "FastStart: integration failed (non-fatal) — using original")
 				}

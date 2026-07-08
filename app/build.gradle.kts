@@ -30,7 +30,7 @@ apply(plugin = "androidx.navigation.safeargs.kotlin")
 apply(plugin = "dagger.hilt.android.plugin")
 
 android {
-	compileSdk = 37
+	compileSdk = 36
 
 	defaultConfig {
 		applicationId = "onlasdan.gallery"

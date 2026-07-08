@@ -42,191 +42,196 @@ import javax.inject.Singleton
  */
 @Singleton
 class RcloneConfigManager
-	@Inject
-	constructor(
-		private val app: Application,
-		private val config: Config,
-	) {
-		data class RemoteInfo(
-			val name: String,
-			val type: String?,
-		)
+        @Inject
+        constructor(
+                private val app: Application,
+                private val config: Config,
+                private val rcloneController: RcloneController,
+        ) {
+                data class RemoteInfo(
+                        val name: String,
+                        val type: String?,
+                )
 
-		sealed class Status {
-			object NotConfigured : Status()
+                sealed class Status {
+                        object NotConfigured : Status()
 
-			data class Configured(
-				val remoteName: String,
-			) : Status()
+                        data class Configured(
+                                val remoteName: String,
+                        ) : Status()
 
-			data class AwaitingRemoteChoice(
-				val availableRemotes: List<RemoteInfo>,
-			) : Status()
+                        data class AwaitingRemoteChoice(
+                                val availableRemotes: List<RemoteInfo>,
+                        ) : Status()
 
-			data class Invalid(
-				val reason: InvalidReason,
-			) : Status()
+                        data class Invalid(
+                                val reason: InvalidReason,
+                        ) : Status()
 
-			enum class InvalidReason {
-				NO_SECTIONS,
-				UNREADABLE,
-			}
-		}
+                        enum class InvalidReason {
+                                NO_SECTIONS,
+                                UNREADABLE,
+                        }
+                }
 
-		val configFile: File?
-			get() = targetFile().takeIf { it.exists() }
+                val configFile: File?
+                        get() = targetFile().takeIf { it.exists() }
 
-		/** Canonical config path, even before the file is imported. */
-		val configFilePath: String
-			get() = targetFile().absolutePath
+                /** Canonical config path, even before the file is imported. */
+                val configFilePath: String
+                        get() = targetFile().absolutePath
 
-		val binDir: File
-			get() = File(app.filesDir, BIN_DIR_NAME).also { it.mkdirs() }
+                val binDir: File
+                        get() = File(app.filesDir, BIN_DIR_NAME).also { it.mkdirs() }
 
-		suspend fun import(sourceUri: Uri): Result<Unit> =
-			withContext(Dispatchers.IO) {
-				runCatching {
-					val targetFile = targetFile()
-					targetFile.parentFile?.mkdirs()
-					val tempFile = File(app.filesDir, CONFIG_TEMP_NAME)
-					tempFile.parentFile?.mkdirs()
+                suspend fun import(sourceUri: Uri): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                runCatching {
+                                        val targetFile = targetFile()
+                                        targetFile.parentFile?.mkdirs()
+                                        val tempFile = File(app.filesDir, CONFIG_TEMP_NAME)
+                                        tempFile.parentFile?.mkdirs()
 
-					val raw = readUriToBytes(sourceUri).getOrThrow()
-					val parsed = parseConfig(String(raw, Charsets.UTF_8))
-					validate(parsed)
+                                        val raw = readUriToBytes(sourceUri).getOrThrow()
+                                        val parsed = parseConfig(String(raw, Charsets.UTF_8))
+                                        validate(parsed)
 
-					tempFile.outputStream().use { it.write(raw) }
-					if (!tempFile.renameTo(targetFile)) {
-						tempFile.delete()
-						throw IOException("Failed to commit rclone.conf (rename failed)")
-					}
-					Timber.i("rclone.conf imported: ${parsed.sections.size} section(s): ${parsed.sections.keys}")
-				}
-			}
+                                        tempFile.outputStream().use { it.write(raw) }
+                                        if (!tempFile.renameTo(targetFile)) {
+                                                tempFile.delete()
+                                                throw IOException("Failed to commit rclone.conf (rename failed)")
+                                        }
+                                        Timber.i("rclone.conf imported: ${parsed.sections.size} section(s): ${parsed.sections.keys}")
+                                }
+                        }
 
-		suspend fun clear(): Result<Unit> =
-			withContext(Dispatchers.IO) {
-				runCatching {
-					configFile?.delete()
-					config.syncChosenRemote = null
-					Unit
-				}
-			}
+                suspend fun clear(): Result<Unit> =
+                        withContext(Dispatchers.IO) {
+                                runCatching {
+                                        configFile?.delete()
+                                        config.syncChosenRemote = null
+                                        // F-SYNC-006: invalidate rclone's in-memory cached config so the
+                                        // next operation re-reads the (possibly new) config file. Without
+                                        // this, rclone keeps using the old config until process restart.
+                                        rcloneController.invalidateConfigPath()
+                                        Unit
+                                }
+                        }
 
-		suspend fun isConfigured(): Boolean =
-			withContext(Dispatchers.IO) {
-				currentStatus() is Status.Configured
-			}
+                suspend fun isConfigured(): Boolean =
+                        withContext(Dispatchers.IO) {
+                                currentStatus() is Status.Configured
+                        }
 
-		suspend fun currentStatus(): Status =
-			withContext(Dispatchers.IO) {
-				val f = configFile ?: return@withContext Status.NotConfigured
-				val parsed =
-					runCatching { parseConfig(f.readText()) }.getOrElse {
-						return@withContext Status.Invalid(Status.InvalidReason.UNREADABLE)
-					}
-				if (parsed.sections.isEmpty()) {
-					return@withContext Status.Invalid(Status.InvalidReason.NO_SECTIONS)
-				}
+                suspend fun currentStatus(): Status =
+                        withContext(Dispatchers.IO) {
+                                val f = configFile ?: return@withContext Status.NotConfigured
+                                val parsed =
+                                        runCatching { parseConfig(f.readText()) }.getOrElse {
+                                                return@withContext Status.Invalid(Status.InvalidReason.UNREADABLE)
+                                        }
+                                if (parsed.sections.isEmpty()) {
+                                        return@withContext Status.Invalid(Status.InvalidReason.NO_SECTIONS)
+                                }
 
-				val chosen = config.syncChosenRemote
-				if (chosen != null && parsed.sections.containsKey(chosen)) {
-					Status.Configured(remoteName = chosen)
-				} else {
-					Status.AwaitingRemoteChoice(availableRemotes = parsed.toRemoteInfos())
-				}
-			}
+                                val chosen = config.syncChosenRemote
+                                if (chosen != null && parsed.sections.containsKey(chosen)) {
+                                        Status.Configured(remoteName = chosen)
+                                } else {
+                                        Status.AwaitingRemoteChoice(availableRemotes = parsed.toRemoteInfos())
+                                }
+                        }
 
-		suspend fun availableRemotes(): List<RemoteInfo> =
-			withContext(Dispatchers.IO) {
-				val f = configFile ?: return@withContext emptyList()
-				runCatching {
-					parseConfig(f.readText()).toRemoteInfos()
-				}.getOrDefault(emptyList())
-			}
+                suspend fun availableRemotes(): List<RemoteInfo> =
+                        withContext(Dispatchers.IO) {
+                                val f = configFile ?: return@withContext emptyList()
+                                runCatching {
+                                        parseConfig(f.readText()).toRemoteInfos()
+                                }.getOrDefault(emptyList())
+                        }
 
-		suspend fun chooseRemote(name: String): Boolean =
-			withContext(Dispatchers.IO) {
-				val parsed = runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
-				if (parsed?.sections?.containsKey(name) != true) {
-					return@withContext false
-				}
-				config.syncChosenRemote = name
-				true
-			}
+                suspend fun chooseRemote(name: String): Boolean =
+                        withContext(Dispatchers.IO) {
+                                val parsed = runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
+                                if (parsed?.sections?.containsKey(name) != true) {
+                                        return@withContext false
+                                }
+                                config.syncChosenRemote = name
+                                true
+                        }
 
-		private fun targetFile(): File = File(app.filesDir, CONFIG_FILE_NAME)
+                private fun targetFile(): File = File(app.filesDir, CONFIG_FILE_NAME)
 
-		private suspend fun readUriToBytes(uri: Uri): Result<ByteArray> =
-			withContext(Dispatchers.IO) {
-				runCatching {
-					app.contentResolver.openInputStream(uri).use { stream ->
-						stream ?: throw IOException("Cannot open input stream for $uri")
-						stream.readBytes()
-					}
-				}
-			}
+                private suspend fun readUriToBytes(uri: Uri): Result<ByteArray> =
+                        withContext(Dispatchers.IO) {
+                                runCatching {
+                                        app.contentResolver.openInputStream(uri).use { stream ->
+                                                stream ?: throw IOException("Cannot open input stream for $uri")
+                                                stream.readBytes()
+                                        }
+                                }
+                        }
 
-		fun toInvalidReason(e: Throwable): Status.InvalidReason =
-			when {
-				e is IOException -> Status.InvalidReason.UNREADABLE
-				e.message?.contains("no [section] headers", ignoreCase = true) == true ->
-					Status.InvalidReason.NO_SECTIONS
-				else -> Status.InvalidReason.UNREADABLE
-			}
+                fun toInvalidReason(e: Throwable): Status.InvalidReason =
+                        when {
+                                e is IOException -> Status.InvalidReason.UNREADABLE
+                                e.message?.contains("no [section] headers", ignoreCase = true) == true ->
+                                        Status.InvalidReason.NO_SECTIONS
+                                else -> Status.InvalidReason.UNREADABLE
+                        }
 
-		private fun parseConfig(text: String): ParsedConfig {
-			val sections = LinkedHashMap<String, Map<String, String>>()
-			var currentName: String? = null
-			val current = LinkedHashMap<String, String>()
+                private fun parseConfig(text: String): ParsedConfig {
+                        val sections = LinkedHashMap<String, Map<String, String>>()
+                        var currentName: String? = null
+                        val current = LinkedHashMap<String, String>()
 
-			fun flush() {
-				currentName?.let { name ->
-					sections[name] = LinkedHashMap(current)
-				}
-				current.clear()
-			}
+                        fun flush() {
+                                currentName?.let { name ->
+                                        sections[name] = LinkedHashMap(current)
+                                }
+                                current.clear()
+                        }
 
-			text.lineSequence().forEach { rawLine ->
-				val line = rawLine.trim()
-				if (line.isEmpty() || line.startsWith("#") || line.startsWith(";")) {
-					return@forEach
-				}
-				if (line.startsWith("[") && line.endsWith("]")) {
-					flush()
-					currentName = line.substring(1, line.length - 1).trim()
-					return@forEach
-				}
-				val eq = line.indexOf('=')
-				if (eq > 0 && currentName != null) {
-					val k = line.substring(0, eq).trim()
-					val v = line.substring(eq + 1).trim()
-					current[k] = v
-				}
-			}
-			flush()
+                        text.lineSequence().forEach { rawLine ->
+                                val line = rawLine.trim()
+                                if (line.isEmpty() || line.startsWith("#") || line.startsWith(";")) {
+                                        return@forEach
+                                }
+                                if (line.startsWith("[") && line.endsWith("]")) {
+                                        flush()
+                                        currentName = line.substring(1, line.length - 1).trim()
+                                        return@forEach
+                                }
+                                val eq = line.indexOf('=')
+                                if (eq > 0 && currentName != null) {
+                                        val k = line.substring(0, eq).trim()
+                                        val v = line.substring(eq + 1).trim()
+                                        current[k] = v
+                                }
+                        }
+                        flush()
 
-			return ParsedConfig(sections = sections)
-		}
+                        return ParsedConfig(sections = sections)
+                }
 
-		private fun validate(parsed: ParsedConfig) {
-			require(parsed.sections.isNotEmpty()) {
-				"rclone.conf has no [section] headers"
-			}
-		}
+                private fun validate(parsed: ParsedConfig) {
+                        require(parsed.sections.isNotEmpty()) {
+                                "rclone.conf has no [section] headers"
+                        }
+                }
 
-		private fun ParsedConfig.toRemoteInfos(): List<RemoteInfo> =
-			sections.entries.map { (name, kv) ->
-				RemoteInfo(name = name, type = kv["type"])
-			}
+                private fun ParsedConfig.toRemoteInfos(): List<RemoteInfo> =
+                        sections.entries.map { (name, kv) ->
+                                RemoteInfo(name = name, type = kv["type"])
+                        }
 
-		private data class ParsedConfig(
-			val sections: Map<String, Map<String, String>>,
-		)
+                private data class ParsedConfig(
+                        val sections: Map<String, Map<String, String>>,
+                )
 
-		companion object {
-			private const val CONFIG_FILE_NAME = "rclone/rclone.conf"
-			private const val CONFIG_TEMP_NAME = "rclone/rclone.conf.tmp"
-			private const val BIN_DIR_NAME = "rclone/bin"
-		}
-	}
+                companion object {
+                        private const val CONFIG_FILE_NAME = "rclone/rclone.conf"
+                        private const val CONFIG_TEMP_NAME = "rclone/rclone.conf.tmp"
+                        private const val BIN_DIR_NAME = "rclone/bin"
+                }
+        }

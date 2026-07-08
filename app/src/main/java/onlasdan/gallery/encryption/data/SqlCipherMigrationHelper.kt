@@ -245,7 +245,7 @@ class SqlCipherMigrationHelper
 			} catch (e: Exception) {
 				// F-ENC-002: Do NOT log the exception detail — the ATTACH SQL contains
 				// the SQLCipher passphrase hex. Log only the exception class + safe msg.
-				val safeMsg = e.message?.take(60)?.replace(Regex("'x\\\"[0-9a-f]+\\"'"), "'<REDACTED>'")
+				val safeMsg = e.message?.take(60)?.replace(SQLCIPHER_PASSPHRASE_PATTERN, "<REDACTED>")
 				Timber.e("SqlCipherMigration: migration failed (${e.javaClass.simpleName}: $safeMsg)")
 				// Clean up partial state.
 				try {
@@ -260,6 +260,9 @@ class SqlCipherMigrationHelper
 		}
 
 		companion object {
+			/** F-ENC-002: matches the SQLCipher raw-key format x"hex" in ATTACH SQL. */
+			private val SQLCIPHER_PASSPHRASE_PATTERN = Regex(Char(39).toString() + "x" + Char(34) + "[0-9a-f]+" + Char(34) + Char(39))
+
 			/** SQLite plaintext file magic header (first 16 bytes). */
 			private val SQLITE_MAGIC = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 		}
