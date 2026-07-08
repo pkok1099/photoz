@@ -77,3 +77,7 @@
 # SQLCipher — keep the JNI-bound database API.
 -keep class net.zetetic.database.sqlcipher.** { *; }
 -keep class net.zetetic.database.** { *; }
+
+# rclone gomobile — keep the JNI-bound classes.
+-keep class gomobile.** { *; }
+-keep class go.** { *; }

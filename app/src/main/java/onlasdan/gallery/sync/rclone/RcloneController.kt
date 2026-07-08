@@ -33,10 +33,10 @@ import javax.inject.Singleton
  * All rclone operations are performed via the RC API:
  *   RcloneRPC(method, inputJson) → outputJson
  *
- * The gomobile AAR provides the Rclone class with:
- *   - Rclone.rcloneInitialize() — call once at startup
- *   - Rclone.rcloneRPC(method: String, input: String): String — RC API call
- *   - Rclone.rcloneFinalize() — call on shutdown
+ * The gomobile AAR provides the Gomobile class with:
+ *   - Gomobile.rcloneInitialize() — call once at startup
+ *   - Gomobile.rcloneRPC(method: String, input: String): RcloneRPCResult — RC API call
+ *   - Gomobile.rcloneFinalize() — call on shutdown
  *
  * @since Sprint 8+ — gomobile JNI migration
  */
@@ -84,10 +84,10 @@ class RcloneController
 		fun ensureInitialized() {
 			if (!initialized) {
 				try {
-					// gomobile-generated Rclone class
+					// gomobile-generated Gomobile class
 					// The class name depends on the gomobile package path.
-					// rclone/librclone/gomobile produces package "rclone"
-					val clazz = Class.forName("rclone.Rclone")
+					// rclone/librclone/gomobile produces package "gomobile"
+					val clazz = Class.forName("gomobile.Gomobile")
 					val initMethod = clazz.getMethod("rcloneInitialize")
 					initMethod.invoke(null)
 					initialized = true
@@ -125,10 +125,13 @@ class RcloneController
 		private fun rpc(method: String, input: String): String {
 			ensureInitialized()
 			return try {
-				val clazz = Class.forName("rclone.Rclone")
+				val clazz = Class.forName("gomobile.Gomobile")
 				val rpcMethod = clazz.getMethod("rcloneRPC", String::class.java, String::class.java)
-				val result = rpcMethod.invoke(null, method, input) as String
-				result
+				val resultObj = rpcMethod.invoke(null, method, input)
+				// resultObj is a gomobile.RcloneRPCResult
+				val getOutputMethod = resultObj.javaClass.getMethod("getOutput")
+				val output = getOutputMethod.invoke(resultObj) as String
+				output
 			} catch (e: Exception) {
 				Log.e(TAG, "RPC call failed: method=$method error=${e.message}")
 				"{\"error\":\"${e.message}\"}"
@@ -271,7 +274,7 @@ class RcloneController
 			withContext(Dispatchers.IO) {
 				if (initialized) {
 					try {
-						val clazz = Class.forName("rclone.Rclone")
+						val clazz = Class.forName("gomobile.Gomobile")
 						val finalizeMethod = clazz.getMethod("rcloneFinalize")
 						finalizeMethod.invoke(null)
 						initialized = false
