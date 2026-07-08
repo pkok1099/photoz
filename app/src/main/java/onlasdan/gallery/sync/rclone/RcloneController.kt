@@ -47,7 +47,6 @@ class RcloneController
 		private val app: Application,
 		private val configManager: RcloneConfigManager,
 	) {
-
 		companion object {
 			private const val TAG = "RcloneController"
 			private var initialized = false
