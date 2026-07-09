@@ -100,7 +100,6 @@ class RestoreBackupV2
 						),
 					)!!
 
-				
 				io
 					.copy(encryptedZipInput, internalOutputStream)
 					.onFailure {

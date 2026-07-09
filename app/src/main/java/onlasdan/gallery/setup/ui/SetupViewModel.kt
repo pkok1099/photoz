@@ -47,137 +47,137 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SetupViewModel
-        @Inject
-        constructor(
-                app: Application,
-                private val config: Config,
-                private val vaultService: VaultService,
-                private val sessionRepository: SessionRepository,
-                private val telemetryService: TelemetryService,
-                // @since Part A fix + Part B two-layer escrow — needed to upload both escrow
-                // layers (wrapped VMK + wrapped phrase) to the rclone remote AFTER the
-                // vault is created. The prior call site (registerRepo) ran BEFORE
-                // SetupFragment and always skipped escrow upload — see the long note in
-                // RepoManager.registerRepo().
-                private val repoManager: RepoManager,
-        ) : ObservableViewModel(app) {
-                //region binding properties
+	@Inject
+	constructor(
+		app: Application,
+		private val config: Config,
+		private val vaultService: VaultService,
+		private val sessionRepository: SessionRepository,
+		private val telemetryService: TelemetryService,
+		// @since Part A fix + Part B two-layer escrow — needed to upload both escrow
+		// layers (wrapped VMK + wrapped phrase) to the rclone remote AFTER the
+		// vault is created. The prior call site (registerRepo) ran BEFORE
+		// SetupFragment and always skipped escrow upload — see the long note in
+		// RepoManager.registerRepo().
+		private val repoManager: RepoManager,
+	) : ObservableViewModel(app) {
+		//region binding properties
 
-                @Bindable
-                var password: String = String.empty
-                        set(value) {
-                                field = value
-                                notifyChange(BR.password, value)
-                        }
+		@Bindable
+		var password: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.password, value)
+			}
 
-                @Bindable
-                var confirmPassword: String = String.empty
-                        set(value) {
-                                field = value
-                                notifyChange(BR.confirmPassword, value)
-                        }
+		@Bindable
+		var confirmPassword: String = String.empty
+			set(value) {
+				field = value
+				notifyChange(BR.confirmPassword, value)
+			}
 
-                @get:Bindable
-                var setupState: MutableStateFlow<SetupState> = MutableStateFlow(SetupState.SETUP)
-                        private set
+		@get:Bindable
+		var setupState: MutableStateFlow<SetupState> = MutableStateFlow(SetupState.SETUP)
+			private set
 
-                // endregion
+		// endregion
 
-                fun onSetupClicked() =
-                        viewModelScope.launch {
-                                if (validateBothPasswords()) {
-                                        setupState.value = SetupState.LOADING
-
-                                        // ANTI-DATA-LOSS: If pendingPasswordSetup is true, the VMK was
-                                        // recovered from a recovery-phrase restore (PHRASE_ONLY login flow).
-                                        // We must NOT generate a new VMK — wrap the EXISTING VMK with the
-                                        // user's password so canUnlock() returns true on next app open.
-                                        if (config.pendingPasswordSetup) {
-                                                val session = sessionRepository.get()
-                                                if (session == null) {
-                                                        // Should not happen — phrase restore sets session before
-                                                        // navigating here. But if it does, fall back to full setup.
-                                                        Timber.w("pendingPasswordSetup=true but session is null — falling back to full create")
-                                                        vaultService.create(CreateRequest.Password(password))
-                                                        vaultService.unlock(UnlockRequest.Password(password))
-                                                                .onSuccess { s ->
-                                                                        sessionRepository.set(s)
-                                                                        completeSetupWithSession(s, password)
-                                                                }.onFailure {
-                                                                        setupState.value = SetupState.SETUP
-                                                                }
-                                                        return@launch
-                                                }
-                                                // Wrap existing VMK with the user's new password
-                                                vaultService.createPasswordProtectionFromSession(password, session)
-                                                config.pendingPasswordSetup = false
-                                                // Skip recovery phrase creation — it already exists from the
-                                                // original setup. Just upload escrows if repo is confirmed.
-                                                if (config.repoConfirmed) {
-                                                        viewModelScope.launch {
-                                                                try {
-                                                                        repoManager.uploadAllEscrows(password, session)
-                                                                } catch (e: Exception) {
-                                                                        Timber.w(e, "Escrow re-upload failed (non-fatal)")
-                                                                }
-                                                        }
-                                                }
-                                                config.justFinishedSetup = true
-                                                setupState.value = SetupState.SHOW_RECOVERY_PHRASE
-                                                return@launch
-                                        }
-
-                                        // Normal flow: create new VMK + new vault
-                                        vaultService.create(CreateRequest.Password(password))
-                                        vaultService
-                                                .unlock(UnlockRequest.Password(password))
-                                                .onSuccess { session ->
-                                                        sessionRepository.set(session)
-                                                        completeSetupWithSession(session, password)
-                                                }.onFailure {
-                                                        setupState.value = SetupState.SETUP
-                                                }
-                                }
-                        }
-
-                private suspend fun completeSetupWithSession(
-                        session: onlasdan.gallery.encryption.domain.models.VaultSession,
-                        password: String,
-                ) {
-		vaultService.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
-
-		// Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
-		// Non-fatal: if escrow upload fails, setup still completes.
-		if (config.repoConfirmed) {
+		fun onSetupClicked() =
 			viewModelScope.launch {
-				try {
-					val result = repoManager.uploadAllEscrows(password, session)
-					if (result.isFailure) {
-						Timber.w(result.exceptionOrNull(), "Escrow upload failed (non-fatal)")
+				if (validateBothPasswords()) {
+					setupState.value = SetupState.LOADING
+
+					// ANTI-DATA-LOSS: If pendingPasswordSetup is true, the VMK was
+					// recovered from a recovery-phrase restore (PHRASE_ONLY login flow).
+					// We must NOT generate a new VMK — wrap the EXISTING VMK with the
+					// user's password so canUnlock() returns true on next app open.
+					if (config.pendingPasswordSetup) {
+						val session = sessionRepository.get()
+						if (session == null) {
+							// Should not happen — phrase restore sets session before
+							// navigating here. But if it does, fall back to full setup.
+							Timber.w("pendingPasswordSetup=true but session is null — falling back to full create")
+							vaultService.create(CreateRequest.Password(password))
+							vaultService.unlock(UnlockRequest.Password(password))
+								.onSuccess { s ->
+									sessionRepository.set(s)
+									completeSetupWithSession(s, password)
+								}.onFailure {
+									setupState.value = SetupState.SETUP
+								}
+							return@launch
+						}
+						// Wrap existing VMK with the user's new password
+						vaultService.createPasswordProtectionFromSession(password, session)
+						config.pendingPasswordSetup = false
+						// Skip recovery phrase creation — it already exists from the
+						// original setup. Just upload escrows if repo is confirmed.
+						if (config.repoConfirmed) {
+							viewModelScope.launch {
+								try {
+									repoManager.uploadAllEscrows(password, session)
+								} catch (e: Exception) {
+									Timber.w(e, "Escrow re-upload failed (non-fatal)")
+								}
+							}
+						}
+						config.justFinishedSetup = true
+						setupState.value = SetupState.SHOW_RECOVERY_PHRASE
+						return@launch
 					}
-				} catch (e: Exception) {
-					Timber.w(e, "Escrow upload threw (non-fatal)")
+
+					// Normal flow: create new VMK + new vault
+					vaultService.create(CreateRequest.Password(password))
+					vaultService
+						.unlock(UnlockRequest.Password(password))
+						.onSuccess { session ->
+							sessionRepository.set(session)
+							completeSetupWithSession(session, password)
+						}.onFailure {
+							setupState.value = SetupState.SETUP
+						}
 				}
 			}
+
+		private suspend fun completeSetupWithSession(
+			session: onlasdan.gallery.encryption.domain.models.VaultSession,
+			password: String,
+		) {
+			vaultService.create(CreateRequest.RecoveryPhrase(session, Bip39WordCount.Twelve))
+
+			// Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
+			// Non-fatal: if escrow upload fails, setup still completes.
+			if (config.repoConfirmed) {
+				viewModelScope.launch {
+					try {
+						val result = repoManager.uploadAllEscrows(password, session)
+						if (result.isFailure) {
+							Timber.w(result.exceptionOrNull(), "Escrow upload failed (non-fatal)")
+						}
+					} catch (e: Exception) {
+						Timber.w(e, "Escrow upload threw (non-fatal)")
+					}
+				}
+			}
+
+			config.justFinishedSetup = true
+			telemetryService.signal(Signal.SetupCompleted)
+			setupState.value = SetupState.SHOW_RECOVERY_PHRASE
 		}
 
-		config.justFinishedSetup = true
-		telemetryService.signal(Signal.SetupCompleted)
-		setupState.value = SetupState.SHOW_RECOVERY_PHRASE
+		/**
+		 * Validate hte [password] property.
+		 */
+		fun validatePassword() = PasswordUtils.validatePassword(password)
+
+		/**
+		 * @see PasswordUtils.passwordsNotEmptyAndEqual
+		 */
+		fun passwordsEqual() = PasswordUtils.passwordsNotEmptyAndEqual(password, confirmPassword)
+
+		/**
+		 * @see PasswordUtils.validatePasswords
+		 */
+		fun validateBothPasswords() = PasswordUtils.validatePasswords(password, confirmPassword)
 	}
-
-	/**
-	 * Validate hte [password] property.
-                 */
-                fun validatePassword() = PasswordUtils.validatePassword(password)
-
-                /**
-                 * @see PasswordUtils.passwordsNotEmptyAndEqual
-                 */
-                fun passwordsEqual() = PasswordUtils.passwordsNotEmptyAndEqual(password, confirmPassword)
-
-                /**
-                 * @see PasswordUtils.validatePasswords
-                 */
-                fun validateBothPasswords() = PasswordUtils.validatePasswords(password, confirmPassword)
-        }

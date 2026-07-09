@@ -140,7 +140,6 @@ object SyncLogger {
 		}.onFailure { }
 	}
 
-
 	fun read(): String =
 		runCatching {
 			if (!::filesDir.isInitialized) return "(SyncLogger not initialized)"

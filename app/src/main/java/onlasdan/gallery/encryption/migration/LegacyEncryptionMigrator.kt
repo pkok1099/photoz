@@ -186,7 +186,7 @@ class LegacyEncryptionMigrator
 				val encryptedLegacyInput = legacyCryptoEngine.createDecryptStream(originalInput, session)
 				val encryptedOutput = vaultFileStorage.openEncryptedOutput(tmpName)
 
-								requireNotNull(encryptedOutput) { "New output was null" }
+				requireNotNull(encryptedOutput) { "New output was null" }
 
 				io
 					.copy(

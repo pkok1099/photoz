@@ -286,10 +286,10 @@ class RepoManager
 						// that would also match "rclone binary not found" from locateRcloneBinary(),
 						// swallowing a real infrastructure error as a false "repo doesn't exist yet".
 						// @since PR1 sync — fix for error-swallowing bug that hid binary-not-found
-												val isDirNotFound =
+						val isDirNotFound =
 							err.contains("directory not found", ignoreCase = true) ||
-							err.contains("error in ListJSON", ignoreCase = true) ||
-							err.contains("not found", ignoreCase = true)
+								err.contains("error in ListJSON", ignoreCase = true) ||
+								err.contains("not found", ignoreCase = true)
 						if (isDirNotFound) {
 							android.util.Log.e("RcloneDiag", "detectRepo: classifying as NOT_INITIALIZED (dir not found)")
 							return@withContext RepoState.NOT_INITIALIZED
@@ -519,14 +519,14 @@ class RepoManager
 					val escrowResult = downloadVaultProtectionEscrow()
 					if (escrowResult.isFailure) {
 						// F-SYNC-004: A download ERROR is NOT "no escrow on remote". Treating it as
-					// EscrowType.NONE routes user to SetupFragment -> new VMK -> data loss.
-					// Surface as login FAILURE so user can retry on stable network.
-					val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
-					diag("loginRepo: Layer 1 escrow download FAILED (blocking): $err", escrowResult.exceptionOrNull())
-					downloadedWrappedPhrase = null
-					return@runCatching LoginResult.Failure(
-						"Layer 1 escrow download failed: $err. Do NOT continue — retry on a stable network.",
-					)
+						// EscrowType.NONE routes user to SetupFragment -> new VMK -> data loss.
+						// Surface as login FAILURE so user can retry on stable network.
+						val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
+						diag("loginRepo: Layer 1 escrow download FAILED (blocking): $err", escrowResult.exceptionOrNull())
+						downloadedWrappedPhrase = null
+						return@runCatching LoginResult.Failure(
+							"Layer 1 escrow download failed: $err. Do NOT continue — retry on a stable network.",
+						)
 					}
 
 					val layer1 = escrowResult.getOrNull()
@@ -544,16 +544,16 @@ class RepoManager
 					val wrappedResult = downloadWrappedPhraseEscrow()
 					if (wrappedResult.isFailure) {
 						// F-SYNC-012: A download ERROR is NOT "no Layer 2 on remote". Falling back to
-					// PHRASE_ONLY forces phrase-entry UI which user may not complete -> data loss.
-					diag(
-						"loginRepo: Layer 2 escrow download FAILED (blocking): " +
-							"${wrappedResult.exceptionOrNull()?.message}",
-						wrappedResult.exceptionOrNull(),
-					)
-					downloadedWrappedPhrase = null
-					return@runCatching LoginResult.Failure(
-						"Layer 2 escrow download failed: ${wrappedResult.exceptionOrNull()?.message}. Retry on a stable network.",
-					)
+						// PHRASE_ONLY forces phrase-entry UI which user may not complete -> data loss.
+						diag(
+							"loginRepo: Layer 2 escrow download FAILED (blocking): " +
+								"${wrappedResult.exceptionOrNull()?.message}",
+							wrappedResult.exceptionOrNull(),
+						)
+						downloadedWrappedPhrase = null
+						return@runCatching LoginResult.Failure(
+							"Layer 2 escrow download failed: ${wrappedResult.exceptionOrNull()?.message}. Retry on a stable network.",
+						)
 					}
 
 					val layer2 = wrappedResult.getOrNull()
@@ -1912,60 +1912,64 @@ class RepoManager
 		 * @since key-escrow — paired with [uploadRecoveryPhraseEscrow]
 		 */
 		private fun parseVaultProtection(json: String): VaultProtection? {
-		return try {
-			// F-SYNC-007: use JSONObject instead of regex — handles escaped quotes
-			// in base64 strings correctly (regex "([^"]+)" truncated at first \").
-			val obj = org.json.JSONObject(json)
-			val id = obj.optString("id")
-			val typeStr = obj.optString("type")
-			val wrappedVmkB64 = obj.optString("wrappedVMK")
-			val salt = if (obj.isNull("salt")) null else obj.optString("salt", null)
-			val iv = obj.optString("iv")
-			val kdfStr = obj.optString("kdf", null)
-			val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
-			val algorithmStr = obj.optString("algorithm")
-			val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
-			val version = obj.optInt("version", 1)
+			return try {
+				// F-SYNC-007: use JSONObject instead of regex — handles escaped quotes
+				// in base64 strings correctly (regex "([^"]+)" truncated at first \").
+				val obj = org.json.JSONObject(json)
+				val id = obj.optString("id")
+				val typeStr = obj.optString("type")
+				val wrappedVmkB64 = obj.optString("wrappedVMK")
+				val salt = if (obj.isNull("salt")) null else obj.optString("salt", null)
+				val iv = obj.optString("iv")
+				val kdfStr = obj.optString("kdf", null)
+				val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
+				val algorithmStr = obj.optString("algorithm")
+				val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
+				val version = obj.optInt("version", 1)
 
-			if (id.isEmpty() || typeStr.isEmpty() || wrappedVmkB64.isEmpty() ||
-				iv.isEmpty() || algorithmStr.isEmpty() || keySize == null
-			) {
-				diag("parseVaultProtection: missing required field(s)")
-				return null
-			}
+				if (id.isEmpty() ||
+					typeStr.isEmpty() ||
+					wrappedVmkB64.isEmpty() ||
+					iv.isEmpty() ||
+					algorithmStr.isEmpty() ||
+					keySize == null
+				) {
+					diag("parseVaultProtection: missing required field(s)")
+					return null
+				}
 
-			val type = VaultProtectionType.entries.find { it.name == typeStr }
-			if (type == null) {
-				diag("parseVaultProtection: unknown type=$typeStr")
-				return null
-			}
-			val algorithm = Algorithm.entries.find { it.value == algorithmStr }
-			if (algorithm == null) {
-				diag("parseVaultProtection: unknown algorithm=$algorithmStr")
-				return null
-			}
-			val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
-			val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
+				val type = VaultProtectionType.entries.find { it.name == typeStr }
+				if (type == null) {
+					diag("parseVaultProtection: unknown type=$typeStr")
+					return null
+				}
+				val algorithm = Algorithm.entries.find { it.value == algorithmStr }
+				if (algorithm == null) {
+					diag("parseVaultProtection: unknown algorithm=$algorithmStr")
+					return null
+				}
+				val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
+				val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
 
-			VaultProtection(
-				id = id,
-				type = type,
-				wrappedVMK = wrappedVMK,
-				params = VaultProtectionParams(
-					salt = salt,
-					iv = iv,
-					kdf = kdf,
-					kdfIterations = kdfIterations,
-					algorithm = algorithm,
-					keySize = keySize,
-					version = version,
-				),
-			)
-		} catch (e: Exception) {
-			diag("parseVaultProtection: FAILED ${e.javaClass.name}: ${e.message}", e)
-			null
+				VaultProtection(
+					id = id,
+					type = type,
+					wrappedVMK = wrappedVMK,
+					params = VaultProtectionParams(
+						salt = salt,
+						iv = iv,
+						kdf = kdf,
+						kdfIterations = kdfIterations,
+						algorithm = algorithm,
+						keySize = keySize,
+						version = version,
+					),
+				)
+			} catch (e: Exception) {
+				diag("parseVaultProtection: FAILED ${e.javaClass.name}: ${e.message}", e)
+				null
+			}
 		}
-	}
 
 		/**
 		 * Whether this device has a confirmed repo session. This is the gate for gallery access.
@@ -1995,20 +1999,20 @@ class RepoManager
 			}
 
 		private fun parseMarker(json: String): RepoMarker? =
-		try {
-			// F-SYNC-007: use JSONObject instead of regex
-			val obj = org.json.JSONObject(json)
-			val repoId = obj.optString("repo_id")
-			val created = obj.optString("created")
-			val version = obj.optInt("version", -1)
-			if (repoId.isNotEmpty() && created.isNotEmpty() && version >= 0) {
-				RepoMarker(repoId, created, version)
-			} else {
+			try {
+				// F-SYNC-007: use JSONObject instead of regex
+				val obj = org.json.JSONObject(json)
+				val repoId = obj.optString("repo_id")
+				val created = obj.optString("created")
+				val version = obj.optInt("version", -1)
+				if (repoId.isNotEmpty() && created.isNotEmpty() && version >= 0) {
+					RepoMarker(repoId, created, version)
+				} else {
+					null
+				}
+			} catch (e: Exception) {
 				null
 			}
-		} catch (e: Exception) {
-			null
-		}
 
 		companion object {
 			const val REPO_DIR = "photoz-backup"

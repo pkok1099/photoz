@@ -43,17 +43,17 @@ import java.io.IOException
  */
 @UnstableApi
 class VersionDispatchDataSourceFactory(
-        private val sessionRepository: SessionRepository,
-        private val availableBytesProvider: (Uri) -> Long = { -1L },
-        private val downloadCompleteProvider: (Uri) -> Boolean = { true },
+	private val sessionRepository: SessionRepository,
+	private val availableBytesProvider: (Uri) -> Long = { -1L },
+	private val downloadCompleteProvider: (Uri) -> Boolean = { true },
 ) : DataSource.Factory {
-        override fun createDataSource(): DataSource {
-                return VersionDispatchDataSource(
-                        sessionRepository = sessionRepository,
-                        availableBytesProvider = availableBytesProvider,
-                        downloadCompleteProvider = downloadCompleteProvider,
-                )
-        }
+	override fun createDataSource(): DataSource {
+		return VersionDispatchDataSource(
+			sessionRepository = sessionRepository,
+			availableBytesProvider = availableBytesProvider,
+			downloadCompleteProvider = downloadCompleteProvider,
+		)
+	}
 }
 
 /**
@@ -65,82 +65,82 @@ class VersionDispatchDataSourceFactory(
  */
 @UnstableApi
 class VersionDispatchDataSource(
-        private val sessionRepository: SessionRepository,
-        private val availableBytesProvider: (Uri) -> Long = { -1L },
-        private val downloadCompleteProvider: (Uri) -> Boolean = { true },
+	private val sessionRepository: SessionRepository,
+	private val availableBytesProvider: (Uri) -> Long = { -1L },
+	private val downloadCompleteProvider: (Uri) -> Boolean = { true },
 ) : DataSource {
-        private var delegate: DataSource? = null
+	private var delegate: DataSource? = null
 
-        override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-                val uri = dataSpec.uri
-                val path = uri.path ?: return 0
-                val file = File(path).canonicalFile
+	override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
+		val uri = dataSpec.uri
+		val path = uri.path ?: return 0
+		val file = File(path).canonicalFile
 
-                // Wait for at least 1 byte (version byte) to be available.
-                // For progressive download, this blocks until the first byte arrives.
-                val available = availableBytesProvider(uri)
-                if (available in 0..0) {
-                        // 0 bytes available but file might exist locally
-                }
+		// Wait for at least 1 byte (version byte) to be available.
+		// For progressive download, this blocks until the first byte arrives.
+		val available = availableBytesProvider(uri)
+		if (available in 0..0) {
+			// 0 bytes available but file might exist locally
+		}
 
-                // Read the version byte
-                val versionByte: Byte = try {
-                        if (!file.exists()) {
-                                // F-UV-013: Wait for file to appear instead of defaulting to 0x02.
-                                // Defaulting to CBC breaks progressive streaming of chunked-GCM videos (0x04).
-                                val deadline = System.currentTimeMillis() + 10_000L
-                                while (!file.exists() && System.currentTimeMillis() < deadline) {
-                                        Thread.sleep(100)
-                                }
-                                if (!file.exists()) {
-                                        throw IOException("VersionDispatchDataSource: file not found after 10s: ${file.absolutePath}")
-                                }
-                                val firstByte = ByteArray(1)
-                                file.inputStream().use { it.read(firstByte) }
-                                firstByte[0]
-                        } else {
-                                val firstByte = ByteArray(1)
-                                file.inputStream().use { it.read(firstByte) }
-                                firstByte[0]
-                        }
-                } catch (e: Exception) {
-                        // Can't read version byte — default to CBC (most common for video)
-                        0x02
-                }
+		// Read the version byte
+		val versionByte: Byte = try {
+			if (!file.exists()) {
+				// F-UV-013: Wait for file to appear instead of defaulting to 0x02.
+				// Defaulting to CBC breaks progressive streaming of chunked-GCM videos (0x04).
+				val deadline = System.currentTimeMillis() + 10_000L
+				while (!file.exists() && System.currentTimeMillis() < deadline) {
+					Thread.sleep(100)
+				}
+				if (!file.exists()) {
+					throw IOException("VersionDispatchDataSource: file not found after 10s: ${file.absolutePath}")
+				}
+				val firstByte = ByteArray(1)
+				file.inputStream().use { it.read(firstByte) }
+				firstByte[0]
+			} else {
+				val firstByte = ByteArray(1)
+				file.inputStream().use { it.read(firstByte) }
+				firstByte[0]
+			}
+		} catch (e: Exception) {
+			// Can't read version byte — default to CBC (most common for video)
+			0x02
+		}
 
-                // Dispatch based on version byte
-                delegate = when (versionByte) {
-                        // Version 0x04 — chunked GCM (new format, Sprint 1 / TODO #2)
-                        0x04.toByte() -> ChunkedGcmRandomAccessDataSource(
-                                sessionRepository = sessionRepository,
-                                availableBytesProvider = availableBytesProvider,
-                                downloadCompleteProvider = downloadCompleteProvider,
-                        )
-                        // All other versions (0x01, 0x02, 0x03) — CBC path
-                        // Note: 0x03 (single-stream GCM) is not supported for video streaming
-                        // (AesCbcRandomAccessDataSource will throw for v3 — that's correct,
-                        // videos should never be v3). v1 and v2 work fine via CBC.
-                        else -> AesCbcRandomAccessDataSource(
-                                sessionRepository = sessionRepository,
-                                availableBytesProvider = availableBytesProvider,
-                                downloadCompleteProvider = downloadCompleteProvider,
-                        )
-                }
+		// Dispatch based on version byte
+		delegate = when (versionByte) {
+			// Version 0x04 — chunked GCM (new format, Sprint 1 / TODO #2)
+			0x04.toByte() -> ChunkedGcmRandomAccessDataSource(
+				sessionRepository = sessionRepository,
+				availableBytesProvider = availableBytesProvider,
+				downloadCompleteProvider = downloadCompleteProvider,
+			)
+			// All other versions (0x01, 0x02, 0x03) — CBC path
+			// Note: 0x03 (single-stream GCM) is not supported for video streaming
+			// (AesCbcRandomAccessDataSource will throw for v3 — that's correct,
+			// videos should never be v3). v1 and v2 work fine via CBC.
+			else -> AesCbcRandomAccessDataSource(
+				sessionRepository = sessionRepository,
+				availableBytesProvider = availableBytesProvider,
+				downloadCompleteProvider = downloadCompleteProvider,
+			)
+		}
 
-                return delegate!!.open(dataSpec)
-        }
+		return delegate!!.open(dataSpec)
+	}
 
-        override fun read(target: ByteArray, offset: Int, length: Int): Int {
-                return delegate?.read(target, offset, length) ?: 0
-        }
+	override fun read(target: ByteArray, offset: Int, length: Int): Int {
+		return delegate?.read(target, offset, length) ?: 0
+	}
 
-        override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
-                delegate?.addTransferListener(transferListener)
-        }
+	override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
+		delegate?.addTransferListener(transferListener)
+	}
 
-        override fun getUri(): Uri? = delegate?.uri
+	override fun getUri(): Uri? = delegate?.uri
 
-        override fun close() {
-                delegate?.close()
-        }
+	override fun close() {
+		delegate?.close()
+	}
 }

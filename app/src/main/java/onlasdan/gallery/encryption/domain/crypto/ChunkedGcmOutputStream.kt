@@ -52,118 +52,118 @@ import javax.crypto.spec.GCMParameterSpec
  * @since v15 — TODO #2 chunked streaming encryption
  */
 class ChunkedGcmOutputStream(
-        private val output: OutputStream,
-        private val vmk: SecretKey,
-        private val chunkSize: Int = CHUNK_SIZE,
+	private val output: OutputStream,
+	private val vmk: SecretKey,
+	private val chunkSize: Int = CHUNK_SIZE,
 ) : OutputStream() {
-        private val buffer = ByteArray(chunkSize)
-        private var bufferPos = 0
-        private var totalBytesWritten = 0L
-        private var headerWritten = false
-        private val secureRandom = SecureRandom()
-        private var closed = false
+	private val buffer = ByteArray(chunkSize)
+	private var bufferPos = 0
+	private var totalBytesWritten = 0L
+	private var headerWritten = false
+	private val secureRandom = SecureRandom()
+	private var closed = false
 
-        private fun writeHeaderIfNeeded() {
-                if (headerWritten) return
-                // Version byte
-                output.write(byteArrayOf(EncryptionVersionByte.Four.value))
-                // Chunk size (4 bytes, big-endian)
-                val csBytes = ByteBuffer.allocate(4).putInt(chunkSize).array()
-                output.write(csBytes)
-                // Total plaintext size (8 bytes, big-endian) — 0 = unknown.
-                // The decryptor reads chunks until EOF when totalPlaintextSize=0.
-                output.write(ByteArray(8))
-                headerWritten = true
-        }
+	private fun writeHeaderIfNeeded() {
+		if (headerWritten) return
+		// Version byte
+		output.write(byteArrayOf(EncryptionVersionByte.Four.value))
+		// Chunk size (4 bytes, big-endian)
+		val csBytes = ByteBuffer.allocate(4).putInt(chunkSize).array()
+		output.write(csBytes)
+		// Total plaintext size (8 bytes, big-endian) — 0 = unknown.
+		// The decryptor reads chunks until EOF when totalPlaintextSize=0.
+		output.write(ByteArray(8))
+		headerWritten = true
+	}
 
-        override fun write(b: Int) {
-                write(byteArrayOf(b.toByte()))
-        }
+	override fun write(b: Int) {
+		write(byteArrayOf(b.toByte()))
+	}
 
-        override fun write(
-                b: ByteArray,
-                off: Int,
-                len: Int,
-        ) {
-                writeHeaderIfNeeded()
-                var remaining = len
-                var srcPos = off
-                while (remaining > 0) {
-                        val space = chunkSize - bufferPos
-                        val toCopy = minOf(remaining, space)
-                        System.arraycopy(b, srcPos, buffer, bufferPos, toCopy)
-                        bufferPos += toCopy
-                        srcPos += toCopy
-                        remaining -= toCopy
-                        if (bufferPos == chunkSize) {
-                                flushChunk()
-                        }
-                }
-        }
+	override fun write(
+		b: ByteArray,
+		off: Int,
+		len: Int,
+	) {
+		writeHeaderIfNeeded()
+		var remaining = len
+		var srcPos = off
+		while (remaining > 0) {
+			val space = chunkSize - bufferPos
+			val toCopy = minOf(remaining, space)
+			System.arraycopy(b, srcPos, buffer, bufferPos, toCopy)
+			bufferPos += toCopy
+			srcPos += toCopy
+			remaining -= toCopy
+			if (bufferPos == chunkSize) {
+				flushChunk()
+			}
+		}
+	}
 
-        private fun flushChunk() {
-                if (bufferPos == 0) return
-                val nonce = ByteArray(GCM_IV_SIZE).also { secureRandom.nextBytes(it) }
-                val cipher =
-                        Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-                                init(Cipher.ENCRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
-                        }
-                val ciphertext = cipher.doFinal(buffer, 0, bufferPos)
-                // Write: nonce(12) + ciphertext(plaintext_len) + tag(16, included in ciphertext)
-                output.write(nonce)
-                output.write(ciphertext)
-                totalBytesWritten += bufferPos
-                bufferPos = 0
-        }
+	private fun flushChunk() {
+		if (bufferPos == 0) return
+		val nonce = ByteArray(GCM_IV_SIZE).also { secureRandom.nextBytes(it) }
+		val cipher =
+			Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+				init(Cipher.ENCRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
+			}
+		val ciphertext = cipher.doFinal(buffer, 0, bufferPos)
+		// Write: nonce(12) + ciphertext(plaintext_len) + tag(16, included in ciphertext)
+		output.write(nonce)
+		output.write(ciphertext)
+		totalBytesWritten += bufferPos
+		bufferPos = 0
+	}
 
-        override fun flush() {
-                output.flush()
-        }
+	override fun flush() {
+		output.flush()
+	}
 
-        override fun close() {
-                if (closed) return
-                closed = true
-                try {
-                        writeHeaderIfNeeded()
-                        flushChunk() // Flush remaining buffered data
-                        output.flush()
-                        // F-ENC-016: Patch the total_plaintext_size header field (bytes 5-12)
-                        // now that we know the final size. Only possible if the underlying
-                        // output is a FileOutputStream (we can seek back to the header).
-                        // For other OutputStream types (network, in-memory), the header stays 0
-                        // and the decryptor reads until EOF (existing behavior).
-                        patchTotalPlaintextSizeIfPossible()
-                } catch (e: Exception) {
-                        Timber.e(e, "ChunkedGcmOutputStream: close failed")
-                } finally {
-                        output.close()
-                }
-                Timber.d("ChunkedGcmOutputStream: closed, total plaintext=%d bytes", totalBytesWritten)
-        }
+	override fun close() {
+		if (closed) return
+		closed = true
+		try {
+			writeHeaderIfNeeded()
+			flushChunk() // Flush remaining buffered data
+			output.flush()
+			// F-ENC-016: Patch the total_plaintext_size header field (bytes 5-12)
+			// now that we know the final size. Only possible if the underlying
+			// output is a FileOutputStream (we can seek back to the header).
+			// For other OutputStream types (network, in-memory), the header stays 0
+			// and the decryptor reads until EOF (existing behavior).
+			patchTotalPlaintextSizeIfPossible()
+		} catch (e: Exception) {
+			Timber.e(e, "ChunkedGcmOutputStream: close failed")
+		} finally {
+			output.close()
+		}
+		Timber.d("ChunkedGcmOutputStream: closed, total plaintext=%d bytes", totalBytesWritten)
+	}
 
-        /**
-         * F-ENC-016: If the output stream is a FileOutputStream, seek back to the
-         * header (offset 5, after version byte + chunk_size) and write the actual
-         * totalBytesWritten. This lets ExoPlayer know the content length for seeking.
-         *
-         * For other OutputStream types (ByteArrayOutputStream, network streams), the
-         * header stays 0 (unknown) — the decryptor reads chunks until EOF.
-         */
-        private fun patchTotalPlaintextSizeIfPossible() {
-                try {
-                        val fos = output as? java.io.FileOutputStream ?: return
-                        val channel = fos.channel
-                        if (!channel.isOpen) return
-                        // Save current position, seek to header offset 5, write size, restore position
-                        val savedPos = channel.position()
-                        channel.position(5) // skip version(1) + chunk_size(4)
-                        val sizeBytes = ByteBuffer.allocate(8).putLong(totalBytesWritten).array()
-                        channel.write(java.nio.ByteBuffer.wrap(sizeBytes))
-                        channel.position(savedPos)
-                        Timber.d("ChunkedGcmOutputStream: patched header totalPlaintextSize=%d", totalBytesWritten)
-                } catch (e: Exception) {
-                        // Non-fatal — the decryptor handles totalPlaintextSize=0 by reading until EOF.
-                        Timber.w(e, "ChunkedGcmOutputStream: could not patch header (non-fatal)")
-                }
-        }
+	/**
+	 * F-ENC-016: If the output stream is a FileOutputStream, seek back to the
+	 * header (offset 5, after version byte + chunk_size) and write the actual
+	 * totalBytesWritten. This lets ExoPlayer know the content length for seeking.
+	 *
+	 * For other OutputStream types (ByteArrayOutputStream, network streams), the
+	 * header stays 0 (unknown) — the decryptor reads chunks until EOF.
+	 */
+	private fun patchTotalPlaintextSizeIfPossible() {
+		try {
+			val fos = output as? java.io.FileOutputStream ?: return
+			val channel = fos.channel
+			if (!channel.isOpen) return
+			// Save current position, seek to header offset 5, write size, restore position
+			val savedPos = channel.position()
+			channel.position(5) // skip version(1) + chunk_size(4)
+			val sizeBytes = ByteBuffer.allocate(8).putLong(totalBytesWritten).array()
+			channel.write(java.nio.ByteBuffer.wrap(sizeBytes))
+			channel.position(savedPos)
+			Timber.d("ChunkedGcmOutputStream: patched header totalPlaintextSize=%d", totalBytesWritten)
+		} catch (e: Exception) {
+			// Non-fatal — the decryptor handles totalPlaintextSize=0 by reading until EOF.
+			Timber.w(e, "ChunkedGcmOutputStream: could not patch header (non-fatal)")
+		}
+	}
 }

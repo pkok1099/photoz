@@ -39,89 +39,92 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object SyncModule {
-        // RcloneConfigManager has @Inject constructor + @Singleton, so Hilt provides
-        // it directly. The dagger.Lazy<RcloneController> parameter breaks the cycle
-        // (RcloneController ↔ RcloneConfigManager).
+	// RcloneConfigManager has @Inject constructor + @Singleton, so Hilt provides
+	// it directly. The dagger.Lazy<RcloneController> parameter breaks the cycle
+	// (RcloneController ↔ RcloneConfigManager).
 
-        @Provides
-        @Singleton
-        fun provideRcloneController(
-                app: Application,
-                configManager: RcloneConfigManager,
-        ) = RcloneController(app, configManager)
+	@Provides
+	@Singleton
+	fun provideRcloneController(
+		app: Application,
+		configManager: RcloneConfigManager,
+	) = RcloneController(app, configManager)
 
-        @Provides
-        @Singleton
-        fun provideRepoManager(
-                app: Application,
-                config: Config,
-                rcloneController: RcloneController,
-                configManager: RcloneConfigManager,
-                // @since PR4 sync — RepoManager.restoreThumbnailsAfterLogin() inserts Photo
-                // DB rows for each thumbnail pulled back from the remote after login.
-                photoDao: PhotoDao,
-                // @since Bug 5 fix — RepoManager.ensurePhotoRowForRestoredEntry() now
-                // also auto-creates an album from the registry entry's `albumPath` and
-                // links the restored Photo to it. AlbumDao is bound by Hilt via
-                // AppModule.provideAlbumDao.
-                albumDao: AlbumDao,
-                // @since key-escrow — RepoManager needs to read/write the recovery-phrase
-                // VaultProtection row to escrow it to the remote during register and
-                // restore it from the remote during login. Already bound by Hilt
-                // (VaultProtectionRepositoryImpl has @Inject constructor).
-                vaultProtectionRepository: VaultProtectionRepository,
-                // @since Part A fix + Part B two-layer escrow — RepoManager uses
-                // PhraseEscrowWrapper to wrap/unwrap the recovery phrase with a
-                // password-derived KEK (Layer 2 of the two-layer escrow). The wrapper
-                // has @Inject constructor + @Singleton, so Hilt provides it directly.
-                phraseEscrowWrapper: PhraseEscrowWrapper,
-                // @since Part A fix + Part B two-layer escrow — RepoManager reads the
-                // locally-stored recovery phrase (encrypted-at-rest with the VMK) so it
-                // can be re-wrapped with the password and uploaded as wrapped-phrase.json.
-                // Already bound by Hilt (RecoveryPhraseStoreImpl has @Inject constructor,
-                // bound to RecoveryPhraseStore interface by EncryptionBindingModule).
-                recoveryPhraseStore: RecoveryPhraseStore,
-                // @since v9 dedup + encrypted GCM registry — RepoManager.downloadRegistry()
-                // delegates to HashRegistry.downloadAndCache() to populate the local
-                // Room cache from the encrypted remote registry. HashRegistry has
-                // @Singleton @Inject constructor, so Hilt provides it directly.
-                hashRegistry: HashRegistry,
-                // @since Sprint 2 / M7 — Multi-vault: RepoManager tags restored Photo
-                // rows + AlbumTable creations with the syncing vault's vault_id.
-                // SessionRepository has @Singleton @Inject constructor (bound by
-                // EncryptionBindingModule).
-                sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
-        ) = RepoManager(
-                app,
-                config,
-                rcloneController,
-                configManager,
-                photoDao,
-                albumDao,
-                vaultProtectionRepository,
-                phraseEscrowWrapper,
-                recoveryPhraseStore,
-                hashRegistry,
-                sessionRepository,
-        )
+	@Provides
+	@Singleton
+	fun provideRepoManager(
+		app: Application,
+		config: Config,
+		rcloneController: RcloneController,
+		configManager: RcloneConfigManager,
+		// @since PR4 sync — RepoManager.restoreThumbnailsAfterLogin() inserts Photo
+		// DB rows for each thumbnail pulled back from the remote after login.
+		photoDao: PhotoDao,
+		// @since Bug 5 fix — RepoManager.ensurePhotoRowForRestoredEntry() now
+		// also auto-creates an album from the registry entry's `albumPath` and
+		// links the restored Photo to it. AlbumDao is bound by Hilt via
+		// AppModule.provideAlbumDao.
+		albumDao: AlbumDao,
+		// @since key-escrow — RepoManager needs to read/write the recovery-phrase
+		// VaultProtection row to escrow it to the remote during register and
+		// restore it from the remote during login. Already bound by Hilt
+		// (VaultProtectionRepositoryImpl has @Inject constructor).
+		vaultProtectionRepository: VaultProtectionRepository,
+		// @since Part A fix + Part B two-layer escrow — RepoManager uses
+		// PhraseEscrowWrapper to wrap/unwrap the recovery phrase with a
+		// password-derived KEK (Layer 2 of the two-layer escrow). The wrapper
+		// has @Inject constructor + @Singleton, so Hilt provides it directly.
+		phraseEscrowWrapper: PhraseEscrowWrapper,
+		// @since Part A fix + Part B two-layer escrow — RepoManager reads the
+		// locally-stored recovery phrase (encrypted-at-rest with the VMK) so it
+		// can be re-wrapped with the password and uploaded as wrapped-phrase.json.
+		// Already bound by Hilt (RecoveryPhraseStoreImpl has @Inject constructor,
+		// bound to RecoveryPhraseStore interface by EncryptionBindingModule).
+		recoveryPhraseStore: RecoveryPhraseStore,
+		// @since v9 dedup + encrypted GCM registry — RepoManager.downloadRegistry()
+		// delegates to HashRegistry.downloadAndCache() to populate the local
+		// Room cache from the encrypted remote registry. HashRegistry has
+		// @Singleton @Inject constructor, so Hilt provides it directly.
+		hashRegistry: HashRegistry,
+		// @since Sprint 2 / M7 — Multi-vault: RepoManager tags restored Photo
+		// rows + AlbumTable creations with the syncing vault's vault_id.
+		// SessionRepository has @Singleton @Inject constructor (bound by
+		// EncryptionBindingModule).
+		sessionRepository: onlasdan.gallery.encryption.domain.SessionRepository,
+	) = RepoManager(
+		app,
+		config,
+		rcloneController,
+		configManager,
+		photoDao,
+		albumDao,
+		vaultProtectionRepository,
+		phraseEscrowWrapper,
+		recoveryPhraseStore,
+		hashRegistry,
+		sessionRepository,
+	)
 
-        // @since v9 dedup + encrypted GCM registry — provides the HashRegistryDao
-        // from the PhotoZDatabase singleton. HashRegistry itself has
-        // @Singleton @Inject constructor (auto-bound by Hilt), so it doesn't need an
-        // explicit @Provides — only the DAO does.
-        @Provides
-        @Singleton
-        fun provideHashRegistryDao(database: PhotoZDatabase): HashRegistryDao = database.getHashRegistryDao()
+	// @since v9 dedup + encrypted GCM registry — provides the HashRegistryDao
+	// from the PhotoZDatabase singleton. HashRegistry itself has
+	// @Singleton @Inject constructor (auto-bound by Hilt), so it doesn't need an
+	// explicit @Provides — only the DAO does.
+	@Provides
+	@Singleton
+	fun provideHashRegistryDao(database: PhotoZDatabase): HashRegistryDao = database.getHashRegistryDao()
 
-        @Provides
-        @Singleton
-        fun provideWorkManagerConfiguration(workerFactory: androidx.hilt.work.HiltWorkerFactory): Configuration =
-                Configuration
-                        .Builder()
-                        .setWorkerFactory(workerFactory)
-                        .setMinimumLoggingLevel(
-                        if (onlasdan.gallery.BuildConfig.DEBUG) android.util.Log.INFO
-                        else android.util.Log.WARN
-                )
-                        .build()
+	@Provides
+	@Singleton
+	fun provideWorkManagerConfiguration(workerFactory: androidx.hilt.work.HiltWorkerFactory): Configuration =
+		Configuration
+			.Builder()
+			.setWorkerFactory(workerFactory)
+			.setMinimumLoggingLevel(
+				if (onlasdan.gallery.BuildConfig.DEBUG) {
+					android.util.Log.INFO
+				} else {
+					android.util.Log.WARN
+				}
+			)
+			.build()
 }

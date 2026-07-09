@@ -159,7 +159,7 @@ class CacheRotationUseCase
 					maxAgeDays,
 					maxSizeMb,
 				)
-				}
+			}
 			return deleted
 		}
 	}

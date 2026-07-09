@@ -73,26 +73,26 @@ import onlasdan.gallery.model.database.Converters
  * @since v16 — Sprint 3 / TODO #6 SQLCipher
  */
 @Database(
-        entities = [VaultProtectionTable::class],
-        version = 2, // F-ENC-017: bump v1→v2 for wrappedVMK → wrapped_vmk column rename
-        exportSchema = true,
+	entities = [VaultProtectionTable::class],
+	version = 2, // F-ENC-017: bump v1→v2 for wrappedVMK → wrapped_vmk column rename
+	exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class BootstrapDatabase : RoomDatabase() {
-        abstract fun getVaultProtectionDao(): VaultProtectionDao
+	abstract fun getVaultProtectionDao(): VaultProtectionDao
 
-        companion object {
-                /** Plaintext bootstrap DB filename (lives in app's filesDir). */
-                const val DATABASE_NAME = "photok_meta.db"
+	companion object {
+		/** Plaintext bootstrap DB filename (lives in app's filesDir). */
+		const val DATABASE_NAME = "photok_meta.db"
 
-                /**
-                 * F-ENC-017: Rename column wrappedVMK → wrapped_vmk (snake_case consistency).
-                 * SQLite supports ALTER TABLE RENAME COLUMN since API 30+.
-                 */
-                val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
-                        override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                                db.execSQL("ALTER TABLE vault_protection RENAME COLUMN wrappedVMK TO wrapped_vmk")
-                        }
-                }
-        }
+		/**
+		 * F-ENC-017: Rename column wrappedVMK → wrapped_vmk (snake_case consistency).
+		 * SQLite supports ALTER TABLE RENAME COLUMN since API 30+.
+		 */
+		val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+			override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+				db.execSQL("ALTER TABLE vault_protection RENAME COLUMN wrappedVMK TO wrapped_vmk")
+			}
+		}
+	}
 }

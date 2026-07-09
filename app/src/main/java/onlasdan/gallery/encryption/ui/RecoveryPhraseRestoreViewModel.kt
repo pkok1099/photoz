@@ -115,7 +115,7 @@ class RecoveryPhraseRestoreViewModel
 		// gallery would show placeholder metadata ("metadata hilang saat
 		// reinstall") for users on the phrase-only path.
 		private val repoManager: RepoManager,
-	private val config: Config,
+		private val config: Config,
 	) : ViewModel() {
 		private val inputs = MutableStateFlow(RecoveryPhraseRestoreUiState.Inputs())
 
@@ -152,12 +152,12 @@ class RecoveryPhraseRestoreViewModel
 							.onSuccess { session ->
 								sessionRepository.set(session)
 
-											// ANTI-DATA-LOSS: set pendingPasswordSetup flag so SetupFragment
-											// knows to wrap the existing VMK with the user's password
-											// (createPasswordProtectionFromSession) instead of generating
-											// a new VMK. Without this, the next app open would see
-											// canUnlock()=false -> SETUP -> new VMK -> all photos undecryptable.
-											config.pendingPasswordSetup = true
+								// ANTI-DATA-LOSS: set pendingPasswordSetup flag so SetupFragment
+								// knows to wrap the existing VMK with the user's password
+								// (createPasswordProtectionFromSession) instead of generating
+								// a new VMK. Without this, the next app open would see
+								// canUnlock()=false -> SETUP -> new VMK -> all photos undecryptable.
+								config.pendingPasswordSetup = true
 
 								// ─── v9 followup: download registry + backfill Photo metadata ──
 								// Mirrors [RepoSetupViewModel.submitPassword]'s post-unlock

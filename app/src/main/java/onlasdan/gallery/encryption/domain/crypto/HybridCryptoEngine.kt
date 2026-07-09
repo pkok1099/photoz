@@ -39,14 +39,20 @@ import java.io.IOException
  */
 
 /** Thrown when the version byte is not recognized (1, 2, 3, or 4). */
-class InvalidVersionByteException(version: Int) : IOException("Invalid encryption version byte: 0x${version.toString(16)} (supported: 0x01-0x04)")
+class InvalidVersionByteException(
+	version: Int
+) : IOException("Invalid encryption version byte: 0x${version.toString(16)} (supported: 0x01-0x04)")
 
 /** Thrown when the file header is truncated or malformed. */
-class CorruptHeaderException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class CorruptHeaderException(
+	message: String,
+	cause: Throwable? = null
+) : IOException(message, cause)
 
 /** Thrown when the cipher algorithm in the params is unsupported. */
-class UnsupportedAlgorithmException(alg: String) : IOException("Unsupported cipher algorithm: $alg")
-
+class UnsupportedAlgorithmException(
+	alg: String
+) : IOException("Unsupported cipher algorithm: $alg")
 
 /**
  * Hybrid CBC + GCM crypto engine — the single injected [CryptoEngine] for PhotoZ.
@@ -179,15 +185,15 @@ class HybridCryptoEngine
 		}
 	}
 
-	/**
-	 * (roadmap #20): Read exactly [buf.size] bytes from [input], looping if necessary.
-	 * InputStream.read(buf, off, len) is NOT guaranteed to fill the buffer.
-	 */
-	private fun readFully(input: java.io.InputStream, buf: ByteArray) {
-		var offset = 0
-		while (offset < buf.size) {
-			val n = input.read(buf, offset, buf.size - offset)
-			if (n <= 0) throw java.io.IOException("Unexpected EOF: needed ${buf.size} bytes, got $offset")
-			offset += n
-		}
+/**
+ * (roadmap #20): Read exactly [buf.size] bytes from [input], looping if necessary.
+ * InputStream.read(buf, off, len) is NOT guaranteed to fill the buffer.
+ */
+private fun readFully(input: java.io.InputStream, buf: ByteArray) {
+	var offset = 0
+	while (offset < buf.size) {
+		val n = input.read(buf, offset, buf.size - offset)
+		if (n <= 0) throw java.io.IOException("Unexpected EOF: needed ${buf.size} bytes, got $offset")
+		offset += n
 	}
+}

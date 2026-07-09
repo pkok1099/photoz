@@ -153,8 +153,12 @@ class ChunkedGcmStreamTest {
 		} catch (e: Exception) {
 			// Expected — GCM auth tag verification should fail
 			val msg = e.message?.lowercase() ?: ""
-			val isExpectedError = msg.contains("tag") || msg.contains("auth") || msg.contains("mac") ||
-				msg.contains("decrypt") || msg.contains("padding") || e is javax.crypto.AEADBadTagException
+			val isExpectedError = msg.contains("tag") ||
+				msg.contains("auth") ||
+				msg.contains("mac") ||
+				msg.contains("decrypt") ||
+				msg.contains("padding") ||
+				e is javax.crypto.AEADBadTagException
 			assertTrue(
 				"Expected GCM/auth-tag error, got: ${e.javaClass.simpleName}: ${e.message}",
 				isExpectedError,

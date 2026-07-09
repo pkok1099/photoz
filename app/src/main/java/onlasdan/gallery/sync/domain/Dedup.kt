@@ -34,45 +34,45 @@ import onlasdan.gallery.sync.work.HashRegistryEntry
  * @since Batch 3 — extracted for testability
  */
 class Dedup(
-        private val dao: HashRegistryDao,
+	private val dao: HashRegistryDao,
 ) {
-        /**
-         * Returns `true` if [contentHash] already has a live (non-tombstoned)
-         * entry in the local registry cache — i.e. the upload should be SKIPPED.
-         *
-         * Returns `false` if:
-         *  - [contentHash] is `null` or blank (pre-v9 import, or hash computation
-         *    failed at import time — no dedup possible, upload normally).
-         *  - No entry exists for this hash (new content, upload normally).
-         *
-         * F-BACK-008: [vaultId] scopes the lookup to the current vault. Pass null
-         * to search across all vaults (legacy behavior — breaks multi-vault isolation).
-         */
-        suspend fun shouldSkip(contentHash: String?, vaultId: String? = null): Boolean {
-                if (contentHash.isNullOrBlank()) return false
-                return if (vaultId != null) {
-                        dao.findByHash(contentHash, vaultId) != null
-                } else {
-                        dao.findByHashAnyVault(contentHash) != null
-                }
-        }
+	/**
+	 * Returns `true` if [contentHash] already has a live (non-tombstoned)
+	 * entry in the local registry cache — i.e. the upload should be SKIPPED.
+	 *
+	 * Returns `false` if:
+	 *  - [contentHash] is `null` or blank (pre-v9 import, or hash computation
+	 *    failed at import time — no dedup possible, upload normally).
+	 *  - No entry exists for this hash (new content, upload normally).
+	 *
+	 * F-BACK-008: [vaultId] scopes the lookup to the current vault. Pass null
+	 * to search across all vaults (legacy behavior — breaks multi-vault isolation).
+	 */
+	suspend fun shouldSkip(contentHash: String?, vaultId: String? = null): Boolean {
+		if (contentHash.isNullOrBlank()) return false
+		return if (vaultId != null) {
+			dao.findByHash(contentHash, vaultId) != null
+		} else {
+			dao.findByHashAnyVault(contentHash) != null
+		}
+	}
 
-        /**
-         * Returns the canonical registry entry for [contentHash], or `null` if no
-         * entry exists (new content) or [contentHash] is blank.
-         *
-         * The canonical entry's [HashRegistryEntry.uuid] is the UUID under which
-         * the original + thumbnail + video preview are stored on the remote —
-         * used by the restore flow to fetch artifacts without a separate upload.
-         *
-         * F-BACK-008: [vaultId] scopes the lookup to the current vault.
-         */
-        suspend fun findCanonical(contentHash: String, vaultId: String? = null): HashRegistryEntry? {
-                if (contentHash.isBlank()) return null
-                return if (vaultId != null) {
-                        dao.findByHash(contentHash, vaultId)
-                } else {
-                        dao.findByHashAnyVault(contentHash)
-                }
-        }
+	/**
+	 * Returns the canonical registry entry for [contentHash], or `null` if no
+	 * entry exists (new content) or [contentHash] is blank.
+	 *
+	 * The canonical entry's [HashRegistryEntry.uuid] is the UUID under which
+	 * the original + thumbnail + video preview are stored on the remote —
+	 * used by the restore flow to fetch artifacts without a separate upload.
+	 *
+	 * F-BACK-008: [vaultId] scopes the lookup to the current vault.
+	 */
+	suspend fun findCanonical(contentHash: String, vaultId: String? = null): HashRegistryEntry? {
+		if (contentHash.isBlank()) return null
+		return if (vaultId != null) {
+			dao.findByHash(contentHash, vaultId)
+		} else {
+			dao.findByHashAnyVault(contentHash)
+		}
+	}
 }

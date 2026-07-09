@@ -67,32 +67,33 @@ import onlasdan.gallery.encryption.domain.models.VaultProtectionType
  */
 @Entity(tableName = "vault_protection")
 data class VaultProtectionTable(
-        @PrimaryKey
-        val id: String,
-        val type: VaultProtectionType,
-        @ColumnInfo(name = "wrapped_vmk") // F-ENC-017: renamed from camelCase wrappedVMK
-        val wrappedVMK: ByteArray,
-        val params: VaultProtectionParams,
+	@PrimaryKey
+	val id: String,
+	val type: VaultProtectionType,
+	// F-ENC-017: renamed from camelCase wrappedVMK
+	@ColumnInfo(name = "wrapped_vmk")
+	val wrappedVMK: ByteArray,
+	val params: VaultProtectionParams,
 ) {
-        override fun equals(other: Any?): Boolean {
-                if (this === other) return true
-                if (javaClass != other?.javaClass) return false
+	override fun equals(other: Any?): Boolean {
+		if (this === other) return true
+		if (javaClass != other?.javaClass) return false
 
-                other as VaultProtectionTable
+		other as VaultProtectionTable
 
-                if (id != other.id) return false
-                if (type != other.type) return false
-                if (!wrappedVMK.contentEquals(other.wrappedVMK)) return false
-                if (params != other.params) return false
+		if (id != other.id) return false
+		if (type != other.type) return false
+		if (!wrappedVMK.contentEquals(other.wrappedVMK)) return false
+		if (params != other.params) return false
 
-                return true
-        }
+		return true
+	}
 
-        override fun hashCode(): Int {
-                var result = id.hashCode()
-                result = 31 * result + type.hashCode()
-                result = 31 * result + wrappedVMK.contentHashCode()
-                result = 31 * result + params.hashCode()
-                return result
-        }
+	override fun hashCode(): Int {
+		var result = id.hashCode()
+		result = 31 * result + type.hashCode()
+		result = 31 * result + wrappedVMK.contentHashCode()
+		result = 31 * result + params.hashCode()
+		return result
+	}
 }
