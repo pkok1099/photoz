@@ -112,8 +112,20 @@ class RcloneController
 			initError?.let { return } // already failed; dont retry silently
 			try {
 				// F-SYNC-010: use cached reflection handles (looked up once via lazy).
-				val clazz = gomobileClass ?: error("gomobile.Gomobile class not found in AAR")
-				initMethod?.invoke(null) ?: error("rcloneInitialize method not found")
+				val clazz = gomobileClass
+				if (clazz == null) {
+					val msg = "gomobile.Gomobile class not found in AAR — Class.forName failed"
+					Timber.e(msg)
+					throw IllegalStateException(msg)
+				}
+				val initM = initMethod
+				if (initM == null) {
+					val msg = "rcloneInitialize method not found — AAR version mismatch or ProGuard stripped"
+					Timber.e(msg)
+					throw IllegalStateException(msg)
+				}
+				Timber.d("ensureInitialized: invoking rcloneInitialize()...")
+				initM.invoke(null)
 				initialized = true
 				Timber.i("rclone initialized via JNI")
 				applyConfigPath()
@@ -163,7 +175,7 @@ class RcloneController
 			ensureInitialized()
 			initError?.let {
 				Timber.e(it, "rpc(" + method + ") aborted - rclone init previously failed")
-				return "{\"error\":\"rclone init failed: " + it.javaClass.simpleName + "\"}"
+				return "{\"error\":\"rclone init failed: " + it.javaClass.simpleName + ": " + (it.message ?: "unknown") + "\"}"
 			}
 			return try {
 				applyConfigPath()
