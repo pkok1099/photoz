@@ -159,34 +159,33 @@ class RepoSetupFragment : Fragment() {
 						// notification permission would never be requested for
 						// login users.
 						onUnlocked = {
-							// Check + request POST_NOTIFICATIONS before navigating to gallery.
-							// Same pattern as RecoveryPhraseSetupFragment's onContinue —
-							// see that file for the full rationale.
-							val needsRequest =
-								if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-									ContextCompat.checkSelfPermission(
-										requireContext(),
-										Manifest.permission.POST_NOTIFICATIONS,
-									) != PackageManager.PERMISSION_GRANTED
-								} else {
-									false
-								}
-							if (needsRequest) {
-								android.util.Log.e(
-									"RcloneDiag",
-									"POST_NOTIFICATIONS: launching permission request (login branch, onUnlocked)",
-								)
-								notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-								android.util.Log.e(
-									"RcloneDiag",
-									"POST_NOTIFICATIONS: launch() returned (login branch, onUnlocked) — awaiting result callback",
-								)
+							// ANTI-DATA-LOSS: If pendingPasswordSetup=true, redirect to SetupFragment
+							val prefs = requireContext().getSharedPreferences(
+								onlasdan.gallery.settings.data.Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+							val pending = prefs.getBoolean(
+								onlasdan.gallery.settings.data.Config.PENDING_PASSWORD_SETUP,
+								false,
+							)
+							if (pending) {
+								Timber.i("onUnlocked: pendingPasswordSetup=true -> SetupFragment")
+								findNavController().navigate(R.id.action_repoSetupFragment_to_setupFragment)
 							} else {
-								android.util.Log.e(
-									"RcloneDiag",
-									"POST_NOTIFICATIONS: already granted or not needed (SDK < 33) — navigating to gallery (login branch, onUnlocked)",
-								)
-								navigateToGallery(findNavController())
+								val needsRequest =
+									if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+										ContextCompat.checkSelfPermission(
+											requireContext(),
+											Manifest.permission.POST_NOTIFICATIONS,
+										) != PackageManager.PERMISSION_GRANTED
+									} else {
+										false
+									}
+								if (needsRequest) {
+									notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+								} else {
+									navigateToGallery(findNavController())
+								}
 							}
 						},
 						onBack = {
