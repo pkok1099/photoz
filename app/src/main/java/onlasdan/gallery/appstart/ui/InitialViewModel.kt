@@ -92,7 +92,25 @@ class InitialViewModel
 							"⚠️ This means no VaultProtection(Password) row exists in the Room DB. " +
 							"If this fires on a second open, the DB was cleared or the row was never created.",
 					)
+					// F-ANTI-DATALOSS: If pendingPasswordSetup=true, the user logged in via
+				// recovery phrase on a previous session but the app died before they
+				// could create a Password protection row. The VMK is NO LONGER in
+				// memory (process death). Redirect to RepoSetup (login flow) so they
+				// can re-enter their recovery phrase, NOT SetupFragment (which would
+				// create a NEW VMK → data loss).
+				if (config.pendingPasswordSetup) {
+					android.util.Log.e(
+						"RcloneDiag",
+						"checkApplicationState: pendingPasswordSetup=true → need re-login via RepoSetup",
+					)
+					// Clear the flag — user will re-login from scratch
+					config.pendingPasswordSetup = false
+					// Force re-onboarding → RepoSetup → login flow
+					config.systemFirstStart = true
+					appStartState = AppStartState.FIRST_START
+				} else {
 					appStartState = AppStartState.SETUP
+				}
 				}
 
 				continueStart(appStartState)

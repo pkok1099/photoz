@@ -97,15 +97,12 @@ class SetupViewModel
 						if (session == null) {
 							// Should not happen — phrase restore sets session before
 							// navigating here. But if it does, fall back to full setup.
-							Timber.w("pendingPasswordSetup=true but session is null — falling back to full create")
-							vaultService.create(CreateRequest.Password(password))
-							vaultService.unlock(UnlockRequest.Password(password))
-								.onSuccess { s ->
-									sessionRepository.set(s)
-									completeSetupWithSession(s, password)
-								}.onFailure {
-									setupState.value = SetupState.SETUP
-								}
+							// ANTI-DATA-LOSS: session is null means process death happened.
+							// Do NOT create a new VMK — redirect to RepoSetup for re-login.
+							Timber.e("pendingPasswordSetup=true but session is null — process death. Redirecting to re-login.")
+							config.pendingPasswordSetup = false
+							config.systemFirstStart = true
+							setupState.value = SetupState.SETUP
 							return@launch
 						}
 						// Wrap existing VMK with the user's new password
