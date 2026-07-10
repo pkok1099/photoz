@@ -135,8 +135,8 @@ class RcloneConfigManager
 			withContext(Dispatchers.IO) {
 				val f = configFile ?: return@withContext Status.NotConfigured
 				val parsed = cachedConfig ?: runCatching { parseConfig(f.readText()) }.getOrElse {
-						return@withContext Status.Invalid(Status.InvalidReason.UNREADABLE)
-					}
+					return@withContext Status.Invalid(Status.InvalidReason.UNREADABLE)
+				}
 				if (parsed.sections.isEmpty()) {
 					return@withContext Status.Invalid(Status.InvalidReason.NO_SECTIONS)
 				}
