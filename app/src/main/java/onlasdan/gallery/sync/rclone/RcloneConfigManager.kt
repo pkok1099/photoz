@@ -50,6 +50,10 @@ class RcloneConfigManager
 		// (RcloneController injects RcloneConfigManager, which would inject RcloneController).
 		private val rcloneController: dagger.Lazy<RcloneController>,
 	) {
+		// Cache parsed config to avoid re-reading + re-parsing the file on every call.
+		// Invalidated by clear() and import().
+		private var cachedConfig: ParsedConfig? = null
+
 		data class RemoteInfo(
 			val name: String,
 			val type: String?,
@@ -104,6 +108,7 @@ class RcloneConfigManager
 						throw IOException("Failed to commit rclone.conf (rename failed)")
 					}
 					Timber.i("rclone.conf imported: ${parsed.sections.size} section(s): ${parsed.sections.keys}")
+					cachedConfig = parsed
 				}
 			}
 
@@ -111,6 +116,7 @@ class RcloneConfigManager
 			withContext(Dispatchers.IO) {
 				runCatching {
 					configFile?.delete()
+					cachedConfig = null
 					config.syncChosenRemote = null
 					// F-SYNC-006: invalidate rclone's in-memory cached config so the
 					// next operation re-reads the (possibly new) config file. Without
@@ -128,8 +134,7 @@ class RcloneConfigManager
 		suspend fun currentStatus(): Status =
 			withContext(Dispatchers.IO) {
 				val f = configFile ?: return@withContext Status.NotConfigured
-				val parsed =
-					runCatching { parseConfig(f.readText()) }.getOrElse {
+				val parsed = cachedConfig ?: runCatching { parseConfig(f.readText()) }.getOrElse {
 						return@withContext Status.Invalid(Status.InvalidReason.UNREADABLE)
 					}
 				if (parsed.sections.isEmpty()) {
@@ -154,7 +159,7 @@ class RcloneConfigManager
 
 		suspend fun chooseRemote(name: String): Boolean =
 			withContext(Dispatchers.IO) {
-				val parsed = runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
+				val parsed = cachedConfig ?: runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
 				if (parsed?.sections?.containsKey(name) != true) {
 					return@withContext false
 				}

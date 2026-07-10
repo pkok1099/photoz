@@ -81,8 +81,8 @@ fun SetupScreen(
 	var confirmPassword by remember { mutableStateOf("") }
 	val keyboard = LocalSoftwareKeyboardController.current
 
-	val strength = StrongPasswordPolicy.strength(password)
-	val showConfirm = StrongPasswordPolicy.isAcceptable(password)
+	val strength = remember(password) { StrongPasswordPolicy.strength(password) }
+	val showConfirm = remember(password) { StrongPasswordPolicy.isAcceptable(password) }
 	val passwordsMatch = password == confirmPassword && password.isNotEmpty()
 	val canSubmit = passwordsMatch && !loading
 
@@ -109,7 +109,7 @@ fun SetupScreen(
 			// App title (lobster font, 62sp)
 			Text(
 				text = stringResource(R.string.app_name),
-				fontSize = 62.sp,
+				style = MaterialTheme.typography.displayLarge,
 				fontFamily = FontFamily.Cursive,
 				color = MaterialTheme.colorScheme.onBackground,
 				textAlign = TextAlign.Center,

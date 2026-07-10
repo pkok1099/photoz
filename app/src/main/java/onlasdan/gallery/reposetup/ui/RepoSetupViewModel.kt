@@ -354,7 +354,7 @@ class RepoSetupViewModel
 				// feedback. Each remote's check runs concurrently and updates
 				// its own row on completion.
 				_remoteStatuses.value = remotes.map { RemoteStatus(it, RemoteCheckStatus.CHECKING) }
-				for (remote in remotes) {
+										for (remote in remotes) {
 					launch {
 						val hasRepo = repoManager.hasRepo(remote.name)
 						val newStatus =
