@@ -591,6 +591,10 @@ class PhotoSyncWorker
 			if (photo.type.isVideo) {
 				val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
 				if (vpPath.exists()) {
+					// Ensure remote directories exist (operations/copyfile fails if parent dir missing)
+					rcloneController.createDir("$remote:${SyncConfig.remoteOriginalsDir}").onFailure { Timber.w(it, "createDir originals failed (non-fatal)") }
+					rcloneController.createDir("$remote:${SyncConfig.remoteVideosDir}").onFailure { Timber.w(it, "createDir videos failed (non-fatal)") }
+
 					val remoteVp = "$remote:${SyncConfig.remoteVideosDir}/${vpPath.name}"
 					diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
 					updateNotification(

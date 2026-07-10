@@ -418,7 +418,14 @@ class RepoManager
 					tempFile.writeText(markerJson)
 
 					try {
-						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
+											// Create the repo directory first — operations/copyfile fails with
+											// "is a file not a directory" if the parent directory doesn't exist.
+											val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
+											if (createDirResult.isFailure) {
+												Timber.w(createDirResult.exceptionOrNull(), "registerRepo: createDir failed (non-fatal)")
+											}
+
+																	val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
 						if (uploadResult.isFailure) {
 							throw uploadResult.exceptionOrNull() ?: IOException("Upload failed")
@@ -1308,6 +1315,10 @@ class RepoManager
 								"(${tempFile.length()} bytes)",
 						)
 
+						// Ensure the vault-protection directory exists
+						rcloneController.createDir("$remote:${VAULT_PROTECTION_REMOTE_PATH.substringBeforeLast('/')}").onFailure {
+							Timber.w(it, "uploadRecoveryPhraseEscrow: createDir failed (non-fatal)")
+						}
 						val remotePath = "$remote:$VAULT_PROTECTION_REMOTE_PATH"
 						diag("uploadRecoveryPhraseEscrow: uploading → $remotePath")
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
@@ -1654,6 +1665,10 @@ class RepoManager
 								"(${tempFile.length()} bytes)",
 						)
 
+						// Ensure the vault-protection directory exists
+						rcloneController.createDir("$remote:${WRAPPED_PHRASE_REMOTE_PATH.substringBeforeLast('/')}").onFailure {
+							Timber.w(it, "uploadWrappedPhraseEscrow: createDir failed (non-fatal)")
+						}
 						val remotePath = "$remote:$WRAPPED_PHRASE_REMOTE_PATH"
 						diag("uploadWrappedPhraseEscrow: uploading → $remotePath")
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
