@@ -78,18 +78,12 @@ viewModel: TrashViewModel) {
 			TopAppBar(
 				title = { Text(stringResource(R.string.trash_title)) },
 				navigationIcon = {
-					IconButton(onClick = {
-						// Navigate up via the LocalFragment's navController —
-						// the activity's back button also works.
-						// (Composable doesn't have direct NavController
-						// access here, so we rely on the system back button
-						// + the toolbar's nav icon being primarily visual.)
-					}) {
-						Icon(
-							painter = painterResource(R.drawable.ic_back),
-							contentDescription = stringResource(R.string.common_cancel),
-						)
-					}
+					IconButton(onClick = onBack) {
+					Icon(
+						painter = painterResource(R.drawable.ic_back),
+						contentDescription = stringResource(R.string.process_close),
+					)
+				}
 				},
 				actions = {
 					if (trash.isNotEmpty()) {
