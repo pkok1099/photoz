@@ -234,9 +234,19 @@ class RcloneController
 			withContext(Dispatchers.IO) {
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
+					// Split path into directory + filename so rclone knows the destination
+					// directory context. Without this, dstFs="remote:" + dstRemote="dir/file.json"
+					// fails with "is a file not a directory" if "dir" doesn't exist yet.
+					val lastSlash = path.lastIndexOf('/')
+					val (dstDir, dstFile) = if (lastSlash >= 0) {
+						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
+					} else {
+						"" to path
+					}
+					val dstFs = if (dstDir.isEmpty()) "$remote:" else "$remote:$dstDir"
 					val input =
 						"""
-						{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path"}
+						{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile"}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
 					Timber.d("uploadFile result: $result")
@@ -271,7 +281,14 @@ class RcloneController
 				var jobid: Long? = null
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
-					val startInput = """{"srcFs":"$localPath","srcRemote":"","dstFs":"$remote:","dstRemote":"$path","_async":true}"""
+					val lastSlash = path.lastIndexOf('/')
+					val (dstDir, dstFile) = if (lastSlash >= 0) {
+						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
+					} else {
+						"" to path
+					}
+					val dstFs = if (dstDir.isEmpty()) "$remote:" else "$remote:$dstDir"
+					val startInput = """{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
 					val startResult = rpc("operations/copyfile", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
@@ -328,9 +345,17 @@ class RcloneController
 			withContext(Dispatchers.IO) {
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
+					// Split path into directory + filename (same as uploadFile)
+					val lastSlash = path.lastIndexOf('/')
+					val (srcDir, srcFile) = if (lastSlash >= 0) {
+						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
+					} else {
+						"" to path
+					}
+					val srcFs = if (srcDir.isEmpty()) "$remote:" else "$remote:$srcDir"
 					val input =
 						"""
-						{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":""}
+						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":""}
 						""".trimIndent()
 					val result = rpc("operations/copyfile", input)
 					Timber.d("downloadFile result: $result")
@@ -362,7 +387,14 @@ class RcloneController
 				var jobid: Long? = null
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
-					val startInput = """{"srcFs":"$remote:","srcRemote":"$path","dstFs":"$localPath","dstRemote":"","_async":true}"""
+					val lastSlash = path.lastIndexOf('/')
+					val (srcDir, srcFile) = if (lastSlash >= 0) {
+						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
+					} else {
+						"" to path
+					}
+					val srcFs = if (srcDir.isEmpty()) "$remote:" else "$remote:$srcDir"
+					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":"","_async":true}"""
 					val startResult = rpc("operations/copyfile", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async start error: $startResult"))
