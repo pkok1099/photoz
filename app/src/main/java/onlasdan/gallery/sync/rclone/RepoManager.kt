@@ -418,14 +418,14 @@ class RepoManager
 					tempFile.writeText(markerJson)
 
 					try {
-											// Create the repo directory first — operations/copyfile fails with
-											// "is a file not a directory" if the parent directory doesn't exist.
-											val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
-											if (createDirResult.isFailure) {
-												Timber.w(createDirResult.exceptionOrNull(), "registerRepo: createDir failed (non-fatal)")
-											}
+						// Create the repo directory first — operations/copyfile fails with
+						// "is a file not a directory" if the parent directory doesn't exist.
+						val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
+						if (createDirResult.isFailure) {
+							Timber.w(createDirResult.exceptionOrNull(), "registerRepo: createDir failed (non-fatal)")
+						}
 
-																	val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
+						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
 						if (uploadResult.isFailure) {
 							throw uploadResult.exceptionOrNull() ?: IOException("Upload failed")

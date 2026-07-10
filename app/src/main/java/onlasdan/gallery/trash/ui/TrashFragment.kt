@@ -66,8 +66,8 @@ class TrashFragment : Fragment() {
 				) {
 					AppTheme {
 						TrashScreen(
-			onBack = { findNavController().navigateUp() },
-		viewModel)
+							onBack = { findNavController().navigateUp() },
+							viewModel)
 					}
 				}
 			}

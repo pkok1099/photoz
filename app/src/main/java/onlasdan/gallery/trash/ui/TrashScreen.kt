@@ -68,7 +68,8 @@ import java.util.Date
 @Composable
 fun TrashScreen(
 	onBack: () -> Unit,
-viewModel: TrashViewModel) {
+	viewModel: TrashViewModel
+) {
 	val trash by viewModel.trash.collectAsStateWithLifecycle()
 	var confirmEmpty by remember { mutableStateOf(false) }
 	var confirmDeletePhoto by remember { mutableStateOf<Photo?>(null) }
@@ -79,11 +80,11 @@ viewModel: TrashViewModel) {
 				title = { Text(stringResource(R.string.trash_title)) },
 				navigationIcon = {
 					IconButton(onClick = onBack) {
-					Icon(
-						painter = painterResource(R.drawable.ic_back),
-						contentDescription = stringResource(R.string.process_close),
-					)
-				}
+						Icon(
+							painter = painterResource(R.drawable.ic_back),
+							contentDescription = stringResource(R.string.process_close),
+						)
+					}
 				},
 				actions = {
 					if (trash.isNotEmpty()) {
