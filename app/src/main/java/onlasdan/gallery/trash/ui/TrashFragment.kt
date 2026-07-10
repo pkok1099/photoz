@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import coil.ImageLoader
+import androidx.navigation.fragment.findNavController
 import dagger.hilt.android.AndroidEntryPoint
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.settings.ui.compose.LocalConfig
@@ -64,7 +65,9 @@ class TrashFragment : Fragment() {
 					LocalConfig provides config,
 				) {
 					AppTheme {
-						TrashScreen(viewModel)
+						TrashScreen(
+			onBack = { findNavController().navigateUp() },
+		viewModel)
 					}
 				}
 			}

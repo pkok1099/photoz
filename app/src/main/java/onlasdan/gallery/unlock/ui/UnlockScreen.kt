@@ -19,6 +19,7 @@ package onlasdan.gallery.unlock.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -90,7 +91,7 @@ fun UnlockScreen(
 	val isLoading = unlockState == UnlockState.Loading
 	val showWrongPassword = unlockState == UnlockState.PasswordError
 
-	Box(modifier = Modifier.fillMaxSize()) {
+	Box(modifier = Modifier.fillMaxSize().imePadding()) {
 		Column(
 			modifier =
 				Modifier

@@ -66,7 +66,9 @@ import java.util.Date
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrashScreen(viewModel: TrashViewModel) {
+fun TrashScreen(
+	onBack: () -> Unit,
+viewModel: TrashViewModel) {
 	val trash by viewModel.trash.collectAsStateWithLifecycle()
 	var confirmEmpty by remember { mutableStateOf(false) }
 	var confirmDeletePhoto by remember { mutableStateOf<Photo?>(null) }

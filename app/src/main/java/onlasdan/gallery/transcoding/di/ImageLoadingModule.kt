@@ -48,7 +48,7 @@ object ImageLoadingModule {
 				add(encryptedImageFetcherFactory)
 			}.diskCachePolicy(CachePolicy.DISABLED)
 			.diskCache(null)
-			.memoryCachePolicy(CachePolicy.READ_ONLY)
+			.memoryCachePolicy(CachePolicy.ENABLED)
 			.memoryCache {
 				MemoryCache
 					.Builder(context)

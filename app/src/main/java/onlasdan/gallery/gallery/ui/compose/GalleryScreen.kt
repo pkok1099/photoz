@@ -277,7 +277,7 @@ private fun GallerySyncStatusIndicator(pendingCount: Int) {
 		}
 	val tint =
 		if (isSyncing) {
-			Color(0xFFFFCA28) // amber — there's pending work
+			MaterialTheme.colorScheme.secondary // amber — there's pending work
 		} else {
 			MaterialTheme.colorScheme.outline
 		}

@@ -82,7 +82,7 @@ fun PermissionGate(
 	}
 
 	var shouldRequestInSettings by remember {
-		mutableStateOf(activity?.shouldRequestInSettings(permission) == true)
+		mutableStateOf(false) // Only set true from launcher callback when rationale returns false
 	}
 
 	val launcher =

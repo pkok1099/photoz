@@ -28,6 +28,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -421,7 +422,7 @@ private fun GalleryPhotoTile(
 					onClick = onClicked,
 					onLongClick = onLongPress,
 					interactionSource = remember { MutableInteractionSource() },
-					indication = null,
+					indication = LocalIndication.current,
 				),
 	) {
 		val contentModifier =
@@ -552,9 +553,9 @@ private fun GalleryPhotoTile(
 		) {
 			val iconTint =
 				when (photoTile.syncState) {
-					SyncState.UPLOADED -> Color(0xFF66BB6A) // green
-					SyncState.UPLOAD_PENDING -> Color(0xFFFFCA28) // amber
-					SyncState.UPLOAD_FAILED -> Color(0xFFEF5350) // red
+					SyncState.UPLOADED -> MaterialTheme.colorScheme.tertiary // green
+					SyncState.UPLOAD_PENDING -> MaterialTheme.colorScheme.secondary // amber
+					SyncState.UPLOAD_FAILED -> MaterialTheme.colorScheme.error // red
 					SyncState.LOCAL_ONLY -> Color.White
 				}
 			val iconPainter =
@@ -569,7 +570,7 @@ private fun GalleryPhotoTile(
 					Modifier
 						.size(SyncBadgeSize)
 						.clip(CircleShape)
-						.background(Color.Black.copy(alpha = 0.55f)),
+						.background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)),
 				contentAlignment = Alignment.Center,
 			) {
 				Icon(
