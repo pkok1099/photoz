@@ -73,8 +73,14 @@ class RcloneController
 				gomobileClass?.getMethod("rcloneRPC", String::class.java, String::class.java)
 			}
 			private val finalizeMethod: Method? by lazy { gomobileClass?.getMethod("rcloneFinalize") }
-			private val getOutputMethod: Method? by lazy {
-				runCatching { Class.forName("gomobile.RcloneRPCResult") }.getOrNull()?.getMethod("getOutput")
+			private val touchMethod: Method? by lazy { gomobileClass?.getMethod("touch") }
+			private val resultMethods: Map<String, Method>? by lazy {
+				runCatching { Class.forName("gomobile.RcloneRPCResult") }.getOrNull()?.let { cls ->
+					mapOf(
+						"getOutput" to cls.getMethod("getOutput"),
+						"getStatus" to cls.getMethod("getStatus"),
+					)
+				}
 			}
 
 			init {
@@ -124,7 +130,12 @@ class RcloneController
 					Timber.e(msg)
 					throw IllegalStateException(msg)
 				}
-				Timber.d("ensureInitialized: invoking rcloneInitialize()...")
+				// Call touch() first to initialize the gomobile runtime (go.Seq reftracker).
+				// The gomobile runtime is lazily initialized by the static initializer,
+				// but explicitly calling touch() is the recommended pattern to ensure
+				// the runtime is ready before any JNI calls.
+				touchMethod?.invoke(null)
+				Timber.d("ensureInitialized: gomobile.touch() OK, invoking rcloneInitialize()...")
 				initM.invoke(null)
 				initialized = true
 				Timber.i("rclone initialized via JNI")
@@ -190,8 +201,20 @@ class RcloneController
 						rpcMethod?.invoke(null, method, input)
 					}
 				} ?: throw IOException("RPC timeout after " + RPC_TIMEOUT_MS + "ms: method=" + method)
-				val output = getOutputMethod?.invoke(resultObj) as? String
+				val methods = resultMethods ?: error("RcloneRPCResult methods not available")
+				val output = methods["getOutput"]?.invoke(resultObj) as? String
 					?: error("getOutput returned null")
+				// Check HTTP-like status code (200=OK, 400/500=error).
+				// Some rclone RC methods return non-200 without an "error" field.
+				val status = methods["getStatus"]?.invoke(resultObj) as? Long ?: 200L
+				if (status != 200L) {
+					Timber.w("RPC non-200 status: method=$method status=$status output=$output")
+					// If the output doesn't already contain an "error" key, inject it
+					// so hasRpcError() catches it downstream.
+					if (!output.contains("\"error\"")) {
+						return "{\"error\":\"rclone status " + status + ": " + output + "\"}"
+					}
+				}
 				output
 			} catch (e: Exception) {
 				Timber.e(e, "RPC call failed: method=" + method)

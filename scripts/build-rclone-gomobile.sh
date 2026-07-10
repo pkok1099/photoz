@@ -59,19 +59,29 @@ fi
 
 # ─── Set up NDK environment ─────────────────────────────────────────────
 export ANDROID_NDK_HOME
+
+# ─── 16KB page alignment (Android 15+ requirement) ─────────────────────
+# Go 1.23+ supports 16KB page alignment via CGO_LDFLAGS.
+# Without this, .so files have 4KB alignment → dlopen crash on Android 16.
+export CGO_ENABLED=1
+export CGO_CFLAGS="-fPIC"
+export CGO_LDFLAGS="-Wl,-z,max-page-size=16384"
+
 gomobile init 2>/dev/null || true
 
 # ─── Build gomobile AAR ─────────────────────────────────────────────────
 echo ""
-echo "=== Building gomobile AAR ==="
+echo "=== Building gomobile AAR (16KB aligned) ==="
 mkdir -p "$OUTPUT_DIR"
 
 cd "$RCLONE_SRC_DIR"
 
-# Build for arm64 + arm (arm64 is primary, arm for older devices)
+# Build for arm64 + arm32 (arm64 is primary; arm32 for older devices)
+# CGO_ENABLED=1: required for Android DNS resolution (pure-Go resolver fails)
+# CGO_LDFLAGS: 16KB page alignment (Android 15+ requirement)
 gomobile bind \
     -v \
-    -target=android/arm64 \
+    -target=android/arm64,android/arm \
     -androidapi=$NDK_API_LEVEL \
     -ldflags="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VERSION-android-gomobile" \
     -tags="android,noweb,nomount,nserve" \
