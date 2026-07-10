@@ -422,7 +422,19 @@ class RepoManager
 						// "is a file not a directory" if the parent directory doesn't exist.
 						val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
 						if (createDirResult.isFailure) {
-							Timber.w(createDirResult.exceptionOrNull(), "registerRepo: createDir failed (non-fatal)")
+							val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
+							// If mkdir fails because a FILE with the same name exists (from a
+							// previous failed upload), try to delete it then retry mkdir.
+							Timber.w("registerRepo: createDir failed ($dirErr) — trying delete + retry")
+							rcloneController.deleteFile("$remote:$REPO_DIR").onFailure { /* ignore — might not be a file */ }
+							val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
+							if (retryResult.isFailure) {
+								throw IOException("Failed to create directory $REPO_DIR on remote: $dirErr. " +
+									"Root cause: ${retryResult.exceptionOrNull()?.message ?: "unknown"}")
+							}
+							Timber.i("registerRepo: createDir succeeded on retry after deleting stale file")
+						} else {
+							Timber.i("registerRepo: createDir OK — directory $REPO_DIR ready")
 						}
 
 						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
