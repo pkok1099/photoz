@@ -21,6 +21,7 @@ import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
 import onlasdan.gallery.encryption.domain.PasswordUtils
@@ -111,11 +112,20 @@ class SetupViewModel
 						// Skip recovery phrase creation — it already exists from the
 						// original setup. Just upload escrows if repo is confirmed.
 						if (config.repoConfirmed) {
+							// F-HOTFIX-003: wrap in NonCancellable so the upload completes
+							// even if the user navigates away and the ViewModel is cleared.
 							viewModelScope.launch {
-								try {
-									repoManager.uploadAllEscrows(password, session)
-								} catch (e: Exception) {
-									Timber.w(e, "Escrow re-upload failed (non-fatal)")
+								withContext(kotlinx.coroutines.NonCancellable) {
+									try {
+										val result = repoManager.uploadAllEscrows(password, session)
+										if (result.isFailure) {
+											Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED — fresh-install recovery will NOT work!")
+										} else {
+											Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK — fresh-install recovery available")
+										}
+									} catch (e: Exception) {
+										Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw — fresh-install recovery will NOT work!")
+									}
 								}
 							}
 						}
@@ -146,14 +156,23 @@ class SetupViewModel
 			// Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
 			// Non-fatal: if escrow upload fails, setup still completes.
 			if (config.repoConfirmed) {
+				// F-HOTFIX-003: wrap in NonCancellable so the upload completes
+				// even if the user navigates away and the ViewModel is cleared.
+				// Without this, the fire-and-forget viewModelScope.launch is
+				// cancelled mid-upload → no escrow on remote → data loss on
+				// fresh-install login.
 				viewModelScope.launch {
-					try {
-						val result = repoManager.uploadAllEscrows(password, session)
-						if (result.isFailure) {
-							Timber.w(result.exceptionOrNull(), "Escrow upload failed (non-fatal)")
+					withContext(kotlinx.coroutines.NonCancellable) {
+						try {
+							val result = repoManager.uploadAllEscrows(password, session)
+							if (result.isFailure) {
+								Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow upload FAILED — fresh-install recovery will NOT work!")
+							} else {
+								Timber.i("ANTI-DATA-LOSS: Escrow upload OK — fresh-install recovery available")
+							}
+						} catch (e: Exception) {
+							Timber.e(e, "ANTI-DATA-LOSS: Escrow upload threw — fresh-install recovery will NOT work!")
 						}
-					} catch (e: Exception) {
-						Timber.w(e, "Escrow upload threw (non-fatal)")
 					}
 				}
 			}
