@@ -21,7 +21,6 @@ import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
 import onlasdan.gallery.encryption.domain.PasswordUtils
@@ -112,21 +111,22 @@ class SetupViewModel
 						// Skip recovery phrase creation — it already exists from the
 						// original setup. Just upload escrows if repo is confirmed.
 						if (config.repoConfirmed) {
-							// F-HOTFIX-003: wrap in NonCancellable so the upload completes
-							// even if the user navigates away and the ViewModel is cleared.
-							viewModelScope.launch {
-								withContext(kotlinx.coroutines.NonCancellable) {
-									try {
-										val result = repoManager.uploadAllEscrows(password, session)
-										if (result.isFailure) {
-											Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED — fresh-install recovery will NOT work!")
-										} else {
-											Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK — fresh-install recovery available")
-										}
-									} catch (e: Exception) {
-										Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw — fresh-install recovery will NOT work!")
-									}
+							// F-HOTFIX-004: BLOCKING upload — do NOT proceed to recovery phrase
+							// screen until escrow is confirmed on the remote. Previously fire-and-
+							// forget, which meant user could uninstall before upload completed.
+							// NonCancellable only prevented coroutine cancellation, NOT process death.
+							try {
+								val result = repoManager.uploadAllEscrows(password, session)
+								if (result.isFailure) {
+									Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED")
+									setupState.value = SetupState.SETUP
+									return@launch
 								}
+								Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK")
+							} catch (e: Exception) {
+								Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw")
+								setupState.value = SetupState.SETUP
+								return@launch
 							}
 						}
 						config.justFinishedSetup = true
@@ -156,24 +156,22 @@ class SetupViewModel
 			// Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
 			// Non-fatal: if escrow upload fails, setup still completes.
 			if (config.repoConfirmed) {
-				// F-HOTFIX-003: wrap in NonCancellable so the upload completes
-				// even if the user navigates away and the ViewModel is cleared.
-				// Without this, the fire-and-forget viewModelScope.launch is
-				// cancelled mid-upload → no escrow on remote → data loss on
-				// fresh-install login.
-				viewModelScope.launch {
-					withContext(kotlinx.coroutines.NonCancellable) {
-						try {
-							val result = repoManager.uploadAllEscrows(password, session)
-							if (result.isFailure) {
-								Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow upload FAILED — fresh-install recovery will NOT work!")
-							} else {
-								Timber.i("ANTI-DATA-LOSS: Escrow upload OK — fresh-install recovery available")
-							}
-						} catch (e: Exception) {
-							Timber.e(e, "ANTI-DATA-LOSS: Escrow upload threw — fresh-install recovery will NOT work!")
-						}
+				// F-HOTFIX-004: BLOCKING upload — do NOT show recovery phrase until
+				// escrow is confirmed on the remote. Previously fire-and-forget,
+				// which meant user could uninstall before upload completed → data loss.
+				// NonCancellable only prevented coroutine cancellation, NOT process death.
+				try {
+					val result = repoManager.uploadAllEscrows(password, session)
+					if (result.isFailure) {
+						Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow upload FAILED")
+						setupState.value = SetupState.SETUP
+						return
 					}
+					Timber.i("ANTI-DATA-LOSS: Escrow upload OK")
+				} catch (e: Exception) {
+					Timber.e(e, "ANTI-DATA-LOSS: Escrow upload threw")
+					setupState.value = SetupState.SETUP
+					return
 				}
 			}
 
