@@ -28,6 +28,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- WAKE_LOCK: Required by WorkManager expedited work requests on some OEMs.
+         Without it, expedited OneTimeWorkRequest may fail silently on
+         battery-optimized devices (Samsung, Xiaomi, Huawei). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
