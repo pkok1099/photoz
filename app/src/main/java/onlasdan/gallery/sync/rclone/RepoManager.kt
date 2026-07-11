@@ -419,22 +419,22 @@ class RepoManager
 
 					try {
 						// Ensure repo directory exists. Try mkdir first (idempotent — no error if exists).
-					// If fails: purge anything at path (stale file from previous attempt),
-					// then retry mkdir. operations/copyfile needs parent dir to exist.
-					Timber.i("registerRepo: ensuring directory $REPO_DIR exists")
-					val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
-					if (createDirResult.isFailure) {
-						val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
-						Timber.w("registerRepo: createDir failed ($dirErr) — purge + retry")
-						rcloneController.removeDir("$remote:$REPO_DIR", recursive = true).onFailure { }
-						val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
-						if (retryResult.isFailure) {
-							throw IOException("Cannot create $REPO_DIR: $dirErr / ${retryResult.exceptionOrNull()?.message}")
+						// If fails: purge anything at path (stale file from previous attempt),
+						// then retry mkdir. operations/copyfile needs parent dir to exist.
+						Timber.i("registerRepo: ensuring directory $REPO_DIR exists")
+						val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
+						if (createDirResult.isFailure) {
+							val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
+							Timber.w("registerRepo: createDir failed ($dirErr) — purge + retry")
+							rcloneController.removeDir("$remote:$REPO_DIR", recursive = true).onFailure { }
+							val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
+							if (retryResult.isFailure) {
+								throw IOException("Cannot create $REPO_DIR: $dirErr / ${retryResult.exceptionOrNull()?.message}")
+							}
+							Timber.i("registerRepo: createDir OK (after purge)")
+						} else {
+							Timber.i("registerRepo: createDir OK")
 						}
-						Timber.i("registerRepo: createDir OK (after purge)")
-					} else {
-						Timber.i("registerRepo: createDir OK")
-					}
 
 						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
