@@ -20,9 +20,11 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,11 +33,9 @@ import androidx.navigation.findNavController
 import com.google.android.material.color.DynamicColors
 import dagger.hilt.android.AndroidEntryPoint
 import onlasdan.gallery.R
-import onlasdan.gallery.databinding.ActivityMainBinding
 import onlasdan.gallery.main.ui.navigation.MainMenu
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.ui.theme.AppTheme
-import onlasdan.gallery.uicomponnets.bindings.BindableActivity
 import javax.inject.Inject
 
 val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.settingsFragment, R.id.albumDetailFragment)
@@ -44,17 +44,26 @@ val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.s
  * The main Activity.
  * Holds all fragments and initializes toolbar, menu, etc.
  *
+ * F-PERF-002 (UI optimization, v1.0.2): migrated from `BindableActivity<ActivityMainBinding>`
+ * (DataBinding) to plain [ComponentActivity]. The ComposeView for the bottom menu is now
+ * accessed via `findViewById` instead of generated binding class.
+ *
+ * This drops DataBinding generation for this activity — faster builds, fewer generated
+ * classes, and removes one of the last DataBinding consumers in the app.
+ *
  * @since 1.0.0
  * @author PhotoZ
  */
 @AndroidEntryPoint
-class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_main) {
+class MainActivity : ComponentActivity() {
 	private val viewModel: MainViewModel by viewModels()
 
 	@Inject
-	override lateinit var config: Config
+	lateinit var config: Config
 
 	var onOrientationChanged: (Int) -> Unit = {} // Init empty
+
+	private lateinit var menuComposeView: ComposeView
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		enableEdgeToEdge()
@@ -69,6 +78,31 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
 		// wallpaper) fall back to the colorPrimary/colorAccent defined in colors.xml.
 		// Safe to call unconditionally — the API is a no-op below API 31.
 		DynamicColors.applyToActivityIfAvailable(this)
+
+		setContentView(R.layout.activity_main)
+		menuComposeView = findViewById(R.id.mainMenuComposeContainer)
+
+		menuComposeView.setContent {
+			val uiState by viewModel.mainMenuUiState.collectAsStateWithLifecycle()
+
+			AppTheme {
+				MainMenu(uiState) {
+					val navController = findNavController(R.id.mainNavHostFragment)
+					if (navController.currentDestination?.id != it) {
+						navController.navigate(
+							resId = it,
+							args = null,
+							navOptions =
+								NavOptions
+									.Builder()
+									.setEnterAnim(android.R.anim.fade_in)
+									.setExitAnim(android.R.anim.fade_out)
+									.build(),
+						)
+					}
+				}
+			}
+		}
 	}
 
 	override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -78,7 +112,7 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
 		findNavController(R.id.mainNavHostFragment).let { navController ->
 			navController.addOnDestinationChangedListener { controller, destination, arguments ->
 				val showMenu = FragmentsWithMenu.contains(destination.id)
-				binding.mainMenuComposeContainer.isVisible = showMenu
+				menuComposeView.isVisible = showMenu
 
 				WindowCompat
 					.getInsetsController(
@@ -110,32 +144,5 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
 		super.onConfigurationChanged(newConfig)
 
 		onOrientationChanged(newConfig.orientation)
-	}
-
-	override fun bind(binding: ActivityMainBinding) {
-		super.bind(binding)
-		binding.context = this
-
-		binding.mainMenuComposeContainer.setContent {
-			val uiState by viewModel.mainMenuUiState.collectAsStateWithLifecycle()
-
-			AppTheme {
-				MainMenu(uiState) {
-					val navController = findNavController(R.id.mainNavHostFragment)
-					if (navController.currentDestination?.id != it) {
-						navController.navigate(
-							resId = it,
-							args = null,
-							navOptions =
-								NavOptions
-									.Builder()
-									.setEnterAnim(android.R.anim.fade_in)
-									.setExitAnim(android.R.anim.fade_out)
-									.build(),
-						)
-					}
-				}
-			}
-		}
 	}
 }

@@ -203,7 +203,8 @@ dependencies {
 	// Architectural Components
 	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
 	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-	implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
+	// F-PERF-004 (v1.0.2): removed deprecated lifecycle-extensions:2.2.0 — was unused.
+	// DefaultLifecycleObserver (used in BaseApplication) comes from lifecycle-common (transitive).
 
 	// Room
 	implementation("androidx.room:room-runtime:2.8.4")
@@ -243,7 +244,7 @@ dependencies {
 	implementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
 	// ViewPager2
-	implementation("androidx.viewpager2:viewpager2:1.1.0")
+	// F-PERF-004 (v1.0.2): removed androidx.viewpager2:viewpager2:1.1.0 — was unused (all pagers migrated to Compose HorizontalPager).
 
 	// Coroutines
 	// Bumped 1.10.2 → 1.11.0 (Batch 3 — safe dep bumps from dependabot branch).
