@@ -21,14 +21,19 @@ name: Android Build CI
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - audit-b2-fixes
+      - B2
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - audit-b2-fixes
     paths-ignore:
       - '**.md'
       - 'docs/**'
