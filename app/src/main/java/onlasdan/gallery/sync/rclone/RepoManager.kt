@@ -418,24 +418,23 @@ class RepoManager
 					tempFile.writeText(markerJson)
 
 					try {
-						// Create the repo directory first — operations/copyfile fails with
-						// "is a file not a directory" if the parent directory doesn't exist.
-						val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
-						if (createDirResult.isFailure) {
-							val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
-							// If mkdir fails because a FILE with the same name exists (from a
-							// previous failed upload), try to delete it then retry mkdir.
-							Timber.w("registerRepo: createDir failed ($dirErr) — trying delete + retry")
-							rcloneController.deleteFile("$remote:$REPO_DIR").onFailure { /* ignore — might not be a file */ }
-							val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
-							if (retryResult.isFailure) {
-								throw IOException("Failed to create directory $REPO_DIR on remote: $dirErr. " +
-									"Root cause: ${retryResult.exceptionOrNull()?.message ?: "unknown"}")
-							}
-							Timber.i("registerRepo: createDir succeeded on retry after deleting stale file")
-						} else {
-							Timber.i("registerRepo: createDir OK — directory $REPO_DIR ready")
+						// Ensure repo directory exists. Try mkdir first (idempotent — no error if exists).
+					// If fails: purge anything at path (stale file from previous attempt),
+					// then retry mkdir. operations/copyfile needs parent dir to exist.
+					Timber.i("registerRepo: ensuring directory $REPO_DIR exists")
+					val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
+					if (createDirResult.isFailure) {
+						val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
+						Timber.w("registerRepo: createDir failed ($dirErr) — purge + retry")
+						rcloneController.removeDir("$remote:$REPO_DIR", recursive = true).onFailure { }
+						val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
+						if (retryResult.isFailure) {
+							throw IOException("Cannot create $REPO_DIR: $dirErr / ${retryResult.exceptionOrNull()?.message}")
 						}
+						Timber.i("registerRepo: createDir OK (after purge)")
+					} else {
+						Timber.i("registerRepo: createDir OK")
+					}
 
 						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
