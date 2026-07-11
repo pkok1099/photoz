@@ -17,6 +17,7 @@
 package onlasdan.gallery.sync.rclone
 
 import android.app.Application
+import java.io.File
 import java.io.IOException
 import java.lang.reflect.Method
 import kotlinx.coroutines.Dispatchers
@@ -233,22 +234,23 @@ class RcloneController
 		suspend fun uploadFile(localPath: String, remotePath: String): Result<Unit> =
 			withContext(Dispatchers.IO) {
 				try {
+					// F-SYNC-RPC-FIX: rclone RC has NO `operations/copyto` method
+					// (returns 404 "couldn't find method operations/copyto").
+					// The correct method is `operations/copyfile`.
+					//
+					// Additionally, the local backend requires `srcFs` to be a
+					// DIRECTORY (not a file path) with `srcRemote` = filename.
+					// Passing the full local file path as `srcFs` with `srcRemote=""`
+					// fails with "is a file not a directory" because the gomobile
+					// rclone build does NOT auto-split `ErrorIsFile` cases.
+					val (srcFs, srcRemote) = splitLocalPath(localPath)
 					val (remote, path) = parseRemotePath(remotePath)
-					// Split path into directory + filename so rclone knows the destination
-					// directory context. Without this, dstFs="remote:" + dstRemote="dir/file.json"
-					// fails with "is a file not a directory" if "dir" doesn't exist yet.
-					val lastSlash = path.lastIndexOf('/')
-					val (dstDir, dstFile) = if (lastSlash >= 0) {
-						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
-					} else {
-						"" to path
-					}
-					val dstFs = if (dstDir.isEmpty()) "$remote:" else "$remote:$dstDir"
+					val (dstFs, dstRemote) = splitRemotePath(remote, path)
 					val input =
 						"""
-						{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile"}
+						{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyto", input)
+					val result = rpc("operations/copyfile", input)
 					Timber.d("uploadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -280,16 +282,11 @@ class RcloneController
 			withContext(Dispatchers.IO) {
 				var jobid: Long? = null
 				try {
+					val (srcFs, srcRemote) = splitLocalPath(localPath)
 					val (remote, path) = parseRemotePath(remotePath)
-					val lastSlash = path.lastIndexOf('/')
-					val (dstDir, dstFile) = if (lastSlash >= 0) {
-						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
-					} else {
-						"" to path
-					}
-					val dstFs = if (dstDir.isEmpty()) "$remote:" else "$remote:$dstDir"
-					val startInput = """{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
-					val startResult = rpc("operations/copyto", startInput)
+					val (dstFs, dstFile) = splitRemotePath(remote, path)
+					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
+					val startResult = rpc("operations/copyfile", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
 					}
@@ -344,20 +341,17 @@ class RcloneController
 		suspend fun downloadFile(remotePath: String, localPath: String): Result<Unit> =
 			withContext(Dispatchers.IO) {
 				try {
+					// F-SYNC-RPC-FIX: same as uploadFile - use operations/copyfile
+					// (NOT operations/copyto) AND split local dst path so dstFs is
+					// the parent directory and dstRemote is the filename.
 					val (remote, path) = parseRemotePath(remotePath)
-					// Split path into directory + filename (same as uploadFile)
-					val lastSlash = path.lastIndexOf('/')
-					val (srcDir, srcFile) = if (lastSlash >= 0) {
-						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
-					} else {
-						"" to path
-					}
-					val srcFs = if (srcDir.isEmpty()) "$remote:" else "$remote:$srcDir"
+					val (srcFs, srcFile) = splitRemotePath(remote, path)
+					val (dstFs, dstRemote) = splitLocalPath(localPath)
 					val input =
 						"""
-						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":""}
+						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyto", input)
+					val result = rpc("operations/copyfile", input)
 					Timber.d("downloadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -387,15 +381,10 @@ class RcloneController
 				var jobid: Long? = null
 				try {
 					val (remote, path) = parseRemotePath(remotePath)
-					val lastSlash = path.lastIndexOf('/')
-					val (srcDir, srcFile) = if (lastSlash >= 0) {
-						path.substring(0, lastSlash) to path.substring(lastSlash + 1)
-					} else {
-						"" to path
-					}
-					val srcFs = if (srcDir.isEmpty()) "$remote:" else "$remote:$srcDir"
-					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":"","_async":true}"""
-					val startResult = rpc("operations/copyto", startInput)
+					val (srcFs, srcFile) = splitRemotePath(remote, path)
+					val (dstFs, dstRemote) = splitLocalPath(localPath)
+					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote","_async":true}"""
+					val startResult = rpc("operations/copyfile", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async start error: $startResult"))
 					}
@@ -488,12 +477,25 @@ class RcloneController
 		): Result<Boolean> =
 			withContext(Dispatchers.IO) {
 				try {
+					// F-SYNC-RPC-FIX: rclone RC has NO `operations/stat` method
+					// (returns 404 "couldn't find method operations/stat"). Use
+					// `operations/list` on the parent directory and filter by name.
 					val (remote, path) = parseRemotePath(remotePath)
-					val input = """{"fs":"$remote:","remote":"$path"}"""
-					val result = rpc("operations/stat", input)
-					// Check if response has "item" with correct size
-					val hasItem = result.contains("\"item\"") && result.contains("\"Size\":$expectedSize")
-					Result.success(hasItem)
+					val (parentFs, fileName) = splitRemotePath(remote, path)
+					val listInput = """{"fs":"$parentFs","remote":""}"""
+					val result = rpc("operations/list", listInput)
+					if (hasRpcError(result)) {
+						Timber.w("verifyFileExists list error: $result")
+						return@withContext Result.success(false)
+					}
+					val arr = JSONObject(result).optJSONArray("list") ?: return@withContext Result.success(false)
+					for (i in 0 until arr.length()) {
+						val obj = arr.optJSONObject(i) ?: continue
+						if (obj.optString("Name") == fileName && obj.optLong("Size", -1L) == expectedSize) {
+							return@withContext Result.success(true)
+						}
+					}
+					Result.success(false)
 				} catch (e: Exception) {
 					Result.failure(e)
 				}
@@ -658,6 +660,62 @@ class RcloneController
 		fun invalidateConfigPath() {
 			configPathApplied = null
 		}
+
+		/**
+		 * F-SYNC-RPC-FIX: Split a LOCAL file path into (parentDir, filename).
+		 *
+		 * rclone's local backend requires `srcFs`/`dstFs` to be a DIRECTORY. Passing a
+		 * full file path causes "is a file not a directory" because the gomobile build
+		 * does not auto-handle `fs.ErrorIsFile` for `operations/copyfile`.
+		 *
+		 * Returns (parentDir, filename). If parent is null (root), falls back to ".".
+		 */
+		private fun splitLocalPath(localPath: String): Pair<String, String> {
+			val f = File(localPath)
+			val parent = f.parent
+			return (parent ?: ".") to f.name
+		}
+
+		/**
+		 * F-SYNC-RPC-FIX: Split a remote (remoteName, path) pair into (dstFs, dstRemote)
+		 * such that dstFs is the parent directory and dstRemote is the filename.
+		 *
+		 * E.g. ("koofr-5", "photoz-backup/repo-config.json") ->
+		 *      ("koofr-5:photoz-backup", "repo-config.json")
+		 *
+		 * If there is no slash in the path, returns ("$remote:", path).
+		 */
+		private fun splitRemotePath(remote: String, path: String): Pair<String, String> {
+			val lastSlash = path.lastIndexOf('/')
+			return if (lastSlash >= 0) {
+				val dir = path.substring(0, lastSlash)
+				val file = path.substring(lastSlash + 1)
+				("$remote:$dir") to file
+			} else {
+				("$remote:") to path
+			}
+		}
+
+		/**
+		 * Debug helper: enumerate all rclone RC methods available in this build.
+		 *
+		 * F-SYNC-RPC-FIX: returns a JSON string with a "methods" array. Use this to
+		 * verify which RC methods exist (e.g. operations/copyfile exists, operations/copyto
+		 * does NOT). Useful for diagnosing "couldn't find method" 404 errors.
+		 */
+		suspend fun listRcMethods(): Result<String> =
+			withContext(Dispatchers.IO) {
+				try {
+					val result = rpc("rc/list", "{}")
+					if (hasRpcError(result)) {
+						Result.failure(IOException("rclone error: $result"))
+					} else {
+						Result.success(result)
+					}
+				} catch (e: Exception) {
+					Result.failure(e)
+				}
+			}
 
 		/**
 		 * Parse "myremote:path/to/file" into ("myremote", "path/to/file").

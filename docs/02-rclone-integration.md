@@ -3,6 +3,20 @@
 > **File referensi**: `app/src/main/java/onlasdan/gallery/sync/rclone/`
 > **AAR**: `app/libs/librclone.aar` (37 MB, rclone v1.68.2 gomobile build)
 
+> **F-SYNC-RPC-FIX (critical)**: rclone RC API hanya punya method berikut:
+> `operations/copyfile`, `operations/copydir`, `operations/movefile`, `operations/movedir`,
+> `operations/list`, `operations/deletefile`, `operations/mkdir`, `operations/rmdir`,
+> `operations/purge`, `operations/about`, `operations/hash`, `operations/cleanup`,
+> `operations/filesize`, `operations/fsinfo`, `operations/statfs`, `operations/publiclink`.
+>
+> Method **`operations/copyto`** dan **`operations/stat`** TIDAK ADA — return 404
+> `"couldn't find method operations/copyto"`. Jangan gunakan.
+>
+> Selain itu, untuk local backend, `srcFs`/`dstFs` HARUS berupa **directory** (bukan path file).
+> Passing full file path sebagai `srcFs` dengan `srcRemote=""` akan gagal dengan
+> `"is a file not a directory"` karena build gomobile tidak auto-handle `fs.ErrorIsFile`.
+> Helper `splitLocalPath()` dan `splitRemotePath()` di `RcloneController` melakukan split ini.
+
 ---
 
 ## Architecture Overview
@@ -53,7 +67,7 @@ PhotoZ mengintegrasikan rclone via **gomobile JNI** (bukan subprocess). Ini W^X-
 | `downloadFile(remotePath, localPath)` | `operations/copyfile` | Download remote file ke local |
 | `downloadFileWithProgress(remotePath, localPath, onProgress)` | `operations/copyfile` `_async=true` + `job/status` poll | Download dengan progress callback (F-SYNC-021) |
 | `deleteFile(remotePath)` | `operations/deletefile` | Hapus file di remote |
-| `verifyFileExists(remotePath, expectedSize)` | `operations/stat` | Verifikasi file exists dengan size yang benar |
+| `verifyFileExists(remotePath, expectedSize)` | `operations/list` (filter by name + size) | Verifikasi file exists dengan size yang benar. F-SYNC-RPC-FIX: `operations/stat` tidak ada di rclone RC API — pakai `operations/list` + filter |
 | `hashFile(remotePath, hashType)` | `operations/hash` | Server-side hash (sha256/md5/sha1) |
 
 ### Folder Operations
