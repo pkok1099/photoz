@@ -21,7 +21,6 @@ import onlasdan.gallery.encryption.domain.models.VaultSession
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-import javax.security.auth.Destroyable
 
 @Singleton
 class SessionRepositoryImpl
@@ -67,10 +66,12 @@ class SessionRepositoryImpl
 		 * in the KeyStore's native backing store, which is acceptable (it's
 		 * hardware-isolated).
 		 */
+		// F-WARN-011: removed redundant `is Destroyable` check — SecretKey extends Key
+		// which extends Destroyable (since Java 9), so the check always evaluated to true.
 		private fun destroySession(s: VaultSession) {
 			try {
 				val vmk = s.vmk
-				if (vmk is Destroyable && !vmk.isDestroyed) {
+				if (!vmk.isDestroyed) {
 					vmk.destroy()
 				}
 			} catch (e: Exception) {

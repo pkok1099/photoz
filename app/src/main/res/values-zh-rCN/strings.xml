@@ -298,7 +298,7 @@
     <string name="migration_initial_stage_ready_button">开始迁移</string>
 
     <string name="migration_running_title">迁移图库</string>
-    <string name="migration_running_progress">已经处理了 %d 个文件，共 %d 个</string>
+    <string name="migration_running_progress" formatted="false">已经处理了 %d 个文件，共 %d 个</string>
     <string name="migration_running_advice">保持此屏幕开启，迁移会更快。</string>
 
     <string name="migration_done_title">图库迁移完毕</string>

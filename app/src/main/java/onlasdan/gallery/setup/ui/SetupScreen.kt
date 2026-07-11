@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,10 +82,27 @@ fun SetupScreen(
 	var confirmPassword by remember { mutableStateOf("") }
 	val keyboard = LocalSoftwareKeyboardController.current
 
-	val strength = remember(password) { StrongPasswordPolicy.strength(password) }
-	val showConfirm = remember(password) { StrongPasswordPolicy.isAcceptable(password) }
-	val passwordsMatch = password == confirmPassword && password.isNotEmpty()
-	val canSubmit = passwordsMatch && !loading
+	// F-PERF-006: hoist stringResource() calls OUT of the `when` block.
+	// Calling @Composable functions conditionally inside a `when` expression
+	// violates Compose's positional memoization rules — every strength change
+	// re-evaluates the entire `when`, and the conditional composable calls can
+	// cause unnecessary recomposition of the whole screen on every keystroke.
+	val weakLabel = stringResource(R.string.setup_password_strength_weak)
+	val moderateLabel = stringResource(R.string.setup_password_strength_moderate)
+	val strongLabel = stringResource(R.string.setup_password_strength_strong)
+
+	// F-PERF-006: use derivedStateOf so strength recompute only happens when
+	// `password` changes, not on every recomposition (e.g. when confirmPassword
+	// changes). The strength function itself is cheap, but wrapping it in
+	// derivedStateOf lets Compose skip recomposing the strength indicator
+	// when only confirmPassword changed.
+	val strength = remember { derivedStateOf { StrongPasswordPolicy.strength(password) } }.value
+	val showConfirm = remember { derivedStateOf { StrongPasswordPolicy.isAcceptable(password) } }.value
+
+	// F-PERF-006: derivedStateOf for match/submit checks — only recompute when
+	// their inputs change, not on every recomposition.
+	val passwordsMatch by remember { derivedStateOf { password == confirmPassword && password.isNotEmpty() } }
+	val canSubmit by remember { derivedStateOf { passwordsMatch && !loading } }
 
 	val (strengthLabel, strengthColor) =
 		when (strength) {
@@ -93,9 +111,9 @@ fun SetupScreen(
 			PasswordStrength.PIN_REJECTED,
 			PasswordStrength.COMMON,
 			PasswordStrength.WEAK,
-			-> stringResource(R.string.setup_password_strength_weak) to MaterialTheme.colorScheme.error
-			PasswordStrength.MODERATE -> stringResource(R.string.setup_password_strength_moderate) to MaterialTheme.colorScheme.tertiary
-			PasswordStrength.STRONG -> stringResource(R.string.setup_password_strength_strong) to MaterialTheme.colorScheme.primary
+			-> weakLabel to MaterialTheme.colorScheme.error
+			PasswordStrength.MODERATE -> moderateLabel to MaterialTheme.colorScheme.tertiary
+			PasswordStrength.STRONG -> strongLabel to MaterialTheme.colorScheme.primary
 		}
 
 	Box(modifier = Modifier.fillMaxSize().imePadding()) {

@@ -25,6 +25,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -129,12 +130,12 @@ class MainActivity : ComponentActivity() {
 	private fun dispatchIntent() {
 		when (intent.action) {
 			Intent.ACTION_SEND ->
-				intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
+				IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uri ->
 					viewModel.addUriToSharedUriStore(uri)
 				}
 
 			Intent.ACTION_SEND_MULTIPLE ->
-				intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.forEach { uri ->
+				IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.forEach { uri ->
 					viewModel.addUriToSharedUriStore(uri)
 				}
 		}

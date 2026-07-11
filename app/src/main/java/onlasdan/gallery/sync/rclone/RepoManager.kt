@@ -1945,9 +1945,9 @@ class RepoManager
 				val id = obj.optString("id")
 				val typeStr = obj.optString("type")
 				val wrappedVmkB64 = obj.optString("wrappedVMK")
-				val salt = if (obj.isNull("salt")) null else obj.optString("salt", null)
+				val salt = if (obj.isNull("salt")) null else obj.optString("salt")
 				val iv = obj.optString("iv")
-				val kdfStr = obj.optString("kdf", null)
+				val kdfStr = obj.optString("kdf")
 				val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
 				val algorithmStr = obj.optString("algorithm")
 				val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
@@ -1974,7 +1974,9 @@ class RepoManager
 					diag("parseVaultProtection: unknown algorithm=$algorithmStr")
 					return null
 				}
-				val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
+				// F-WARN-010: kdfStr is non-null String (optString returns "" if missing).
+				// Use takeIf to skip lookup when empty, instead of unnecessary ?.let.
+				val kdf = kdfStr.takeIf { it.isNotEmpty() }?.let { s -> Kdf.entries.find { it.value == s } }
 				val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
 
 				VaultProtection(

@@ -74,7 +74,9 @@ class LegacyEncryptionMigrator
 
 		fun migrationNeeded(): Boolean = app.fileList().any { it.contains(LEGACY_PHOTOK_FILE_EXTENSION) }
 
-		suspend fun migrate() =
+		// F-WARN-004: explicit return type Unit — Kotlin 2.5 warns about `return` in
+		// expression-body functions without explicit return type.
+		suspend fun migrate(): Unit =
 			mutex.withLock {
 				if (::session.isInitialized.not()) {
 					state.update {

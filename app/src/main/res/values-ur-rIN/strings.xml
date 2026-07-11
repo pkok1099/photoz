@@ -296,7 +296,7 @@
     <string name="migration_initial_stage_ready_button">کام شروع کریں</string>
 
     <string name="migration_running_title">ڈیٹا نئے طریقے پر آ رہا ہے</string>
-    <string name="migration_running_progress">%d میں سے %d فائلیں ہو گئیں</string>
+    <string name="migration_running_progress" formatted="false">%d میں سے %d فائلیں ہو گئیں</string>
     <string name="migration_running_advice">اگر یہ اسکرین کھلی رہے گی تو کام جلدی ہوگا۔</string>
 
     <string name="migration_done_title">کام مکمل ہو گیا</string>

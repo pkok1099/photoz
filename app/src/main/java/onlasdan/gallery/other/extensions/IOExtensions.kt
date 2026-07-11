@@ -25,7 +25,13 @@ import java.io.OutputStream
 /**
  * Schedule a InputStream to be closed by the [Dispatchers.IO]
  * For use in suspend fun.
+ *
+ * F-WARN-005: @OptIn(DelicateCoroutinesApi) — GlobalScope is acceptable here
+ * because lazyClose() fires-and-forgets a stream close on a background dispatcher.
+ * The stream is already consumed by the time this is called; closing it is a
+ * cleanup operation that should not block the caller.
  */
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
 fun InputStream.lazyClose() =
 	GlobalScope.launch(Dispatchers.IO) {
 		close()
@@ -34,7 +40,10 @@ fun InputStream.lazyClose() =
 /**
  * Schedule a OutputStream to be closed by the [Dispatchers.IO].
  * For use in suspend fun.
+ *
+ * F-WARN-005: @OptIn(DelicateCoroutinesApi) — see [InputStream.lazyClose] above.
  */
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
 fun OutputStream.lazyClose() =
 	GlobalScope.launch(Dispatchers.IO) {
 		close()

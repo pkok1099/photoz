@@ -216,7 +216,7 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 			// Switch vault = lock the app. The unlock screen will iterate all
 			// Password rows and the user picks which vault to enter by typing
 			// that vault's password.
-			(fragment?.activity as? onlasdan.gallery.BaseApplication)?.lockApp()
+			(fragment.activity?.application as? onlasdan.gallery.BaseApplication)?.lockApp()
 			false
 		}
 
@@ -302,7 +302,7 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 		// screen (TrashFragment) where the user can browse, restore, or
 		// permanently delete soft-deleted photos.
 		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_TRASH) {
-			fragment?.findNavController()?.navigate(R.id.action_global_trashFragment)
+			fragment.findNavController().navigate(R.id.action_global_trashFragment)
 			false
 		}
 

@@ -300,7 +300,7 @@
     <string name="migration_initial_stage_ready_button">Lancer la migration</string>
 
     <string name="migration_running_title">Migration de votre galerie</string>
-    <string name="migration_running_progress">%d fichiers sur %d traités</string>
+    <string name="migration_running_progress" formatted="false">%d fichiers sur %d traités</string>
     <string name="migration_running_advice">Si cet écran reste ouvert, la migration s\'effectuera plus rapidement.</string>
 
     <string name="migration_done_title">Migration de la galerie terminée</string>

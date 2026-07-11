@@ -1,3 +1,5 @@
+@file:Suppress("KotlinConstantConditions", "ConstantConditionValue", "SENSELESS_COMPARISON")
+
 /*
  *   Copyright 2020–2026 PhotoZ
  *

@@ -248,7 +248,8 @@ class SettingsViewModel
 						is Preference.Simple -> Unit
 						is Preference.DynamicSummary -> Unit
 						is Preference.Info -> Unit
-						else -> Unit
+						// F-WARN-013: removed redundant `else -> Unit` — when is exhaustive
+						// over the sealed class Preference, so the else branch is unreachable.
 					}
 				}
 			}
@@ -322,8 +323,11 @@ class SettingsViewModel
 				vaultService.reset(VaultProtectionType.Password)
 				vaultService.reset(VaultProtectionType.Biometric)
 
-				config.legacyPasswordHash = null
-				config.legacyUserSalt = null
+				@Suppress("DEPRECATION") // legacy fields — only for migration
+				run {
+					config.legacyPasswordHash = null
+					config.legacyUserSalt = null
+				}
 
 				(app as BaseApplication).lockApp()
 			}

@@ -299,7 +299,7 @@
     <string name="migration_initial_stage_ready_button">Começar migração</string>
 
     <string name="migration_running_title">Migrando sua galeria</string>
-    <string name="migration_running_progress">%d de %d arquivos migrados</string>
+    <string name="migration_running_progress" formatted="false">%d de %d arquivos migrados</string>
     <string name="migration_running_advice">Se essa tela continuar aberta, a migração será realizada mais rápido</string>
 
     <string name="migration_done_title">Migração da galeria finalizada</string>

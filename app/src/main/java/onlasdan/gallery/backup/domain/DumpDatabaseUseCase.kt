@@ -49,8 +49,10 @@ class DumpDatabaseUseCase
 
 				when (version) {
 					LEGACY_BACKUP_VERSION -> {
+						@Suppress("DEPRECATION") // legacyPasswordHash — only for V3 backup migration
+						val legacyHash = config.legacyPasswordHash
 						BackupMetaData.V3(
-							password = requireNotNull(config.legacyPasswordHash) { "Legacy password hash is required for V3 backup" },
+							password = requireNotNull(legacyHash) { "Legacy password hash is required for V3 backup" },
 							photos = photos,
 							albums = albums,
 							albumPhotoRefs = albumPhotoLinks,
