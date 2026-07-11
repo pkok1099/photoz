@@ -1688,6 +1688,23 @@ class RepoManager
 								?: IOException("Wrapped-phrase upload failed")
 						}
 
+						// F-HOTFIX-002: ALSO upload plaintext .json for fresh-install recovery.
+						// See uploadRecoveryPhraseEscrow for the full rationale.
+						val legacyTempFile = File(app.cacheDir, "wrapped-phrase-legacy-${System.currentTimeMillis()}.json")
+						try {
+							legacyTempFile.writeText(json)
+							val legacyRemotePath = "$remote:$WRAPPED_PHRASE_LEGACY_REMOTE_PATH"
+							diag("uploadWrappedPhraseEscrow: uploading plaintext fallback → $legacyRemotePath")
+							val legacyUploadResult = rcloneController.uploadFile(legacyTempFile.absolutePath, legacyRemotePath)
+							if (legacyUploadResult.isFailure) {
+								Timber.w(legacyUploadResult.exceptionOrNull(), "uploadWrappedPhraseEscrow: plaintext .json upload failed (non-fatal)")
+							} else {
+								diag("uploadWrappedPhraseEscrow: plaintext .json uploaded OK")
+							}
+						} finally {
+							legacyTempFile.delete()
+						}
+
 						// Independent verification — same pattern as Layer 1 + registerRepo() marker.
 						val verifyResult =
 							rcloneController.listRemote(
