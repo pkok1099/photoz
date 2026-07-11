@@ -178,7 +178,7 @@ class RcloneController
 		/**
 		 * Call rclone RC API via JNI.
 		 *
-		 * @param method RC API method (e.g. "operations/copyfile")
+		 * @param method RC API method (e.g. "operations/copyto")
 		 * @param input JSON input parameters
 		 * @return JSON output
 		 */
@@ -248,7 +248,7 @@ class RcloneController
 						"""
 						{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile"}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc("operations/copyto", input)
 					Timber.d("uploadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -264,7 +264,7 @@ class RcloneController
 		/**
 		 * F-UV-001: Upload a local file to the remote with periodic progress callbacks.
 		 *
-		 * Uses rclone async RC API: operations/copyfile with _async=true
+		 * Uses rclone async RC API: operations/copyto with _async=true
 		 * returns a jobid, then poll job/status every 500ms for progress.
 		 *
 		 * @param localPath local file path
@@ -289,7 +289,7 @@ class RcloneController
 					}
 					val dstFs = if (dstDir.isEmpty()) "$remote:" else "$remote:$dstDir"
 					val startInput = """{"srcFs":"$localPath","srcRemote":"","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc("operations/copyto", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
 					}
@@ -357,7 +357,7 @@ class RcloneController
 						"""
 						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":""}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc("operations/copyto", input)
 					Timber.d("downloadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -373,7 +373,7 @@ class RcloneController
 		/**
 		 * F-SYNC-021: Download a file with periodic progress callbacks.
 		 *
-		 * Uses rclone async RC API: operations/copyfile with _async=true
+		 * Uses rclone async RC API: operations/copyto with _async=true
 		 * returns a jobid, then poll job/status every 500ms for progress.
 		 *
 		 * On coroutine cancellation, calls job/stop to cancel the rclone job.
@@ -395,7 +395,7 @@ class RcloneController
 					}
 					val srcFs = if (srcDir.isEmpty()) "$remote:" else "$remote:$srcDir"
 					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$localPath","dstRemote":"","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc("operations/copyto", startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async start error: $startResult"))
 					}
