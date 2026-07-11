@@ -20,9 +20,9 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.IntentCompat
@@ -46,17 +46,21 @@ val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.s
  * Holds all fragments and initializes toolbar, menu, etc.
  *
  * F-PERF-002 (UI optimization, v1.0.2): migrated from `BindableActivity<ActivityMainBinding>`
- * (DataBinding) to plain [ComponentActivity]. The ComposeView for the bottom menu is now
- * accessed via `findViewById` instead of generated binding class.
+ * (DataBinding) to [AppCompatActivity] + `findViewById`. The ComposeView for the bottom
+ * menu is now accessed via `findViewById` instead of generated binding class.
  *
- * This drops DataBinding generation for this activity — faster builds, fewer generated
- * classes, and removes one of the last DataBinding consumers in the app.
+ * F-HOTFIX-001 (P0 crash fix): must extend [AppCompatActivity] (NOT [androidx.activity.ComponentActivity])
+ * because `activity_main.xml` uses `FragmentContainerView` with
+ * `android:name="androidx.navigation.fragment.NavHostFragment"`. NavHostFragment requires
+ * the host Activity to be a [androidx.fragment.app.FragmentActivity] — `AppCompatActivity`
+ * extends `FragmentActivity`, but `ComponentActivity` does NOT. Using `ComponentActivity`
+ * caused `UnsupportedOperationException` at `setContentView()` on every launch.
  *
  * @since 1.0.0
  * @author PhotoZ
  */
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 	private val viewModel: MainViewModel by viewModels()
 
 	@Inject

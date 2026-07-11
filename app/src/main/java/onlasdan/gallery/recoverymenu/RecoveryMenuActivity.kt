@@ -17,7 +17,7 @@
 package onlasdan.gallery.recoverymenu
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -50,7 +50,11 @@ import javax.inject.Inject
 
 /**
  * F-PERF-003 (UI optimization, v1.0.2): migrated from `BindableActivity<ActivityRecoveryMenuBinding>`
- * (DataBinding) to plain [ComponentActivity] + Jetpack Compose.
+ * (DataBinding) to [AppCompatActivity] + Jetpack Compose.
+ *
+ * F-HOTFIX-001: extends [AppCompatActivity] (not ComponentActivity) because the activity
+ * uses `@style/AppTheme` which extends `Theme.MaterialComponents.DayNight.NoActionBar.Bridge`
+ * — an AppCompat theme. AppCompatActivity ensures proper theme inflation.
  *
  * The activity_recovery_menu.xml layout file has been removed. The UI is now defined entirely
  * in Compose below — a column with the app title, subtitle, and two clickable rows for
@@ -60,7 +64,7 @@ import javax.inject.Inject
  * @author PhotoZ
  */
 @AndroidEntryPoint
-class RecoveryMenuActivity : ComponentActivity() {
+class RecoveryMenuActivity : AppCompatActivity() {
 	@Inject
 	lateinit var config: Config
 
