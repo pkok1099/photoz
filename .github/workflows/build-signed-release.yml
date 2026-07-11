@@ -29,7 +29,8 @@ jobs:
     env:
       TELEMETRY_DECK_APP_ID: ${{ secrets.TELEMETRY_DECK_APP_ID }}
       # Keystore path is fixed; the workflow decodes the base64 secret to this location.
-      SIGNING_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+      # NOTE: `runner.temp` is not available in job-level env — use a fixed /tmp path.
+      SIGNING_KEYSTORE_PATH: /tmp/photoz-release.keystore
       SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
       SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
       SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
