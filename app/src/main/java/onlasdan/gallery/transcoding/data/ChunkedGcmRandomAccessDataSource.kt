@@ -183,6 +183,15 @@ class ChunkedGcmRandomAccessDataSource(
 			nonceRead += n
 		}
 		if (nonceRead < GCM_IV_SIZE) {
+			// F-010 fix: distinguish genuine EOF (no bytes read = end of stream)
+			// from truncated chunk (some bytes read, but < GCM_IV_SIZE).
+			if (nonceRead == 0) {
+				// Genuine EOF — no more chunks. Signal by nulling currentChunkData.
+				currentChunkData = null
+				currentChunkIndex = -1
+				Timber.d("ChunkedGcmRA: reached EOF at chunk %d (no more nonce to read)", chunkIndex)
+				return
+			}
 			throw IOException("ChunkedGcmRA: chunk $chunkIndex truncated nonce (read=$nonceRead)")
 		}
 
@@ -228,12 +237,22 @@ class ChunkedGcmRandomAccessDataSource(
 				loadChunk(currentChunkIndex + 1, channel)
 			} catch (e: javax.crypto.AEADBadTagException) {
 				throw java.io.IOException("ChunkedGcmRA: GCM auth failed at chunk ${currentChunkIndex + 1}", e)
+			} catch (e: java.io.IOException) {
+				// F-010 fix: do NOT swallow IOException("truncated nonce") / ("chunk too small")
+				// as silent EOF. These indicate file corruption — the caller must know.
+				// Genuine EOF (loadChunk exhausted all chunks) is signaled by currentChunkData
+				// being null after loadChunk, which the next read() call handles via `?: return -1`.
+				throw e
 			} catch (e: Exception) {
-				// Genuine EOF or read error — return -1
-				return -1
+				// F-010 fix: log and rethrow — do not convert to silent EOF.
+				// If this is a genuine clean EOF (backing stream returns -1 at chunk boundary),
+				// loadChunk would have set currentChunkData = null and returned normally.
+				throw java.io.IOException("ChunkedGcmRA: read failed at chunk ${currentChunkIndex + 1}", e)
 			} finally {
 				channel.close()
 			}
+			// F-010 fix: if loadChunk set currentChunkData=null (genuine EOF), return -1
+			if (currentChunkData == null) return -1
 			currentChunkPos = 0
 			return read(target, offset, length)
 		}

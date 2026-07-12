@@ -19,8 +19,11 @@ package onlasdan.gallery.transcoding.data
 import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.encryption.domain.crypto.ChunkedGcmOutputStream
 import onlasdan.gallery.encryption.domain.crypto.CHUNK_SIZE
+import onlasdan.gallery.encryption.domain.crypto.GCM_IV_SIZE
+import onlasdan.gallery.encryption.domain.crypto.GCM_TAG_SIZE
 import onlasdan.gallery.encryption.domain.models.VaultSession
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -134,5 +137,51 @@ class ChunkedGcmRandomAccessDataSourceTest {
 		Thread.sleep(200) // let it enter the poll loop
 		thread.interrupt()
 		thread.join(5000)
+	}
+
+	@Test
+	fun `F-010 read() throws IOException on truncated mid-stream chunk, not silent EOF`() {
+		// F-010: read()'s generic catch (e: Exception) { return -1 } swallows
+		// IOException("truncated nonce") / IOException("chunk too small") from
+		// loadChunk as clean EOF. Corruption must surface as IOException.
+		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() }  // 2 chunks
+		val file = makeVaultFile(plaintext)
+		val repo = makeSessionRepository(VaultSession(vmk))
+
+		// Truncate the file mid-second-chunk to force "truncated nonce" or "chunk too small".
+		// Deviation from plan: the plan's `file.inputStream().use { input -> truncated.outputStream().use { ... input.copyTo(output) ... } }`
+		// block was dead code (copyTo copies the full file, then a separate RandomAccessFile.truncate
+		// truncates it). Per fix-batch instructions, use RandomAccessFile.truncate ONLY — truncate
+		// the original vault file in place (each test gets a fresh temp file from makeVaultFile).
+		val truncateAt = 13L + (GCM_IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE) + 6L
+		val chan = java.io.RandomAccessFile(file, "rw").channel
+		chan.truncate(truncateAt)
+		chan.close()
+
+		val ds = makeDataSource(file, repo)
+		val dataSpec = makeDataSpec(file)
+		ds.open(dataSpec)
+
+		// Read past the first chunk to trigger loadChunk on the truncated second chunk
+		val buf = ByteArray(CHUNK_SIZE + 200)
+		var totalRead = 0
+		var caught: IOException? = null
+		try {
+			while (totalRead < CHUNK_SIZE + 200) {
+				val n = ds.read(buf, totalRead, buf.size - totalRead)
+				if (n <= 0) break
+				totalRead += n
+			}
+		} catch (e: IOException) {
+			caught = e
+		}
+
+		// The corruption must surface as IOException, not silent EOF returning -1 prematurely
+		// (we should have read at least CHUNK_SIZE bytes successfully before hitting the truncation)
+		assertTrue("Should have read at least CHUNK_SIZE bytes before truncation, got $totalRead", totalRead >= CHUNK_SIZE)
+		// Either we got IOException (preferred after fix), or — if the read stopped at exactly CHUNK_SIZE
+		// with a clean return -1 — that's the bug we're fixing
+		assertNotNull("read() must throw IOException on truncated chunk, not return -1 silently", caught)
+		ds.close()
 	}
 }
