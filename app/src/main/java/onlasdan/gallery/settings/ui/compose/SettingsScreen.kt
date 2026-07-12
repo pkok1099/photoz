@@ -353,40 +353,6 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 		show = showSecretLaunchCodeDialog,
 		onDismissRequest = { showSecretLaunchCodeDialog = false },
 	)
-}
-
-/**
- * Wire the Cloud Sync row's preference callback. Extracted from
- * [SettingsCallbacks] to reduce its cognitive complexity.
- */
-private fun registerCloudSyncCallback(
-	viewModel: SettingsViewModel,
-	settingsScope: kotlinx.coroutines.CoroutineScope,
-	syncConfigStatus: SyncConfigStatus,
-	onLaunchRcloneConfig: () -> Unit,
-	onAwaitRemotes: (List<RcloneConfigManager.RemoteInfo>) -> Unit,
-	onShowRemotePicker: () -> Unit,
-) {
-	viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
-		when (syncConfigStatus) {
-			is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
-				settingsScope.launch {
-					val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
-					if (remotes.isNotEmpty()) {
-						onAwaitRemotes(remotes)
-						onShowRemotePicker()
-					} else {
-						onLaunchRcloneConfig()
-					}
-				}
-			}
-			else -> {
-				onLaunchRcloneConfig()
-			}
-		}
-		false
-	}
-}
 
 	TelemetryExplanationSheet(
 		visible = showUsageDataSheet,
@@ -458,6 +424,39 @@ private fun registerCloudSyncCallback(
 				showRemotePicker = false
 			},
 		)
+	}
+}
+
+/**
+ * Wire the Cloud Sync row's preference callback. Extracted from
+ * [SettingsCallbacks] to reduce its cognitive complexity.
+ */
+private fun registerCloudSyncCallback(
+	viewModel: SettingsViewModel,
+	settingsScope: kotlinx.coroutines.CoroutineScope,
+	syncConfigStatus: SyncConfigStatus,
+	onLaunchRcloneConfig: () -> Unit,
+	onAwaitRemotes: (List<RcloneConfigManager.RemoteInfo>) -> Unit,
+	onShowRemotePicker: () -> Unit,
+) {
+	viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
+		when (syncConfigStatus) {
+			is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
+				settingsScope.launch {
+					val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
+					if (remotes.isNotEmpty()) {
+						onAwaitRemotes(remotes)
+						onShowRemotePicker()
+					} else {
+						onLaunchRcloneConfig()
+					}
+				}
+			}
+			else -> {
+				onLaunchRcloneConfig()
+			}
+		}
+		false
 	}
 }
 

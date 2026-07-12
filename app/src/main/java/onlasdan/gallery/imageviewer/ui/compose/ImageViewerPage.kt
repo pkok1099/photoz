@@ -277,23 +277,6 @@ fun BoxScope.ImageViewerVideoPage(
 				player = player,
 				isCurrentItem = isCurrentItem,
 			)
-
-
-					if (wasPlayingWhenStartedScrubbing) {
-						player.play()
-						wasPlayingWhenStartedScrubbing = false
-					}
-
-					exoPlayerState.isScrubbing = false
-				},
-				valueRange = 0f..safeDuration.toFloat(),
-				colors = sliderColors,
-				enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
-				modifier =
-					Modifier
-						.fillMaxWidth()
-						.padding(horizontal = 20.dp),
-			)
 		}
 	}
 }
