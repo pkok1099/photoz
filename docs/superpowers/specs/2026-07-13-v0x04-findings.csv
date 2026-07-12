@@ -1,0 +1,206 @@
+"id","title","angle","severity","file","line","description","evidence","impact","recommendation","effort","status"
+"F-001","ChunkedGcmOutputStream.close() swallows all exceptions, masking final-chunk write failures","B","High","encryption/domain/crypto/ChunkedGcmOutputStream.kt","123-141","close() wraps writeHeaderIfNeeded(), flushChunk(), output.flush(), and patchTotalPlaintextSizeIfPossible() in a try/catch (e: Exception) { Timber.e(...) } that swallows every exception. The caller's use/lazyClose() sees no error, so PhotoRepository.createPhotoFile returns the plaintext byte count as if the write succeeded — but the on-disk file is truncated mid-final-chunk. The corruption is only detectable later on read (GCM tag verification or EOF mid-nonce).","```kotlin
+override fun close() {
+    if (closed) return
+    closed = true
+    try {
+        writeHeaderIfNeeded()
+        flushChunk()
+        output.flush()
+        patchTotalPlaintextSizeIfPossible()
+    } catch (e: Exception) {
+        Timber.e(e, ""ChunkedGcmOutputStream: close failed"")   // swallowed
+    } finally {
+        output.close()
+    }
+}
+```
+Caller in PhotoRepository.createPhotoFile returns fileLen as success.","Disk-full or storage-IO failure during the final chunk write produces a silently-corrupt encrypted file. The import UI reports success; the user discovers the corruption only when playback/export later throws AEADBadTagException or returns EOF. Potential data loss on edge case — the file is unrecoverable without re-import.","Re-throw IOException (at minimum) from close(). Keep patchTotalPlaintextSizeIfPossible() failure non-fatal (it already has its own inner try/catch), but do not swallow exceptions from flushChunk() or output.flush(). Alternative: after close(), verify output channel size matches expected, and throw if mismatch.","S","open"
+"F-002","ChunkedGcmRandomAccessDataSource.open() returns negative Long when dataSpec.position > totalPlaintextSize","B","High","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","135-142","open() computes return as totalPlaintextSize - plainOffset when totalPlaintextSize > 0. If dataSpec.position > totalPlaintextSize (seek past EOF), this returns a negative Long. ExoPlayer's DataSource.open contract requires non-negative byte count or C.LENGTH_UNBOUNDED (= Long.MAX_VALUE); negative is undefined behavior. Additionally, chunkIndex = (plainOffset / chunkSize).toInt() (line 116) silently truncates on huge plainOffset (Long → Int), which can produce a negative chunk index and an invalid channel.position(chunkOffset) call.","```kotlin
+return if (totalPlaintextSize > 0) {
+    totalPlaintextSize - plainOffset        // negative if plainOffset > totalPlaintextSize
+} else {
+    java.lang.Long.MAX_VALUE
+}
+```
+Chunk-index math:
+```kotlin
+val chunkIndex = (plainOffset / chunkSize).toInt()    // Long→Int truncation on huge seeks
+```","ExoPlayer behavior on negative open() return is undefined — may crash loading thread, treat as 0-byte EOF, or loop. Int truncation on huge seeks can produce negative chunkOffset, causing channel.position(negative) to throw IllegalArgumentException. Either way: playback failure with non-obvious root cause.","Clamp: return (totalPlaintextSize - plainOffset).coerceAtLeast(0L). Add explicit guard: if plainOffset >= totalPlaintextSize && totalPlaintextSize > 0, throw IOException(""seek past EOF""). Validate plainOffset fits in Int range before .toInt() cast.","S","open"
+"F-003","ChunkedGcmInputStream.loadNextChunk swallows non-AEAD exceptions as silent EOF","B","Medium","encryption/domain/crypto/ChunkedGcmInputStream.kt","112-171","loadNextChunk() catches AEADBadTagException and rethrows as IOException (correct). However, the subsequent generic catch (e: Exception) { Timber.e(...); return false } swallows every other exception — including IOException from a truncated read. return false is interpreted by read() as clean EOF, so the caller sees a normal end-of-stream instead of a corruption signal.","```kotlin
+} catch (e: AEADBadTagException) {
+    throw IOException(""...GCM auth tag verification failed..."", e)
+} catch (e: Exception) {
+    Timber.e(e, ""loadNextChunk failed"")
+    false        // swallowed; read() treats as clean EOF
+}
+```
+read() caller:
+```kotlin
+if (!loadNextChunk()) { eof = true; return -1 }   // silent EOF
+```","A file truncated mid-chunk (write interrupted, disk-full, partial download) decrypts and returns data up to the truncation, then silently ends. Caller cannot distinguish 'clean EOF at chunk boundary' from 'corrupt truncation mid-chunk'. For sequential reads (thumbnails, exports), this means a truncated export/thumb is produced without error.","Distinguish EOF (backing stream returns -1 at chunk boundary — clean) from short-read mid-chunk (returns -1 mid-nonce or mid-ciphertext — corrupt). Throw IOException(""truncated chunk"") for the latter. At minimum, rethrow IOException from the generic catch rather than swallowing.","M","open"
+"F-004","ChunkedGcmRandomAccessDataSource.waitForBytesAvailable does not handle InterruptedException","B","Medium","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","241-254","waitForBytesAvailable() calls Thread.sleep(50) in a poll loop but does not catch InterruptedException. When ExoPlayer releases the player, it interrupts its loading thread. InterruptedException propagates raw through loadChunk → open()/read() → ExoPlayer. DataSource.open/read declare throws IOException; an undeclared InterruptedException violates the contract. The sibling AesCbcRandomAccessDataSource.waitForBytesAvailable (line 320-325) and BlockingInputStream (line 415-420) handle this correctly: Thread.currentThread().interrupt(); throw IOException(""Interrupted..."", e).","```kotlin
+private fun waitForBytesAvailable(minBytes: Long) {
+    if (availableBytesProvider(uri) < 0) return
+    val deadline = System.currentTimeMillis() + 600_000L
+    while (true) {
+        ...
+        Thread.sleep(50)    // no try/catch for InterruptedException
+    }
+}
+```
+CBC path:
+```kotlin
+try { Thread.sleep(WAIT_POLL_INTERVAL_MS) }
+catch (e: InterruptedException) {
+    Thread.currentThread().interrupt()
+    throw IOException(""Interrupted while waiting for download"", e)
+}
+```","When user closes video viewer mid-download, ExoPlayer interrupts the loading thread. Raw InterruptedException escapes the DataSource call and is not wrapped as IOException. ExoPlayer's Loader may treat this as unhandled error rather than clean cancellation, potentially surfacing a crash or error toast on benign user action. Interrupt flag is also not re-set.","Wrap Thread.sleep(50) in try/catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw IOException(""Interrupted while waiting for download"", e) }, mirroring CBC path exactly.","S","open"
+"F-005","videoStreamState entry removed after failed download, DataSource loses partial-availability tracking","B","Medium","imageviewer/ui/ImageViewerViewModel.kt","446-462","Download coroutine's finally block removes videoStreamState entry unconditionally — for both success and failure. After removal, availableBytesProvider and downloadCompleteProvider fall back to defaults (-1L / true = 'fully available'). For a failed download with partial file on disk, this is a lie. Subsequent waitForBytesAvailable returns immediately, loadChunk reads past partial end, gets EOF, and read()'s generic catch returns -1 silently to ExoPlayer.","```kotlin
+} finally {
+    videoStreamState.remove(photo.internalFileName)   // removed even on failure
+    ...
+}
+```
+Default providers:
+```kotlin
+availableBytesProvider = { uri -> lookupStreamState(uri)?.availableBytes?.get() ?: -1L }
+downloadCompleteProvider = { uri -> lookupStreamState(uri)?.downloadComplete?.get() ?: true }
+```","Failed progressive download leaves partial encrypted file on disk. ExoPlayer reads until truncation and sees silent EOF — user observes video 'just stops' partway through. Worse: re-opening the video sees localFile.exists() && length() > 0 and marks it Done without re-downloading — partial file permanently stuck.","On download failure, either (a) delete the partial file so next open re-downloads, or (b) keep videoStreamState entry with downloadComplete=true and availableBytes=partial size. Option (a) is simpler and matches 'failed import = no file' contract.","M","open"
+"F-006","ChunkedGcmRandomAccessDataSource.open() pre-loads a full 1MB chunk before returning, delaying first frame on slow networks","B","Medium","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","128-143","open() calls loadChunk(chunkIndex, channel) before returning. loadChunk calls waitForBytesAvailable(chunkOffset + chunkEncSize), which blocks until the entire 1MB chunk (12 + 1,048,576 + 16 = 1,048,604 bytes for chunk 0) is on disk. ExoPlayer's open() therefore blocks until ~1MB has downloaded. The CBC path, by contrast, only waits for 32 bytes (target block + previous block for IV) before returning. For a 500 kbps connection, chunked-GCM playback starts after ~16 seconds (1MB), while CBC starts after ~0.5 seconds.","GCM open() pre-loads full chunk:
+```kotlin
+loadChunk(chunkIndex, channel)
+currentChunkPos = offsetInChunk
+```
+GCM loadChunk waits for full chunk:
+```kotlin
+val chunkEncSize = GCM_IV_SIZE + chunkSize + GCM_TAG_SIZE   // 1,048,604 bytes
+waitForBytesAvailable(chunkOffset + chunkEncSize)           // blocks for 1MB
+```
+CBC open() waits for one block:
+```kotlin
+waitForBytesAvailable(minBytes = targetCipherOffset + 1L)
+```","UX regression for slow-network progressive playback of v0x04 videos vs v0x02. User sees 'Downloading video…' spinner for ~16× longer before first frame. Inherent to GCM (tag verification requires full ciphertext) — cannot be fully eliminated, but chunk size (1MB) is a tunable. Also: open() blocking for 1MB means ExoPlayer cannot read MOOV atom until 1MB arrives.","Short-term: document the trade-off. Medium-term: smaller 'first chunk' size (e.g. 64KB) so MOOV can be read quickly, with subsequent chunks at 1MB. Long-term: streaming GCM with partial-block decryption (loses tag-per-chunk simplicity).","L","open"
+"F-007","FastStartUseCase mis-handles 'MOOV already at front' — false-positive warning toast","B","Medium","model/io/FastStartUseCase.kt","86-143","The catch (QtFastStart.UnsupportedFileException) block assumes that exception is thrown when 'MOOV is already at front'. This is incorrect. QtFastStart.fastStartImpl returns false (not throws) when the last atom is not MOOV — exactly the 'MOOV already at front' case. When fastStart returns false, the library deletes the output file. FastStartUseCase then checks tempOutput.exists() && length() > 0, which is false, and shows a false-positive warning toast. The user sees a scary warning for a video that is already optimized.","FastStartUseCase assumption:
+```kotlin
+} catch (e: QtFastStart.UnsupportedFileException) {
+    // This is thrown when MOOV is already at front OR format is unsupported.
+```
+QtFastStart.java actual behavior:
+```java
+if (atomType != MOOV_ATOM) {
+    printf(""last atom in file was not a moov atom"");
+    return false;     // returns, does NOT throw
+}
+```
+False-positive path:
+```kotlin
+if (tempOutput.exists() && tempOutput.length() > 0) { ... }
+else {
+    showWarning(""⚠ '$name': FastStart failed — video will need full download before playback"")
+    null
+}
+```","Every already-faststarted MP4 (modern device videos, ffmpeg -movflags +faststart) triggers misleading 'FastStart failed' toast on import. Users may believe their video is broken. Erodes trust in import flow. QtFastStart's Boolean return value is ignored.","Capture and check Boolean return from QtFastStart.fastStart(). If false, treat as 'no faststart needed' (log + return null without warning). Only show warning when fastStart throws or returns true but output is empty. Remove stale comment.","S","open"
+"F-008","Download coroutine's runCatching swallows CancellationException, breaking structured concurrency","B","Medium","imageviewer/ui/ImageViewerViewModel.kt","406-463","Download coroutine wraps syncRestorer.ensureLocalOriginalWithProgress(...) in runCatching { ... }. runCatching is a plain try/catch (Throwable) — it catches CancellationException, which is the coroutine-cancellation signal. When the ViewModel is cleared (viewModelScope cancelled) mid-download, the CancellationException is caught by runCatching instead of propagating. The coroutine continues to execute code after runCatching (set downloadComplete, set availableBytes, update videoDownloadsFlow to Failed), and the finally block. Parent coroutine machinery sees normal completion rather than cancellation — structured concurrency is broken.","```kotlin
+viewModelScope.launch {
+    try {
+        val result = runCatching {
+            syncRestorer.ensureLocalOriginalWithProgress(uuid) { ... }
+        }
+        // runCatching catches CancellationException
+        streamState.downloadComplete.set(true)
+        if (result.isSuccess) { ... } else { ... }   // CancellationException → 'Failed'
+    } finally {
+        videoStreamState.remove(photo.internalFileName)
+    }
+}
+```","On viewer close mid-download, coroutine does extra work (state updates, videoDownloadsFlow emission to Failed) after being cancelled — wasted CPU and spurious 'Failed' UI flash. CancellationException not re-thrown, so coroutine's Job transitions to Completed instead of Cancelled. Practical symptom: transient 'Download failed' toast/state on close.","Replace runCatching with explicit try/catch that re-throws CancellationException:
+```kotlin
+val result = try {
+    Result.success(syncRestorer.ensureLocalOriginalWithProgress(uuid) { ... })
+} catch (e: CancellationException) { throw e }
+  catch (e: Throwable) { Result.failure(e) }
+```","S","open"
+"F-009","ChunkedGcmRandomAccessDataSource.open() does not wrap AEADBadTagException from loadChunk() as IOException — ExoPlayer contract violation","A","Medium","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","129, 192","loadChunk() calls cipher.doFinal(actualCipher) at line 192 with NO local try/catch. When loadChunk() is invoked from open() (line 129), the call is inside try { ... } finally { channel.close() } — but finally only closes the channel; there is no catch. If the first chunk's GCM auth tag verification fails, AEADBadTagException (a GeneralSecurityException, NOT an IOException) propagates raw through open() to ExoPlayer. DataSource.open() declares throws IOException; undeclared GeneralSecurityException violates contract. The sibling call site in read() (line 211-213) handles this correctly, so only open() path is broken.","open() call site:
+```kotlin
+loadChunk(chunkIndex, channel)
+currentChunkPos = offsetInChunk
+} finally { channel.close() }
+```
+loadChunk() doFinal — no try/catch:
+```kotlin
+currentChunkData = cipher.doFinal(actualCipher)   // unwrapped; throws AEADBadTagException
+```","If first chunk of v0x04 file is corrupted (bit-rot, storage error, wrong VMK after password change race), playback crashes with unhandled GeneralSecurityException instead of graceful 'video corrupted' message. ExoPlayer's error handler expects IOException subclasses; unexpected RuntimeException-family may propagate to global crash handler in release builds.","Wrap loadChunk call in open() with same try/catch (e: AEADBadTagException) { throw IOException(""GCM tag verification failed on first chunk"", e) } as read() does. Better: move wrapping inside loadChunk itself so both call sites are protected.","S","open"
+"F-010","ChunkedGcmRandomAccessDataSource.read() swallows non-AEAD exceptions as silent EOF — video silently truncates on corrupted mid-stream chunks","A","Medium","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","211-216","read() has generic catch (e: Exception) { return -1 } after the AEADBadTagException handler. loadChunk() throws IOException('truncated nonce') and IOException('chunk too small') on truncated reads (partial download, file truncated mid-chunk). Both are caught by generic Exception handler and converted to clean EOF (return -1). User observes video 'just stops' partway through with no error indication. Same anti-pattern as F-003, but in random-access video-playback path.","```kotlin
+} catch (e: AEADBadTagException) {
+    throw IOException(""...GCM auth tag verification failed..."", e)
+} catch (e: Exception) {
+    return -1   // truncated nonce / chunk too small / any IOException → silent EOF
+}
+```
+loadChunk throws:
+```kotlin
+if (read < GCM_IV_SIZE) throw IOException(""truncated nonce"")
+if (read < GCM_IV_SIZE + GCM_TAG_SIZE) throw IOException(""chunk too small"")
+```","Silently truncates video on corrupted mid-stream chunks. User cannot distinguish 'video ended normally' from 'video corrupted mid-stream'. For vault storing irreplaceable videos, silent corruption is data-integrity footgun — user may not realize video is damaged until they try to export.","Distinguish EOF at chunk boundary (clean — ExoPlayer requests next chunk) from IOException mid-chunk (corrupt — rethrow). Replace generic catch with explicit handling: catch (e: IOException) { if (e.message?.contains(""truncated"") == true) throw e else return -1 }. At minimum, log swallowed exception at WARN level.","M","open"
+"F-011","No AAD (Additional Authenticated Data) bound to GCM — file header is not integrity-protected","A","Medium","encryption/domain/crypto/ChunkedGcmOutputStream.kt","109","All three GCM cipher.init(...) call sites construct GCMParameterSpec(GCM_TAG_SIZE * 8, nonce) with ONLY tag length and IV — no cipher.updateAAD(...) call anywhere. The 13-byte file header ([version=0x04][chunk_size(4)][total_plaintext_size(8)]) is NOT integrity-protected by GCM auth tag. An attacker (or buggy writer, or bit-rot in first 13 bytes) can modify totalPlaintextSize or chunkSize WITHOUT failing GCM tag verification on any chunk. Reader trusts header values for: (a) open() return value, (b) ExoPlayer's reported duration, (c) chunkEncSize computation in loadChunk.","Encrypt (ChunkedGcmOutputStream.kt:107-110):
+```kotlin
+val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+    init(Cipher.ENCRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
+}
+// no cipher.updateAAD(headerBytes) — header is not bound to the tag
+```
+Same pattern at ChunkedGcmInputStream.kt:153 and ChunkedGcmRandomAccessDataSource.kt:190.","Attacker with file-write access can shrink totalPlaintextSize to silently truncate video, or grow it to cause seek-past-EOF errors — without failing GCM tag verification on any chunk. chunkSize tampering causes loadChunk to compute wrong chunkEncSize, leading to misaligned reads. Threat model assumes attacker with file-write access can already delete files, so not a critical confidentiality breach — but a data-integrity gap that AAD would close for free.","Bind file header as AAD on every GCM operation. In OutputStream: after writing header, call cipher.updateAAD(headerBytes) before doFinal. In InputStream and RA DataSource: read header first, then cipher.updateAAD(headerBytes) before doFinal. Note: backwards-incompatible format change — either bump version byte to 0x05 (preferred) or accept v0x04 files remain un-AAD'd and only new writes get AAD (mixed-version dispatch).","L","open"
+"F-012","Unknown version byte (0x05+) dispatched to CBC path throws IllegalStateException, not IOException — ExoPlayer contract violation","D","Medium","transcoding/data/VersionDispatchDataSourceFactory.kt","87-109","VersionDispatchDataSource.open() reads first byte and dispatches via when (firstByte[0]). The else branch (catches 0x03 and any future 0x05+) instantiates AesCbcRandomAccessDataSource. AesCbcRandomAccessDataSource.open() then checks version and throws IllegalStateException('version-X must be handled by ChunkedGcmRandomAccessDataSource') for v0x03, and similar for unknown bytes. IllegalStateException is a RuntimeException, NOT IOException — violates DataSource.open/read contract that declares throws IOException.","VersionDispatchDataSource.open() dispatch:
+```kotlin
+delegate = when (firstByte[0]) {
+    0x04.toByte() -> ChunkedGcmRandomAccessDataSource(...)
+    else          -> AesCbcRandomAccessDataSource(...)   // 0x03, 0x05+ all go here
+}
+```
+AesCbcRandomAccessDataSource throws on v0x03:
+```kotlin
+if (version != EncryptionVersionByte.One && version != EncryptionVersionByte.Two) {
+    throw IllegalStateException(""$version must be handled by ChunkedGcmRandomAccessDataSource"")
+}
+```","If a future v0x05+ file is opened (partial format upgrade, backup restore from newer app version), playback crashes with IllegalStateException instead of graceful 'unsupported format' message. For v0x03 files mistakenly played as video (shouldn't happen per design, but defensive coding matters), same crash. Release builds may see this surface to Play Console crash reports as unhandled RuntimeException.","In AesCbcRandomAccessDataSource.open(), throw IOException('unsupported encryption version: X') instead of IllegalStateException. Better: in VersionDispatchDataSource.open(), add explicit else branch that throws IOException('unknown version byte: X') before instantiating any DataSource — fail fast at dispatch layer.","S","open"
+"F-013","ChunkedGcmRandomAccessDataSource.waitForBytesAvailable has no progress logging, unlike CBC path","B","Low","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","241-254","CBC waitForBytesAvailable and BlockingInputStream emit Log.i('RcloneDiag', '[VideoStream] ...') lines every 2 seconds while waiting, and on each successful unblock. Chunked-GCM waitForBytesAvailable is completely silent. When chunked-GCM video stalls mid-download, logcat shows nothing from GCM path — operator cannot tell whether DataSource is blocked, how many bytes it needs, or how many are available.","CBC:
+```kotlin
+Log.i(""RcloneDiag"", ""[VideoStream] waitForBytesAvailable: need=$minBytes available=${availableBytesProvider(uri)}"")
+```
+GCM (ChunkedGcmRandomAccessDataSource.kt:241-254): no Log.* calls at all.","Diagnosing progressive-download playback issues for v0x04 videos is significantly harder than for v0x02. Field reports of 'video won't play' for new-format videos will lack polling trail that exists for old-format videos.","Add same RcloneDiag log lines as CBC path (entry, periodic 2s progress, unblock, timeout). Effort trivial; pay-off large for support tickets.","S","open"
+"F-014","monitorFileSize final sync uses set() not max(), breaking documented monotonic invariant","B","Low","imageviewer/ui/ImageViewerViewModel.kt","478-501","Monitor coroutine maintains monotonic availableBytes watermark inside loop: state.availableBytes.updateAndGet { old -> if (len > old) len else old }, with explicit comment that File.length() can transiently read 0 and we 'never want to regress the watermark'. However, final sync after loop (line 495) and download coroutine's final sync (line 438) both call state.availableBytes.set(file.length()) directly — overwriting monotonic max with whatever File.length() returns at that instant. If file was truncated or deleted between last poll and final sync, availableBytes regresses.","Monotonic inside loop:
+```kotlin
+state.availableBytes.updateAndGet { old -> if (len > old) len else old }
+```
+Non-monotonic final sync:
+```kotlin
+state.availableBytes.set(file.length())   // overwrites, no max()
+```","In practice benign because downloadComplete=true is set before final sync, so waitForBytesAvailable short-circuits on downloadCompleteProvider check and never observes regressed availableBytes. But invariant is broken, and future refactor that reorders downloadComplete.set(true) / availableBytes.set(...) could surface real bug. Defensive code should preserve invariant.","Replace both final set(file.length()) calls with updateAndGet { old -> maxOf(old, file.length()) }. Effort trivial.","S","open"
+"F-015","ChunkedGcmRandomAccessDataSource.open() returns totalPlaintextSize - plainOffset instead of dataSpec.length, inconsistent with CBC path","C","Low","transcoding/data/ChunkedGcmRandomAccessDataSource.kt","135-142","open() returns totalPlaintextSize - plainOffset (remaining bytes from seek position to end of plaintext) when totalPlaintextSize > 0. If dataSpec.length is also set (ExoPlayer requests specific byte range), returned value does NOT honor dataSpec.length — always returns full remaining size. CBC path has same behavior, so consistent with legacy, but both paths ignore dataSpec.length. ExoPlayer docs: 'If length is unknown, return C.LENGTH_UNBOUNDED. Otherwise, return length of data that can be read from current position' — strictly interpreted, should be min(remaining, dataSpec.length).","GCM open() return:
+```kotlin
+return if (totalPlaintextSize > 0) {
+    totalPlaintextSize - plainOffset        // ignores dataSpec.length
+} else {
+    java.lang.Long.MAX_VALUE
+}
+```
+dataSpec.length is never read in this file.","ExoPlayer may read more bytes than it needs when issuing range request (e.g. metadata extraction), wasting I/O. In practice, ProgressiveMediaSource rarely uses bounded dataSpec.length, so impact is minor. But it is contract deviation that could surface in edge cases.","Honor dataSpec.length: return if (dataSpec.length != C.LENGTH_UNBOUNDED) dataSpec.length else (totalPlaintextSize - plainOffset).coerceAtLeast(0L). Or document explicitly that this DataSource ignores bounded ranges.","S","open"
+"F-016","v0x02 CBC path's 10-minute wait timeout has no progress UI and no user-extendable retry — bad UX on slow/stalled networks","D","Low","transcoding/data/AesCbcRandomAccessDataSource.kt","285-330","Both waitForBytesAvailable implementations (CBC and GCM) use 10-minute (600_000ms) hard timeout. If download stalls (network drop, rclone backend hang), user sees spinner for 10 minutes before error surfaces. No progress UI beyond spinner, no 'still waiting, retry?' prompt, no way for user to extend or cancel wait short of killing viewer. 10-minute window is hardcoded — no Config entry to tune it.","```kotlin
+val deadline = System.currentTimeMillis() + 600_000L
+while (true) {
+    if (System.currentTimeMillis() > deadline) {
+        throw IOException(""Timeout waiting for download"")
+    }
+    Thread.sleep(50)
+}
+```
+No Config entry for WAIT_TIMEOUT_MS. No UI callback to surface 'still waiting' state.","On stalled network, user waits 10 minutes with only spinner before learning video won't play. Cannot cancel early without killing app. Bad UX, especially for users on metered/intermittent connections (target audience for encrypted photo vault).","Short-term: shorten timeout to 60-120s and surface 'Download stalled, retry?' dialog. Medium-term: add Config entry for WAIT_TIMEOUT_MS, surface progress in UI, let user extend or cancel. Long-term: integrate with WorkManager for resumable background downloads.","M","open"
+"F-017","Backup V5 ZIP stores opaque encrypted blobs, but restore path decrypts + re-encrypts with local VMK — silent format upgrade to v0x04","D","Info","backup/restore/RestoreService.kt","(multiple)","Backup V5 ZIP stores encrypted files as opaque blobs (no transformation of version byte or chunk header). However, restore path does NOT write file byte-for-byte to vault — it decrypts via source VMK (from backup's wrappedVmk) and re-encrypts via local VMK (restoring device's vault key). This means: (a) v0x02 backup restored on v0x04-capable app becomes v0x04 file on disk (silent upgrade), (b) file size may change (CBC padding differs from GCM tag overhead), (c) chunk layout is fresh (different nonces). This is deliberate design choice (local VMK must wrap all files) and is correct, but undocumented in ENCRYPTION.md and may surprise users who expect 'restore = exact file copy'.","Restore flow:
+```kotlin
+val sourceInputStream = backupCryptoEngine.createDecryptStream(zipEntryInputStream, sourceVaultSession)
+val localOutputStream = vaultFileStorage.openEncryptedOutput(targetFileName, useGcm = true)
+// bytes decrypted from source, re-encrypted to local
+```
+ENCRYPTION.md §Backup Format V5 does not mention re-encryption step.","None functional — re-encryption is correct. Documentation gap only. User inspecting vault after restore will see all v0x04 files even if backup was v0x02, which may confuse forensic analysis or future migration efforts.","Document re-encryption step in ENCRYPTION.md §Backup Format V5: 'Restored files are re-encrypted with local vault's VMK; format version may differ from backup'. No code change needed.","S","open"
