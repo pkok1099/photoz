@@ -184,7 +184,7 @@ class SyncRestorer
 				restored
 			}
 
-		private fun resolvePhotoOrNull(uuid: String): Photo? =
+		private suspend fun resolvePhotoOrNull(uuid: String): Photo? =
 			try {
 				photoDao.get(uuid)
 			} catch (e: Exception) {
