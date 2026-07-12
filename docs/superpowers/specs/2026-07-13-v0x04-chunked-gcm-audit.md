@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-**Verdict: FAIL**
+**Verdict: PASS (post-fix re-verification)** — initial FAIL flipped to PASS after fix plan execution (7 commits). See §12.
 
 The audit identified **17 findings** across the v0x04 chunked GCM pipeline. Severity distribution: **0 Critical, 2 High, 10 Medium, 4 Low, 1 Info**. Angle distribution: B=10, A=3, C=1, D=3.
 
@@ -630,13 +630,69 @@ val result = try {
 
 ## 10. Verdict
 
-**FAIL**
+**FAIL (initial audit)** → **PASS (post-fix re-verification)**
 
-Justification: The audit identified 2 High-severity findings (F-001, F-002) which trigger the fail gate per spec §4.3 (zero Critical AND zero High required for PASS). F-001 can cause silent data loss on disk-full during the final chunk write. F-002 can cause undefined ExoPlayer behavior on seek-past-EOF. Both have effort S (under 1 hour each) and are localized to two files.
+Initial verdict was FAIL due to 2 High findings (F-001, F-002). After executing the fix plan at `docs/plans/2026-07-13-v0x04-fixes.md` (7 commits: `3b0c4371`, `4a986952`, `c6e17d5c`, `637bf879`, `8028c3a7`, `f78125db`, `c7f9865d`), both High findings are resolved plus 6 co-located Medium/Low findings. See §12 for the full re-verification details.
 
-Per spec §6.2 (FAIL branch), the next step is to invoke the `writing-plans` skill to produce an implementation plan covering the High findings, with co-located Medium findings (same file/call path) included in the same cycle. Low and Info findings remain in the CSV as backlog.
+The remaining 9 findings (F-005, F-006, F-007, F-008, F-011, F-013, F-014, F-016, F-017) are non-blocking backlog — Medium/Low/Info severity, no Critical or High remaining. Smoke test plan at `2026-07-13-v0x04-smoke-test-plan.md` should be executed on a physical device to confirm runtime behavior.
 
 ---
+
+
+
+---
+
+## 12. Post-Fix Re-Verification
+
+After executing the fix plan at `docs/plans/2026-07-13-v0x04-fixes.md` (7 commits, 8 findings fixed):
+
+**Fixed (8 findings):**
+
+| ID | Severity | File | Commit |
+|---|---|---|---|
+| F-001 | High | `ChunkedGcmOutputStream.kt` close() | `3b0c4371` |
+| F-002 | High | `ChunkedGcmRandomAccessDataSource.kt` open() | `4a986952` |
+| F-003 | Medium | `ChunkedGcmInputStream.kt` loadNextChunk() | `8028c3a7` |
+| F-004 | Medium | `ChunkedGcmRandomAccessDataSource.kt` waitForBytesAvailable() | `c6e17d5c` |
+| F-009 | Medium | `ChunkedGcmRandomAccessDataSource.kt` open() AEAD wrap | `4a986952` |
+| F-010 | Medium | `ChunkedGcmRandomAccessDataSource.kt` read() + loadChunk() | `637bf879` |
+| F-012 | Medium | `VersionDispatchDataSourceFactory.kt` open() | `f78125db` |
+| F-015 | Low | `ChunkedGcmRandomAccessDataSource.kt` open() dataSpec.length | `c7f9865d` |
+
+**Remaining open (9 findings — backlog, non-blocking):**
+
+| ID | Severity | Reason for backlog |
+|---|---|---|
+| F-005 | Medium | Requires `ImageViewerViewModel` refactor — separate cycle |
+| F-006 | Medium | Design decision + format change (smaller first-chunk) — separate cycle |
+| F-007 | Medium | `FastStartUseCase` rewrite to check Boolean return — separate cycle |
+| F-008 | Medium | Coroutine hygiene (`runCatching` → explicit try/catch) — separate cycle |
+| F-011 | Medium | Backwards-incompatible format change (v0x05 with AAD) — separate cycle |
+| F-013 | Low | Diagnostic logging improvement — separate cycle |
+| F-014 | Low | Defensive code (monotonic invariant) — separate cycle |
+| F-016 | Low | UX redesign (10-min timeout → 60-120s + retry dialog) — separate cycle |
+| F-017 | Info | Documentation gap only (`ENCRYPTION.md` §Backup V5) — separate cycle |
+
+**Re-verification verdict:** **PASS**
+
+- Critical: 0 (was 0) ✓
+- High: 0 (was 2 — F-001, F-002 both fixed) ✓
+- Medium: 6 (was 10 — 4 fixed: F-003, F-009, F-010, F-012) — backlog, non-blocking
+- Low: 3 (was 4 — 1 fixed: F-015) — backlog, non-blocking
+- Info: 1 (was 1) — backlog, non-blocking
+
+Gate per spec §4.3 (zero Critical AND zero High): **SATISFIED**.
+
+**Verification caveat:** Fixes were committed via static code analysis and TDD test authoring. The audit environment has no Android SDK — `./gradlew :app:testDebugUnitTest` could not be run. Test execution is deferred to:
+1. CI (GitHub Actions on PR)
+2. Physical device (smoke test plan at `2026-07-13-v0x04-smoke-test-plan.md`)
+
+Most important smoke test cases to verify the fixes:
+- TC-006, TC-007 — F-001 (close() exception propagation)
+- TC-104, TC-111 — F-002 (negative return past EOF, Int overflow)
+- TC-110 — F-009 + F-010 (AEAD wrap, silent EOF on corruption)
+- TC-304 — F-012 (unknown version byte → IOException)
+- TC-107, TC-204 — F-004 (InterruptedException wrapping)
 
 ## 11. Appendix
 
