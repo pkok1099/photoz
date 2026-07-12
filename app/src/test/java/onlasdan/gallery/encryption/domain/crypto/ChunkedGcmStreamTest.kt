@@ -19,6 +19,7 @@ package onlasdan.gallery.encryption.domain.crypto
 import onlasdan.gallery.encryption.domain.models.EncryptionVersionByte
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -194,5 +195,28 @@ class ChunkedGcmStreamTest {
 		// Both should decrypt to the same plaintext
 		assertArrayEquals(plaintext, decrypt(bulkCiphertext))
 		assertArrayEquals(plaintext, decrypt(byteCiphertext))
+	}
+
+	@Test
+	fun `close() propagates IOException when underlying stream fails`() {
+		// F-001: close() must not swallow exceptions from flushChunk/output.flush
+		val failingStream = object : java.io.OutputStream() {
+			private var closed = false
+			override fun write(b: Int) { /* no-op, buffer in ChunkedGcmOutputStream */ }
+			override fun flush() {
+				throw java.io.IOException("simulated flush failure (disk full)")
+			}
+			override fun close() { closed = true }
+		}
+		val out = ChunkedGcmOutputStream(failingStream, vmk)
+		out.write("test data".toByteArray())
+		var caught: java.io.IOException? = null
+		try {
+			out.close()
+		} catch (e: java.io.IOException) {
+			caught = e
+		}
+		assertNotNull("close() must propagate IOException from flush(), not swallow it", caught)
+		assertEquals("simulated flush failure (disk full)", caught?.message)
 	}
 }

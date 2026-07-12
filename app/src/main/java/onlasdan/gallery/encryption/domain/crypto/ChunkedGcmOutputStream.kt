@@ -123,6 +123,7 @@ class ChunkedGcmOutputStream(
 	override fun close() {
 		if (closed) return
 		closed = true
+		var closeException: java.io.IOException? = null
 		try {
 			writeHeaderIfNeeded()
 			flushChunk() // Flush remaining buffered data
@@ -132,12 +133,26 @@ class ChunkedGcmOutputStream(
 			// output is a FileOutputStream (we can seek back to the header).
 			// For other OutputStream types (network, in-memory), the header stays 0
 			// and the decryptor reads until EOF (existing behavior).
+			// F-001 fix: patchTotalPlaintextSizeIfPossible has its own inner
+			// try/catch (non-fatal), so it cannot leak exceptions here.
 			patchTotalPlaintextSizeIfPossible()
+		} catch (e: java.io.IOException) {
+			// F-001 fix: Do NOT swallow IOException from flushChunk/output.flush.
+			// These are real write failures (disk full, IO error) — the caller
+			// must know the file is corrupt.
+			closeException = e
 		} catch (e: Exception) {
-			Timber.e(e, "ChunkedGcmOutputStream: close failed")
+			// Wrap unexpected exceptions as IOException so callers have a single type to handle
+			closeException = java.io.IOException("ChunkedGcmOutputStream: close failed", e)
 		} finally {
-			output.close()
+			try {
+				output.close()
+			} catch (e: java.io.IOException) {
+				// If close() threw, prefer that exception over the output.close() exception
+				if (closeException == null) closeException = e
+			}
 		}
+		closeException?.let { throw it }
 		Timber.d("ChunkedGcmOutputStream: closed, total plaintext=%d bytes", totalBytesWritten)
 	}
 
