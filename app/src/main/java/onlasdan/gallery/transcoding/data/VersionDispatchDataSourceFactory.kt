@@ -90,7 +90,13 @@ class VersionDispatchDataSource(
 				// Defaulting to CBC breaks progressive streaming of chunked-GCM videos (0x04).
 				val deadline = System.currentTimeMillis() + 10_000L
 				while (!file.exists() && System.currentTimeMillis() < deadline) {
-					Thread.sleep(100)
+					try {
+						Thread.sleep(100)
+					} catch (e: InterruptedException) {
+						// F-012 fix (related): wrap InterruptedException as IOException per DataSource contract
+						Thread.currentThread().interrupt()
+						throw IOException("Interrupted while waiting for file to appear: ${file.absolutePath}", e)
+					}
 				}
 				if (!file.exists()) {
 					throw IOException("VersionDispatchDataSource: file not found after 10s: ${file.absolutePath}")
@@ -103,9 +109,14 @@ class VersionDispatchDataSource(
 				file.inputStream().use { it.read(firstByte) }
 				firstByte[0]
 			}
+		} catch (e: IOException) {
+			// Re-throw IOException (don't default to 0x02 — that masks the real problem)
+			throw e
 		} catch (e: Exception) {
-			// Can't read version byte — default to CBC (most common for video)
-			0x02
+			// F-012 fix: don't default to 0x02 on unknown errors — that silently dispatches
+			// to CBC path which then throws IllegalStateException (RuntimeException, not IOException).
+			// Throw IOException so ExoPlayer's error handler sees a contract-compliant exception.
+			throw IOException("VersionDispatchDataSource: could not read version byte from ${file.absolutePath}", e)
 		}
 
 		// Dispatch based on version byte
@@ -116,14 +127,20 @@ class VersionDispatchDataSource(
 				availableBytesProvider = availableBytesProvider,
 				downloadCompleteProvider = downloadCompleteProvider,
 			)
-			// All other versions (0x01, 0x02, 0x03) — CBC path
-			// Note: 0x03 (single-stream GCM) is not supported for video streaming
-			// (AesCbcRandomAccessDataSource will throw for v3 — that's correct,
-			// videos should never be v3). v1 and v2 work fine via CBC.
-			else -> AesCbcRandomAccessDataSource(
+			// Version 0x01, 0x02 — CBC path (legacy)
+			0x01.toByte(), 0x02.toByte() -> AesCbcRandomAccessDataSource(
 				sessionRepository = sessionRepository,
 				availableBytesProvider = availableBytesProvider,
 				downloadCompleteProvider = downloadCompleteProvider,
+			)
+			// F-012 fix: explicit handling for 0x03 (videos should never be v3)
+			// and unknown bytes (0x05+, future versions). Throw IOException per DataSource contract.
+			0x03.toByte() -> throw IOException(
+				"VersionDispatchDataSource: version 0x03 (single-stream GCM) is not supported for video streaming"
+			)
+			else -> throw IOException(
+				"VersionDispatchDataSource: unknown encryption version byte 0x${versionByte.toInt() and 0xFF} " +
+				"(file: ${file.absolutePath}). Supported: 0x01, 0x02, 0x04."
 			)
 		}
 
