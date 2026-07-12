@@ -296,35 +296,12 @@ class RcloneController
 					val startJson = JSONObject(startResult)
 					jobid = startJson.optLong("jobid", -1)
 					if (jobid < 0) {
-						Timber.w("uploadFileWithProgress: no jobid, falling back to sync upload")
-						return@withContext uploadFile(localPath, remotePath).also {
-							if (it.isSuccess) onProgress(100f)
-						}
+						return@withContext fallbackSyncOnNoJobid(
+							"uploadFileWithProgress: no jobid, falling back to sync upload",
+							onProgress,
+						) { uploadFile(localPath, remotePath) }
 					}
-
-					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone upload job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
-					}
-					Result.success(Unit)
+					return@withContext pollJobStatus(jobid, onProgress, "rclone upload job ")
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -394,35 +371,12 @@ class RcloneController
 					val startJson = JSONObject(startResult)
 					jobid = startJson.optLong("jobid", -1)
 					if (jobid < 0) {
-						Timber.w("downloadFileWithProgress: no jobid, falling back to sync download")
-						return@withContext downloadFile(remotePath, localPath).also {
-							if (it.isSuccess) onProgress(100f)
-						}
+						return@withContext fallbackSyncOnNoJobid(
+							"downloadFileWithProgress: no jobid, falling back to sync download",
+							onProgress,
+						) { downloadFile(remotePath, localPath) }
 					}
-
-					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
-					}
-					Result.success(Unit)
+					return@withContext pollJobStatus(jobid, onProgress, "rclone job ")
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -431,6 +385,54 @@ class RcloneController
 					Result.failure(e)
 				}
 			}
+
+		private suspend fun fallbackSyncOnNoJobid(
+			logMsg: String,
+			onProgress: (Float) -> Unit,
+			syncOp: () -> Result<Unit>,
+		): Result<Unit> {
+			Timber.w(logMsg)
+			return syncOp().also {
+				if (it.isSuccess) onProgress(100f)
+			}
+		}
+
+		private suspend fun pollJobStatus(
+			jobid: Long,
+			onProgress: (Float) -> Unit,
+			jobLabel: String,
+		): Result<Unit> {
+			onProgress(0f)
+			while (true) {
+				delay(500)
+				val statusResult = rpc("job/status", """{"jobid":$jobid}""")
+				if (hasRpcError(statusResult)) break
+				val statusJson = JSONObject(statusResult)
+				val finished = statusJson.optBoolean("finished", false)
+				val completed = statusJson.optLong("completed", -1L)
+				val total = statusJson.optLong("total", -1L)
+				if (total > 0 && completed >= 0) {
+					onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
+				}
+				if (finished) return handleFinishedJob(statusJson, jobid, onProgress, jobLabel)
+			}
+			return Result.success(Unit)
+		}
+
+		private fun handleFinishedJob(
+			statusJson: JSONObject,
+			jobid: Long,
+			onProgress: (Float) -> Unit,
+			jobLabel: String,
+		): Result<Unit> {
+			val success = statusJson.optBoolean("success", false)
+			if (!success) {
+				val errorMsg = statusJson.optString("error", "unknown error")
+				return Result.failure(IOException("$jobLabel$jobid failed: $errorMsg"))
+			}
+			onProgress(100f)
+			return Result.success(Unit)
+		}
 
 		/**
 		 * List files in a remote directory.

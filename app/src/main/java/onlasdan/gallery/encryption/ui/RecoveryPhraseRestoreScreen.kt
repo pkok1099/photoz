@@ -199,66 +199,12 @@ private fun RecoveryPhraseRestoreContent(
 				)
 			}
 
-			Column(
-				horizontalAlignment = Alignment.CenterHorizontally,
-			) {
-				OptionButton(
-					text = stringResource(R.string.recovery_phrase_restore_option_type),
-					icon = R.drawable.ic_keyboard,
-					onClick = {
-						if (uiState.selectedRestoreMethod == null) {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.TypeByHand)
-						} else {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
-						}
-					},
-					restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand,
-					selectedRestoreMethod = uiState.selectedRestoreMethod,
-				)
-				OptionButton(
-					text = stringResource(R.string.recovery_phrase_restore_option_open_file),
-					icon = R.drawable.ic_upload,
-					onClick = {
-						if (uiState.selectedRestoreMethod == null) {
-							selectFileLauncher.launch(arrayOf("text/plain"))
-						} else {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
-						}
-					},
-					restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.LoadFromFile,
-					selectedRestoreMethod = uiState.selectedRestoreMethod,
-				)
-				OptionButton(
-					text = stringResource(R.string.recovery_phrase_restore_option_scan_qr),
-					icon = R.drawable.ic_qr_code,
-					onClick = {
-						if (uiState.selectedRestoreMethod == null) {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.ScanQrCode)
-						} else {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
-						}
-					},
-					restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.ScanQrCode,
-					selectedRestoreMethod = uiState.selectedRestoreMethod,
-				)
-				OptionButton(
-					text = stringResource(R.string.recovery_phrase_restore_option_paste),
-					icon = R.drawable.ic_paste,
-					onClick = {
-						if (uiState.selectedRestoreMethod == null) {
-							handleUiEvent(
-								RecoveryPhraseRestoreUiEvent.PasteFromClipboard(
-									clipboard,
-								),
-							)
-						} else {
-							handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
-						}
-					},
-					restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.PasteFromClipboard,
-					selectedRestoreMethod = uiState.selectedRestoreMethod,
-				)
-			}
+			MethodSelectionSection(
+				uiState = uiState,
+				handleUiEvent = handleUiEvent,
+				selectFileLauncher = selectFileLauncher,
+				clipboard = clipboard,
+			)
 
 			val focusRequester = remember { FocusRequester() }
 			val focusManager = LocalFocusManager.current
@@ -286,82 +232,12 @@ private fun RecoveryPhraseRestoreContent(
 				)
 			}
 
-			AnimatedContent(
-				uiState.selectedRestoreMethod,
-				transitionSpec = {
-					fadeIn() + scaleIn() togetherWith fadeOut() + scaleOut()
-				},
-			) {
-				when (it) {
-					RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand -> {
-						OutlinedTextField(
-							value = uiState.phrase.toMnemonicString(),
-							onValueChange = { raw ->
-								val new = raw.cleanupRawInput()
-
-								handleUiEvent(
-									RecoveryPhraseRestoreUiEvent.UpdatePhrase(
-										RecoveryPhrase.from(new),
-									),
-								)
-							},
-							keyboardOptions =
-								KeyboardOptions(
-									capitalization = KeyboardCapitalization.None,
-									autoCorrectEnabled = false,
-									imeAction = ImeAction.Done,
-									keyboardType = KeyboardType.Ascii,
-								),
-							keyboardActions =
-								KeyboardActions(
-									onDone = { focusManager.clearFocus() },
-								),
-							maxLines = 4,
-							shape = RoundedCornerShape(24.dp),
-							label = {
-								Text(stringResource(R.string.recovery_phrase_label))
-							},
-							placeholder = {
-								Text(stringResource(R.string.recovery_phrase_restore_input_placeholder))
-							},
-							modifier =
-								Modifier
-									.height(200.dp)
-									.focusRequester(focusRequester)
-									.padding(vertical = 20.dp),
-						)
-					}
-
-					RecoveryPhraseRestoreUiState.RestoreMethod.ScanQrCode -> {
-						AnimatedVisibility(
-							visible = uiState.phrase.words.isEmpty(),
-						) {
-							QrScannerView(
-								onQrCodeDecoded = { qrCodeContent ->
-									handleUiEvent(
-										RecoveryPhraseRestoreUiEvent.QrScanned(
-											qrCodeContent,
-										),
-									)
-								},
-								modifier =
-									Modifier
-										.height(200.dp)
-										.fillMaxWidth()
-										.padding(vertical = 20.dp),
-							)
-						}
-					}
-
-					RecoveryPhraseRestoreUiState.RestoreMethod.PasteFromClipboard,
-					RecoveryPhraseRestoreUiState.RestoreMethod.LoadFromFile,
-					null,
-					->
-						Box(
-							modifier = Modifier.fillMaxWidth(),
-						)
-				}
-			}
+			InputContentSection(
+				uiState = uiState,
+				handleUiEvent = handleUiEvent,
+				focusRequester = focusRequester,
+				focusManager = focusManager,
+			)
 
 			AnimatedVisibility(
 				uiState.phrase.words.isNotEmpty() && uiState.selectedRestoreMethod != RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand,
@@ -380,36 +256,193 @@ private fun RecoveryPhraseRestoreContent(
 				)
 			}
 
-			AnimatedVisibility(uiState.loading) {
-				Crossfade(uiState.unlocked) { unlocked ->
-					Row(
-						horizontalArrangement = Arrangement.spacedBy(8.dp),
-						verticalAlignment = Alignment.CenterVertically,
-					) {
-						if (unlocked) {
-							Icon(
-								painter = painterResource(R.drawable.ic_check),
-								contentDescription = null,
-								tint = MaterialTheme.colorScheme.onSurfaceVariant,
-							)
+			LoadingSection(uiState)
+		}
+	}
+}
 
-							Text(
-								text = stringResource(R.string.recovery_phrase_restore_unlocked),
-								style = MaterialTheme.typography.bodyMedium,
-								color = MaterialTheme.colorScheme.onSurfaceVariant,
-							)
-						} else {
-							CircularProgressIndicator(
-								modifier = Modifier.size(24.dp),
-							)
+@Composable
+private fun MethodSelectionSection(
+	uiState: RecoveryPhraseRestoreUiState,
+	handleUiEvent: (RecoveryPhraseRestoreUiEvent) -> Unit,
+	selectFileLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+	clipboard: androidx.compose.ui.platform.Clipboard,
+) {
+	Column(
+		horizontalAlignment = Alignment.CenterHorizontally,
+	) {
+		OptionButton(
+			text = stringResource(R.string.recovery_phrase_restore_option_type),
+			icon = R.drawable.ic_keyboard,
+			onClick = {
+				if (uiState.selectedRestoreMethod == null) {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.TypeByHand)
+				} else {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
+				}
+			},
+			restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand,
+			selectedRestoreMethod = uiState.selectedRestoreMethod,
+		)
+		OptionButton(
+			text = stringResource(R.string.recovery_phrase_restore_option_open_file),
+			icon = R.drawable.ic_upload,
+			onClick = {
+				if (uiState.selectedRestoreMethod == null) {
+					selectFileLauncher.launch(arrayOf("text/plain"))
+				} else {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
+				}
+			},
+			restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.LoadFromFile,
+			selectedRestoreMethod = uiState.selectedRestoreMethod,
+		)
+		OptionButton(
+			text = stringResource(R.string.recovery_phrase_restore_option_scan_qr),
+			icon = R.drawable.ic_qr_code,
+			onClick = {
+				if (uiState.selectedRestoreMethod == null) {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.ScanQrCode)
+				} else {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
+				}
+			},
+			restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.ScanQrCode,
+			selectedRestoreMethod = uiState.selectedRestoreMethod,
+		)
+		OptionButton(
+			text = stringResource(R.string.recovery_phrase_restore_option_paste),
+			icon = R.drawable.ic_paste,
+			onClick = {
+				if (uiState.selectedRestoreMethod == null) {
+					handleUiEvent(
+						RecoveryPhraseRestoreUiEvent.PasteFromClipboard(
+							clipboard,
+						)
+					)
+				} else {
+					handleUiEvent(RecoveryPhraseRestoreUiEvent.ResetInputs)
+				}
+			},
+			restoreMethod = RecoveryPhraseRestoreUiState.RestoreMethod.PasteFromClipboard,
+			selectedRestoreMethod = uiState.selectedRestoreMethod,
+		)
+	}
+}
 
-							Text(
-								text = stringResource(R.string.recovery_phrase_restore_unlocking),
-								style = MaterialTheme.typography.bodyMedium,
-								color = MaterialTheme.colorScheme.onSurfaceVariant,
+@Composable
+private fun InputContentSection(
+	uiState: RecoveryPhraseRestoreUiState,
+	handleUiEvent: (RecoveryPhraseRestoreUiEvent) -> Unit,
+	focusRequester: androidx.compose.ui.focus.FocusRequester,
+	focusManager: androidx.compose.ui.focus.FocusManager,
+) {
+	AnimatedContent(
+		uiState.selectedRestoreMethod,
+		transitionSpec = {
+			fadeIn() + scaleIn() togetherWith fadeOut() + scaleOut()
+		},
+	) {
+		when (it) {
+			RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand -> {
+				OutlinedTextField(
+					value = uiState.phrase.toMnemonicString(),
+					onValueChange = { raw ->
+						val new = raw.cleanupRawInput()
+
+						handleUiEvent(
+							RecoveryPhraseRestoreUiEvent.UpdatePhrase(
+								RecoveryPhrase.from(new),
+							),
+						)
+					},
+					keyboardOptions =
+						KeyboardOptions(
+							capitalization = KeyboardCapitalization.None,
+							autoCorrectEnabled = false,
+							imeAction = ImeAction.Done,
+							keyboardType = KeyboardType.Ascii,
+						),
+					keyboardActions =
+						KeyboardActions(
+							onDone = { focusManager.clearFocus() },
+						),
+					maxLines = 4,
+					shape = RoundedCornerShape(24.dp),
+					label = {
+						Text(stringResource(R.string.recovery_phrase_label))
+					},
+					placeholder = {
+						Text(stringResource(R.string.recovery_phrase_restore_input_placeholder))
+					},
+					modifier =
+						Modifier
+							.height(200.dp)
+							.focusRequester(focusRequester)
+							.padding(vertical = 20.dp),
+				)
+			}
+
+			RecoveryPhraseRestoreUiState.RestoreMethod.ScanQrCode -> {
+				AnimatedVisibility(
+					visible = uiState.phrase.words.isEmpty(),
+				) {
+					QrScannerView(
+						onQrCodeDecoded = { qrCodeContent ->
+							handleUiEvent(
+								RecoveryPhraseRestoreUiEvent.QrScanned(
+									qrCodeContent,
+								),
 							)
-						}
-					}
+						},
+						modifier =
+							Modifier
+								.height(200.dp)
+								.fillMaxWidth()
+								.padding(vertical = 20.dp),
+					)
+				}
+			}
+
+			RecoveryPhraseRestoreUiState.RestoreMethod.PasteFromClipboard,
+			RecoveryPhraseRestoreUiState.RestoreMethod.LoadFromFile,
+			null,
+			->
+				Box(
+					modifier = Modifier.fillMaxWidth(),
+				)
+		}
+	}
+}
+
+@Composable
+private fun LoadingSection(uiState: RecoveryPhraseRestoreUiState) {
+	AnimatedVisibility(uiState.loading) {
+		Crossfade(uiState.unlocked) { unlocked ->
+			Row(
+				horizontalArrangement = Arrangement.spacedBy(8.dp),
+				verticalAlignment = Alignment.CenterVertically,
+			) {
+				if (unlocked) {
+					Icon(
+						painter = painterResource(R.drawable.ic_check),
+						contentDescription = null,
+						tint = MaterialTheme.colorScheme.onSurfaceVariant,
+					)
+					Text(
+						text = stringResource(R.string.recovery_phrase_restore_unlocked),
+						style = MaterialTheme.typography.bodyMedium,
+						color = MaterialTheme.colorScheme.onSurfaceVariant,
+					)
+				} else {
+					CircularProgressIndicator(
+						modifier = Modifier.size(24.dp),
+					)
+					Text(
+						text = stringResource(R.string.recovery_phrase_restore_unlocking),
+						style = MaterialTheme.typography.bodyMedium,
+						color = MaterialTheme.colorScheme.onSurfaceVariant,
+					)
 				}
 			}
 		}

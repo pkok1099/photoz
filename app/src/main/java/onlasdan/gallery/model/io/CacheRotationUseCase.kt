@@ -102,54 +102,12 @@ class CacheRotationUseCase
 
 			// ─── Age-based rotation ────────────────────────────────────────────
 			if (maxAgeDays > 0) {
-				val cutoff = System.currentTimeMillis() - maxAgeDays * 24L * 60 * 60 * 1000
-				for (photo in uploadedPhotos) {
-					val tnFile = File(app.filesDir, internalThumbnailFileName(photo.uuid))
-					if (!tnFile.exists()) continue
-					if (tnFile.lastModified() < cutoff) {
-						if (tnFile.delete()) {
-							deleted++
-							Timber.d(
-								"CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
-								tnFile.name,
-								tnFile.lastModified(),
-								cutoff,
-							)
-						}
-					}
-				}
+				deleted += rotateByAge(uploadedPhotos, maxAgeDays)
 			}
 
 			// ─── Size-based rotation ───────────────────────────────────────────
 			if (maxSizeMb > 0) {
-				val maxBytes = maxSizeMb.toLong() * 1024 * 1024
-				// Collect all existing thumbnail files for UPLOADED photos,
-				// sorted oldest-first (LRU eviction).
-				val tnFiles =
-					uploadedPhotos
-						.mapNotNull { photo ->
-							val f = File(app.filesDir, internalThumbnailFileName(photo.uuid))
-							if (f.exists()) f else null
-						}.sortedBy { it.lastModified() }
-
-				var totalSize = tnFiles.sumOf { it.length() }
-				if (totalSize > maxBytes) {
-					for (f in tnFiles) {
-						if (totalSize <= maxBytes) break
-						val size = f.length()
-						if (f.delete()) {
-							totalSize -= size
-							deleted++
-							Timber.d(
-								"CacheRotation (size): deleted %s (size=%d, totalNow=%d, max=%d)",
-								f.name,
-								size,
-								totalSize,
-								maxBytes,
-							)
-						}
-					}
-				}
+				deleted += rotateBySize(uploadedPhotos, maxSizeMb)
 			}
 
 			if (deleted > 0) {
@@ -159,6 +117,78 @@ class CacheRotationUseCase
 					maxAgeDays,
 					maxSizeMb,
 				)
+			}
+			return deleted
+		}
+
+		/**
+		 * Delete thumbnails of UPLOADED photos not accessed within [maxAgeDays]
+		 * days. Returns the number deleted.
+		 *
+		 * @since v13 — Sprint 6 / M5 cache rotation
+		 */
+		private fun rotateByAge(
+			uploadedPhotos: List<Photo>,
+			maxAgeDays: Int,
+		): Int {
+			val cutoff = System.currentTimeMillis() - maxAgeDays * 24L * 60 * 60 * 1000
+			var deleted = 0
+			for (photo in uploadedPhotos) {
+				val tnFile = File(app.filesDir, internalThumbnailFileName(photo.uuid))
+				if (!tnFile.exists()) continue
+				if (tnFile.lastModified() >= cutoff) continue
+				if (tnFile.delete()) {
+					deleted++
+					Timber.d(
+						"CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
+						tnFile.name,
+						tnFile.lastModified(),
+						cutoff,
+					)
+				}
+			}
+			return deleted
+		}
+
+		/**
+		 * When total cached thumbnail size exceeds [maxSizeMb] MB, delete the
+		 * oldest-accessed UPLOADED thumbnails (LRU) until under the limit.
+		 * Returns the number deleted.
+		 *
+		 * @since v13 — Sprint 6 / M5 cache rotation
+		 */
+		private fun rotateBySize(
+			uploadedPhotos: List<Photo>,
+			maxSizeMb: Int,
+		): Int {
+			val maxBytes = maxSizeMb.toLong() * 1024 * 1024
+			// Collect all existing thumbnail files for UPLOADED photos,
+			// sorted oldest-first (LRU eviction).
+			val tnFiles =
+				uploadedPhotos
+					.mapNotNull { photo ->
+						val f = File(app.filesDir, internalThumbnailFileName(photo.uuid))
+						if (f.exists()) f else null
+					}.sortedBy { it.lastModified() }
+
+			var totalSize = tnFiles.sumOf { it.length() }
+			var deleted = 0
+			if (totalSize > maxBytes) {
+				for (f in tnFiles) {
+					if (totalSize <= maxBytes) break
+					val size = f.length()
+					if (f.delete()) {
+						totalSize -= size
+						deleted++
+						Timber.d(
+							"CacheRotation (size): deleted %s (size=%d, totalNow=%d, max=%d)",
+							f.name,
+							size,
+							totalSize,
+							maxBytes,
+						)
+					}
+				}
 			}
 			return deleted
 		}

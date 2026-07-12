@@ -72,119 +72,7 @@ class VaultService
 		private val vaultIdBackfillHook: VaultIdBackfillHook? = null,
 	) {
 		suspend fun unlock(request: UnlockRequest): Result<VaultSession> {
-			val type = request.protectionType
-
-			val result =
-				runCatching {
-					val vmk: javax.crypto.SecretKey =
-						when (request) {
-							is UnlockRequest.Password -> {
-								// ─── Sprint 2 / M7: Multi-vault unlock ───────────────────────
-								// Iterate ALL VaultProtection(Password) rows. For each, derive
-								// KEK from the user's password + row's salt, try to unwrap the
-								// row's wrappedVMK. The GCM/CBC auth verification naturally
-								// fails for wrong rows — only the correct row's VMK emerges.
-								//
-								// First success = active vault. The app has no concept of
-								// "real" vs "decoy" — every successful unlock is treated
-								// identically.
-								//
-								// Performance: N rows × PBKDF2(100k iters) ≈ 100N ms.
-								// N=1 (most common) → 100ms. N=5 → 500ms. N=10 → 1s.
-								// Cellebrite-style brute force is unaffected — they'd have
-								// to try every password against every row.
-								val passwordProtections =
-									vaultProtectionRepository.getAllProtections(
-										VaultProtectionType.Password,
-									)
-
-								if (passwordProtections.isEmpty()) {
-									// ─── Legacy migration path (1.x.x / 2.x.x users) ───────
-									// No Password rows in the new format — try migrating from
-									// legacyPasswordHash. This is the original code path,
-									// preserved for users upgrading from a pre-M7 build.
-									if (passwordProtectionHandler.canMigrate()) {
-										val migrated = passwordProtectionHandler.migrate(request)
-										vaultProtectionRepository.createProtection(migrated)
-										passwordProtectionHandler.onMigrationPersisted()
-										passwordProtectionHandler.unlock(request, migrated)
-									} else {
-										// No password protection AND nothing to migrate —
-										// vault isn't set up. Throw to surface as wrong-password.
-										throw IllegalStateException("No password protection found and no legacy migration available")
-									}
-								} else {
-									unlockMultiVaultPassword(request, passwordProtections)
-								}
-							}
-							is UnlockRequest.Biometric -> {
-								val protection = vaultProtectionRepository.getProtection(type)
-								if (protection == null) {
-									val migrated = biometricProtectionHandler.migrate(request)
-									vaultProtectionRepository.createProtection(migrated)
-									biometricProtectionHandler.onMigrationPersisted()
-									biometricProtectionHandler.unlock(request, migrated)
-								} else {
-									biometricProtectionHandler.unlock(request, protection)
-								}
-							}
-							is UnlockRequest.RecoveryPhrase -> {
-								val protection = vaultProtectionRepository.getProtection(type)
-								requireNotNull(protection)
-								recoveryPhraseProtectionHandler.unlock(request, protection)
-							}
-						}
-
-					config.lastUsedUnlockMethod = request.protectionType
-
-					val session = VaultSession(vmk = vmk)
-
-					// ─── Sprint 2 / M7: vault_id backfill (one-time migration) ─────────
-					// On first unlock after v10→v11 upgrade, all Photo/Album/HashRegistryEntry
-					// rows have vault_id = NULL. Backfill them with the current session's
-					// vault_id. Subsequent unlocks find no NULL rows and skip this cheaply.
-					//
-					// Non-fatal: if backfill fails (DB busy, etc.), the gallery just shows
-					// the user's photos as usual — the vault_id filter falls back to
-					// "match current vault_id OR match NULL", which catches the un-backfilled
-					// rows. The next successful unlock will retry the backfill.
-					try {
-						vaultIdBackfillHook?.backfillVaultId(session.vaultId)
-					} catch (e: Exception) {
-						Timber.w(e, "vault_id backfill failed (non-fatal) — will retry next unlock")
-					}
-
-					// ─── Sprint 7 / P2 — Consume break-in warning on success ────────
-					// The warning is consumed by the caller (UnlockViewModel) so it
-					// can surface it to the UI. VaultService does NOT consume here
-					// — it just checks if there's a warning (without consuming) for
-					// logging purposes. The actual consume + UI display happens in
-					// UnlockViewModel.unlockWithPassword / unlockWithBiometric.
-					//
-					// We use a peek (non-consuming) approach: just log that a warning
-					// exists. The caller will consumeWarningIfAny() to get the string
-					// + reset the counter.
-					// (No consume here — moved to UnlockViewModel for UI surfacing.)
-
-					// ─── Sprint 10 / L3 — Stamp last unlock time for self-destruct ──
-					// The self-destruct worker checks this timestamp to determine
-					// inactivity. Updated on every successful unlock.
-					config.lastUnlockAt = System.currentTimeMillis()
-
-					// ─── (roadmap #9) — Security warning on unlock ──────────────────────
-					// Check for root/debugger and log a warning. The UI can poll
-					// SecurityChecker.getSecurityWarning() to display a dialog.
-					try {
-						val secWarning = securityChecker.getSecurityWarning()
-						if (secWarning != null) {
-							android.util.Log.w("RcloneDiag", "[SecurityWarning] $secWarning")
-						}
-					} catch (e: Exception) {
-						Timber.w(e, "Security check failed (non-fatal)")
-					}
-
-					session
-				}
+			val result = runCatching { unlockSession(request) }
 
 			// Sprint 7 / P2 — Record failed attempt on unlock failure.
 			// The break-in detector increments its counter + timestamps the
@@ -198,6 +86,136 @@ class VaultService
 			}
 
 			return result
+		}
+
+		/**
+		 * Core unlock flow (unwraps the VMK from the matching protection and
+		 * performs the post-unlock bookkeeping). Runs inside [unlock]'s
+		 * `runCatching`, so throwing here surfaces as a failed [Result].
+		 */
+		private suspend fun unlockSession(request: UnlockRequest): VaultSession {
+			val type = request.protectionType
+
+			// ─── Sprint 2 / M7: Multi-vault unlock ───────────────────────
+			// Iterate ALL VaultProtection(Password) rows. For each, derive
+			// KEK from the user's password + row's salt, try to unwrap the
+			// row's wrappedVMK. The GCM/CBC auth verification naturally
+			// fails for wrong rows — only the correct row's VMK emerges.
+			//
+			// First success = active vault. The app has no concept of
+			// "real" vs "decoy" — every successful unlock is treated
+			// identically.
+			//
+			// Performance: N rows × PBKDF2(100k iters) ≈ 100N ms.
+			// N=1 (most common) → 100ms. N=5 → 500ms. N=10 → 1s.
+			// Cellebrite-style brute force is unaffected — they'd have
+			// to try every password against every row.
+			val vmk =
+				when (request) {
+					is UnlockRequest.Password -> unlockPassword(request)
+					is UnlockRequest.Biometric -> unlockBiometric(request, type)
+					is UnlockRequest.RecoveryPhrase -> unlockRecoveryPhrase(request, type)
+				}
+
+			config.lastUsedUnlockMethod = request.protectionType
+
+			val session = VaultSession(vmk = vmk)
+
+			// ─── Sprint 2 / M7: vault_id backfill (one-time migration) ─────────
+			// On first unlock after v10→v11 upgrade, all Photo/Album/HashRegistryEntry
+			// rows have vault_id = NULL. Backfill them with the current session's
+			// vault_id. Subsequent unlocks find no NULL rows and skip this cheaply.
+			//
+			// Non-fatal: if backfill fails (DB busy, etc.), the gallery just shows
+			// the user's photos as usual — the vault_id filter falls back to
+			// "match current vault_id OR match NULL", which catches the un-backfilled
+			// rows. The next successful unlock will retry the backfill.
+			try {
+				vaultIdBackfillHook?.backfillVaultId(session.vaultId)
+			} catch (e: Exception) {
+				Timber.w(e, "vault_id backfill failed (non-fatal) — will retry next unlock")
+			}
+
+			// ─── Sprint 7 / P2 — Consume break-in warning on success ────────
+			// The warning is consumed by the caller (UnlockViewModel) so it
+			// can surface it to the UI. VaultService does NOT consume here
+			// — it just checks if there's a warning (without consuming) for
+			// logging purposes. The actual consume + UI display happens in
+			// UnlockViewModel.unlockWithPassword / unlockWithBiometric.
+			//
+			// We use a peek (non-consuming) approach: just log that a warning
+			// exists. The caller will consumeWarningIfAny() to get the string
+			// + reset the counter.
+			// (No consume here — moved to UnlockViewModel for UI surfacing.)
+
+			// ─── Sprint 10 / L3 — Stamp last unlock time for self-destruct ──
+			// The self-destruct worker checks this timestamp to determine
+			// inactivity. Updated on every successful unlock.
+			config.lastUnlockAt = System.currentTimeMillis()
+
+			// ─── (roadmap #9) — Security warning on unlock ──────────────────────
+			// Check for root/debugger and log a warning. The UI can poll
+			// SecurityChecker.getSecurityWarning() to display a dialog.
+			try {
+				val secWarning = securityChecker.getSecurityWarning()
+				if (secWarning != null) {
+					android.util.Log.w("RcloneDiag", "[SecurityWarning] $secWarning")
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "Security check failed (non-fatal)")
+			}
+
+			return session
+		}
+
+		private suspend fun unlockPassword(request: UnlockRequest.Password): javax.crypto.SecretKey {
+			val passwordProtections =
+				vaultProtectionRepository.getAllProtections(
+					VaultProtectionType.Password,
+				)
+
+			if (passwordProtections.isEmpty()) {
+				// ─── Legacy migration path (1.x.x / 2.x.x users) ───────
+				// No Password rows in the new format — try migrating from
+				// legacyPasswordHash. This is the original code path,
+				// preserved for users upgrading from a pre-M7 build.
+				if (passwordProtectionHandler.canMigrate()) {
+					val migrated = passwordProtectionHandler.migrate(request)
+					vaultProtectionRepository.createProtection(migrated)
+					passwordProtectionHandler.onMigrationPersisted()
+					passwordProtectionHandler.unlock(request, migrated)
+				} else {
+					// No password protection AND nothing to migrate —
+					// vault isn't set up. Throw to surface as wrong-password.
+					throw IllegalStateException("No password protection found and no legacy migration available")
+				}
+			} else {
+				unlockMultiVaultPassword(request, passwordProtections)
+			}
+		}
+
+		private suspend fun unlockBiometric(
+			request: UnlockRequest.Biometric,
+			type: VaultProtectionType,
+		): javax.crypto.SecretKey {
+			val protection = vaultProtectionRepository.getProtection(type)
+			if (protection == null) {
+				val migrated = biometricProtectionHandler.migrate(request)
+				vaultProtectionRepository.createProtection(migrated)
+				biometricProtectionHandler.onMigrationPersisted()
+				biometricProtectionHandler.unlock(request, migrated)
+			} else {
+				biometricProtectionHandler.unlock(request, protection)
+			}
+		}
+
+		private suspend fun unlockRecoveryPhrase(
+			request: UnlockRequest.RecoveryPhrase,
+			type: VaultProtectionType,
+		): javax.crypto.SecretKey {
+			val protection = vaultProtectionRepository.getProtection(type)
+			requireNotNull(protection)
+			recoveryPhraseProtectionHandler.unlock(request, protection)
 		}
 
 		/**

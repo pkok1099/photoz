@@ -172,20 +172,7 @@ class RepoSetupFragment : Fragment() {
 								Timber.i("onUnlocked: pendingPasswordSetup=true -> SetupFragment")
 								findNavController().navigate(R.id.action_repoSetupFragment_to_setupFragment)
 							} else {
-								val needsRequest =
-									if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-										ContextCompat.checkSelfPermission(
-											requireContext(),
-											Manifest.permission.POST_NOTIFICATIONS,
-										) != PackageManager.PERMISSION_GRANTED
-									} else {
-										false
-									}
-								if (needsRequest) {
-									notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-								} else {
-									navigateToGallery(findNavController())
-								}
+								onUnlockedAfterPendingCheck(notificationPermissionLauncher)
 							}
 						},
 						onBack = {
@@ -195,6 +182,31 @@ class RepoSetupFragment : Fragment() {
 				}
 			}
 		}
+}
+
+/**
+	 * Handles the post-`pendingPasswordSetup` check branch of the login
+	 * `onUnlocked` callback: requests `POST_NOTIFICATIONS` when needed (SDK >=
+	 * 33), otherwise navigates straight to the gallery. Extracted from
+	 * [onCreateView] to reduce its cognitive complexity.
+	 */
+	private fun Fragment.onUnlockedAfterPendingCheck(
+	notificationPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+) {
+	val needsRequest =
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			ContextCompat.checkSelfPermission(
+				requireContext(),
+				Manifest.permission.POST_NOTIFICATIONS,
+			) != PackageManager.PERMISSION_GRANTED
+		} else {
+			false
+		}
+	if (needsRequest) {
+		notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+	} else {
+		navigateToGallery(findNavController())
+	}
 }
 
 @Composable

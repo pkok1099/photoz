@@ -383,84 +383,7 @@ class ImageViewerViewModel
 				return
 			}
 
-			// --- Progressive streaming setup -----------------------------------
-			// Register a StreamState BEFORE launching the download so the
-			// DataSource (which ExoPlayer will spin up momentarily) can find it
-			// and block on reads past the available window.
-			val streamState = StreamState()
-			videoStreamState[photo.internalFileName] = streamState
-
-			// Mark Downloading at 0% immediately so the spinner swaps to a
-			// determinate bar without delay.
-			videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(0f)) }
-
-			// File-size monitor: poll localFile.length() and advance
-			// availableBytes. rclone writes the file directly (no temp file), so
-			// File.length() reflects real progress. Monotonic — only advances,
-			// never goes backwards (File.length() can transiently read 0 if
-			// rclone hasn't created the file yet on the very first poll).
-			monitorFileSize(streamState, localFile)
-
-			// Download coroutine — writes to localFile. When it finishes, flips
-			// downloadComplete so the DataSource's blocking reads unblock.
-			viewModelScope.launch {
-				try {
-					val result =
-						runCatching {
-							syncRestorer.ensureLocalOriginalWithProgress(uuid) { progress ->
-								// Rate-limit updates to ~5/sec (every 200ms) — the same
-								// cadence uploadFileWithProgress uses. State-change to 100%
-								// always goes through.
-								val current = videoDownloadsFlow.value[uuid]
-								if (current is VideoDownloadState.Downloading) {
-									val now = System.currentTimeMillis()
-									if (progress >= 100f || now - current.lastUpdateMs >= 200L) {
-										videoDownloadsFlow.update {
-											it + (uuid to VideoDownloadState.Downloading(progress, now))
-										}
-									}
-								} else if (current == null) {
-									// First update — always emit.
-									videoDownloadsFlow.update {
-										it + (uuid to VideoDownloadState.Downloading(progress))
-									}
-								}
-							}
-						}
-					// Signal the DataSource that no more data is coming, regardless
-					// of success/failure. This unblocks any waitForBytesAvailable /
-					// BlockingInputStream reads that are parked at the end of the
-					// available window.
-					streamState.downloadComplete.set(true)
-					// One final length sync — the monitor's loop may not have
-					// ticked since the last write. On failure this captures the
-					// partial file size; on success it captures the final size.
-					streamState.availableBytes.set(localFile.length())
-
-					if (result.isSuccess) {
-						videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
-					} else {
-						val msg = result.exceptionOrNull()?.message ?: "Download failed"
-						videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
-					}
-				} finally {
-					// Remove the StreamState entry. After downloadComplete is set,
-					// the entry is no longer needed for blocking — the DataSource's
-					// providers return defaults (-1, true) when the entry is
-					// absent, which is the correct "fully available" (or "partial
-					// but download finished") state. Removing also prevents the
-					// map from growing unboundedly across many video opens.
-					videoStreamState.remove(photo.internalFileName)
-					// QC fix: ALWAYS remove the UUID from inflightDownloads when
-					// the coroutine exits — success OR failure. Without this, a
-					// failed download (network blip, vault locked, remote missing)
-					// permanently blocked retries for that UUID for the lifetime
-					// of the viewer session. The set's only purpose is to prevent
-					// concurrent duplicate launches while a download is in flight,
-					// NOT to permanently pin a UUID after the download resolves.
-					synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
-				}
-			}
+			startProgressiveVideoDownload(uuid, localFile, photo)
 		}
 
 		/**
@@ -475,6 +398,80 @@ class ImageViewerViewModel
 		 *
 		 * @since progressive-video-streaming feature
 		 */
+
+
+		/**
+		 * Set up StreamState, mark Downloading(0f), start the file-size monitor,
+		 * and launch the download coroutine. Extracted from
+		 * [maybeStartVideoDownload] to reduce cognitive complexity.
+		 */
+		private fun startProgressiveVideoDownload(
+			uuid: String,
+			localFile: File,
+			photo: Photo,
+		) {
+			val streamState = StreamState()
+			videoStreamState[photo.internalFileName] = streamState
+			videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(0f)) }
+			monitorFileSize(streamState, localFile)
+			viewModelScope.launch(Dispatchers.IO) {
+				try {
+					val result =
+						runCatching {
+							syncRestorer.ensureLocalOriginalWithProgress(uuid) { progress ->
+								onDownloadProgress(uuid, progress)
+							}
+						}
+					onDownloadCompleted(uuid, localFile, streamState, result)
+				} finally {
+					videoStreamState.remove(photo.internalFileName)
+					synchronized(inflightDownloads) { inflightDownloads.remove(uuid) }
+				}
+			}
+		}
+
+		/**
+		 * Rate-limited progress update. Extracted from
+		 * [startProgressiveVideoDownload] to reduce cognitive complexity.
+		 */
+		private fun onDownloadProgress(
+			uuid: String,
+			progress: Float,
+		) {
+			val current = videoDownloadsFlow.value[uuid]
+			if (current is VideoDownloadState.Downloading) {
+				val now = System.currentTimeMillis()
+				if (progress >= 100f || now - current.lastUpdateMs >= 200L) {
+					videoDownloadsFlow.update {
+						it + (uuid to VideoDownloadState.Downloading(progress, now))
+					}
+				}
+			} else if (current == null) {
+				videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Downloading(progress)) }
+			}
+		}
+
+		/**
+		 * Signal download completion to the DataSource and emit the terminal
+		 * [VideoDownloadState]. Extracted from [startProgressiveVideoDownload] to
+		 * reduce cognitive complexity.
+		 */
+		private fun onDownloadCompleted(
+			uuid: String,
+			localFile: File,
+			streamState: StreamState,
+			result: Result<Unit>,
+		) {
+			streamState.downloadComplete.set(true)
+			streamState.availableBytes.set(localFile.length())
+			if (result.isSuccess) {
+				videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Done) }
+			} else {
+				val msg = result.exceptionOrNull()?.message ?: "Download failed"
+				videoDownloadsFlow.update { it + (uuid to VideoDownloadState.Failed(msg)) }
+			}
+		}
+
 		private fun monitorFileSize(
 			state: StreamState,
 			file: File,

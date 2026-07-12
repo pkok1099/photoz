@@ -143,26 +143,10 @@ private fun SheetContent(
 				modifier = Modifier.fillMaxWidth(),
 			)
 
-			// Strength indicator + contextual rejection message
-			if (uiState.password.isNotEmpty()) {
-				val strength = StrongPasswordPolicy.strength(uiState.password)
-				val strengthColor =
-					when (strength) {
-						PasswordStrength.EMPTY,
-						PasswordStrength.TOO_SHORT,
-						PasswordStrength.PIN_REJECTED,
-						PasswordStrength.COMMON,
-						PasswordStrength.WEAK,
-						-> MaterialTheme.colorScheme.error
-						PasswordStrength.MODERATE -> MaterialTheme.colorScheme.tertiary
-						PasswordStrength.STRONG -> MaterialTheme.colorScheme.primary
-					}
-				Text(
-					text = stringResource(strengthLabelRes),
-					style = MaterialTheme.typography.bodySmall,
-					color = strengthColor,
-				)
-			}
+			StrengthIndicator(
+				password = uiState.password,
+				strengthLabelRes = strengthLabelRes,
+			)
 
 			// ─── Confirm password field ─────────────────────────────────────
 			OutlinedTextField(
@@ -223,6 +207,37 @@ private fun SheetContent(
 			}
 		}
 	}
+}
+
+/**
+ * Strength indicator + contextual rejection message shown under the password
+ * field. Extracted from [SheetContent] to reduce its cognitive complexity.
+ */
+@Composable
+private fun StrengthIndicator(
+	password: String,
+	strengthLabelRes: Int,
+) {
+	// Strength indicator + contextual rejection message
+	if (password.isEmpty()) return
+
+	val strength = StrongPasswordPolicy.strength(password)
+	val strengthColor =
+		when (strength) {
+			PasswordStrength.EMPTY,
+			PasswordStrength.TOO_SHORT,
+			PasswordStrength.PIN_REJECTED,
+			PasswordStrength.COMMON,
+			PasswordStrength.WEAK,
+			-> MaterialTheme.colorScheme.error
+			PasswordStrength.MODERATE -> MaterialTheme.colorScheme.tertiary
+			PasswordStrength.STRONG -> MaterialTheme.colorScheme.primary
+		}
+	Text(
+		text = stringResource(strengthLabelRes),
+		style = MaterialTheme.typography.bodySmall,
+		color = strengthColor,
+	)
 }
 
 @Suppress("unused")

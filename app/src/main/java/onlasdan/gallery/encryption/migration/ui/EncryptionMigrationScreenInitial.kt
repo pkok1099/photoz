@@ -149,169 +149,173 @@ fun EncryptionMigrationScreenInitial(
 				}
 
 				AnimatedVisibility(uiState.stage != InitialSubStage.INITIAL) {
-					Column(
-						horizontalAlignment = Alignment.Start,
-						verticalArrangement = Arrangement.spacedBy(8.dp),
-					) {
-						AnimatedContent(
-							targetState = uiState.stage.value,
-							transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-						) {
-							val icon: Painter
-							val color: Color
-
-							if (it > InitialSubStage.BACKUP.value) {
-								icon = painterResource(R.drawable.ic_check)
-								color = MaterialTheme.colorScheme.primary
-							} else {
-								icon = painterResource(R.drawable.ic_close)
-								color = MaterialTheme.colorScheme.outline
-							}
-
-							Row(
-								verticalAlignment = Alignment.CenterVertically,
-								horizontalArrangement = Arrangement.spacedBy(8.dp),
-							) {
-								Icon(
-									painter = icon,
-									contentDescription = null,
-									tint = color,
-								)
-								Text(
-									text = stringResource(R.string.migration_initial_stage_backup_checklist),
-									color = color,
-								)
-							}
-						}
-
-						AnimatedContent(
-							targetState = uiState.stage.value,
-							transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-						) {
-							val icon: Painter
-							val color: Color
-
-							if (it > InitialSubStage.PERMISSION.value) {
-								icon = painterResource(R.drawable.ic_check)
-								color = MaterialTheme.colorScheme.primary
-							} else {
-								icon = painterResource(R.drawable.ic_close)
-								color = MaterialTheme.colorScheme.outline
-							}
-
-							Row(
-								verticalAlignment = Alignment.CenterVertically,
-								horizontalArrangement = Arrangement.spacedBy(8.dp),
-							) {
-								Icon(
-									painter = icon,
-									contentDescription = null,
-									tint = color,
-								)
-								Text(
-									text = stringResource(R.string.migration_initial_stage_permission_checklist),
-									color = color,
-								)
-							}
-						}
-					}
+					ChecklistSection(uiState.stage)
 				}
 
 				Spacer(Modifier.height(24.dp))
 
-				AnimatedContent(
-					targetState = uiState.stage,
-					transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-				) {
-					val text =
-						when (it) {
-							InitialSubStage.INITIAL -> null
-							InitialSubStage.BACKUP -> R.string.migration_initial_stage_backup_explanation
-							InitialSubStage.PERMISSION -> R.string.migration_initial_stage_permission_explanation
-							InitialSubStage.READY -> R.string.migration_initial_stage_ready_explanation
-						}
-
-					if (text != null) {
-						Text(
-							text = stringResource(text),
-							textAlign = TextAlign.Center,
-						)
-					}
-				}
+				StageExplanationSection(uiState.stage)
 
 				Spacer(Modifier.height(24.dp))
 
-				AnimatedContent(
-					targetState = uiState.stage,
-					transitionSpec = { fadeIn().togetherWith(fadeOut()) },
-				) {
-					when (it) {
-						InitialSubStage.INITIAL ->
-							Button(
-								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-								onClick = {
-									handleUiEvent(
-										SwitchStage(
-											InitialSubStage.BACKUP,
-										),
-									)
-								},
-							) {
-								Text(stringResource(R.string.migration_initial_button))
-							}
-
-						InitialSubStage.BACKUP ->
-							Button(
-								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-								onClick = {
-									createBackupLauncher.launchAndIgnoreTimer(
-										input = createBackupFilename(),
-										activity = activity,
-									)
-								},
-							) {
-								Text(stringResource(R.string.migration_initial_stage_backup_button))
-							}
-
-						InitialSubStage.PERMISSION ->
-							Button(
-								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-								onClick = {
-									activity ?: return@Button
-
-									if (activity.requestInSettings(Manifest.permission.POST_NOTIFICATIONS)) {
-										activity.openNotificationSettings()
-									} else {
-										permissionLauncher.launchAndIgnoreTimer(
-											Manifest.permission.POST_NOTIFICATIONS,
-											activity,
-										)
-									}
-								},
-							) {
-								Text(stringResource(R.string.migration_initial_stage_permission_button))
-							}
-
-						InitialSubStage.READY ->
-							Button(
-								modifier = Modifier.defaultMinSize(minWidth = 200.dp),
-								onClick = {
-									handleUiEvent(
-										StartMigration(
-											context,
-										),
-									)
-								},
-							) {
-								Text(stringResource(R.string.migration_initial_stage_ready_button))
-							}
-					}
-				}
+				StageActionButton(
+					stage = uiState.stage,
+					handleUiEvent = handleUiEvent,
+					createBackupLauncher = createBackupLauncher,
+					permissionLauncher = permissionLauncher,
+					activity = activity,
+					context = context,
+				)
 			}
 		}
 	}
 }
 
+@Composable
+private fun ChecklistSection(stage: InitialSubStage) {
+	Column(
+		horizontalAlignment = Alignment.Start,
+		verticalArrangement = Arrangement.spacedBy(8.dp),
+	) {
+		ChecklistItem(
+			stage = stage,
+			threshold = InitialSubStage.BACKUP.value,
+			labelRes = R.string.migration_initial_stage_backup_checklist,
+		)
+		ChecklistItem(
+			stage = stage,
+			threshold = InitialSubStage.PERMISSION.value,
+			labelRes = R.string.migration_initial_stage_permission_checklist,
+		)
+	}
+}
+
+@Composable
+private fun ChecklistItem(stage: InitialSubStage, threshold: Int, labelRes: Int) {
+	AnimatedContent(
+		targetState = stage.value,
+		transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+	) {
+		val isDone = it > threshold
+		val icon = if (isDone) painterResource(R.drawable.ic_check) else painterResource(R.drawable.ic_close)
+		val color = if (isDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+
+		Row(
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.spacedBy(8.dp),
+		) {
+			Icon(
+				painter = icon,
+				contentDescription = null,
+				tint = color,
+			)
+			Text(
+				text = stringResource(labelRes),
+				color = color,
+			)
+		}
+	}
+}
+
+@Composable
+private fun StageExplanationSection(stage: InitialSubStage) {
+	AnimatedContent(
+		targetState = stage,
+		transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+	) {
+		val textRes =
+			when (it) {
+				InitialSubStage.INITIAL -> null
+				InitialSubStage.BACKUP -> R.string.migration_initial_stage_backup_explanation
+				InitialSubStage.PERMISSION -> R.string.migration_initial_stage_permission_explanation
+				InitialSubStage.READY -> R.string.migration_initial_stage_ready_explanation
+			}
+
+		if (textRes != null) {
+			Text(
+				text = stringResource(textRes),
+				textAlign = TextAlign.Center,
+			)
+		}
+	}
+}
+
+@Composable
+private fun StageActionButton(
+	stage: InitialSubStage,
+	handleUiEvent: (LegacyEncryptionMigrationUiEvent) -> Unit,
+	createBackupLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+	permissionLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+	activity: AppCompatActivity?,
+	context: android.content.Context,
+) {
+	AnimatedContent(
+		targetState = stage,
+		transitionSpec = { fadeIn().togetherWith(fadeOut()) },
+	) {
+		when (it) {
+			InitialSubStage.INITIAL ->
+				Button(
+					modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+					onClick = {
+						handleUiEvent(
+							SwitchStage(
+								InitialSubStage.BACKUP,
+							),
+						)
+					},
+				) {
+					Text(stringResource(R.string.migration_initial_button))
+				}
+
+			InitialSubStage.BACKUP ->
+				Button(
+					modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+					onClick = {
+						createBackupLauncher.launchAndIgnoreTimer(
+							input = createBackupFilename(),
+							activity = activity,
+						)
+					},
+				) {
+					Text(stringResource(R.string.migration_initial_stage_backup_button))
+				}
+
+			InitialSubStage.PERMISSION ->
+				Button(
+					modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+					onClick = {
+						activity ?: return@Button
+
+						if (activity.requestInSettings(Manifest.permission.POST_NOTIFICATIONS)) {
+							activity.openNotificationSettings()
+						} else {
+							permissionLauncher.launchAndIgnoreTimer(
+								Manifest.permission.POST_NOTIFICATIONS,
+								activity,
+							)
+						}
+					},
+				) {
+					Text(stringResource(R.string.migration_initial_stage_permission_button))
+				}
+
+			InitialSubStage.READY ->
+				Button(
+					modifier = Modifier.defaultMinSize(minWidth = 200.dp),
+					onClick = {
+						handleUiEvent(
+							StartMigration(
+								context,
+							),
+						)
+					},
+				) {
+					Text(stringResource(R.string.migration_initial_stage_ready_button))
+				}
+		}
+	}
+}
 @Preview
 @Composable
 private fun PreviewInitial() {

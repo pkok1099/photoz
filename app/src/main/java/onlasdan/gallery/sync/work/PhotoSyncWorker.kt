@@ -238,21 +238,7 @@ class PhotoSyncWorker
 			// repo setup, so the user can't import photos (and thus can't enqueue sync
 			// jobs) without a confirmed repo. If this fires, it's a real bug to surface
 			// loudly, not swallow.
-			if (!config.repoConfirmed || config.syncChosenRemote.isNullOrBlank()) {
-				val msg =
-					"PhotoSyncWorker: FATAL — upload attempted without confirmed repo session " +
-						"(repoConfirmed=${config.repoConfirmed}, remote=${config.syncChosenRemote}). " +
-						"This should never happen — gallery is gated behind repo setup."
-				Timber.e(msg)
-				CrashLogger.logCrash(
-					Thread.currentThread(),
-					FatalSyncException(msg),
-					context = "PhotoSyncWorker hard guard (no repo session) uuid=$uuid",
-				)
-				try {
-					photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
-				} catch (_: Exception) {
-				}
+			if (guardRepoSession(uuid)) {
 				return Result.failure()
 			}
 
@@ -277,30 +263,7 @@ class PhotoSyncWorker
 					"completed=${batchState.completed} failed=${batchState.failed} attempt=${runAttemptCount + 1}",
 			)
 
-			// ─── Foreground notification (v8 Part 1 + notification-fix round) ──────
-			// setForeground() promotes this worker to a foreground service with a
-			// persistent notification. On Android 12+ this can throw
-			// ForegroundServiceStartNotAllowedException if the app is backgrounded
-			// and not in an exempt state. The prior code wrapped this in a silent
-			// runCatching{} — which meant if setForeground() threw, the worker
-			// kept running but NO notification ever appeared (the foreground
-			// service never started). This was a contributing cause of
-			// "notifications never appear despite permission granted".
-			//
-			// Now: log the result explicitly. If setForeground() fails, the worker
-			// continues (uploads still work without a foreground notification —
-			// WorkManager just runs it as a normal background job), but we log
-			// the exception so it's visible in sync_log.txt + logcat.
-			try {
-				val fgInfo = getForegroundInfo()
-				setForeground(fgInfo)
-				diag("setForeground: OK — foreground notification posted (id=$NOTIFICATION_ID, type=FOREGROUND_SERVICE_TYPE_DATA_SYNC)")
-			} catch (e: Exception) {
-				diag("setForeground: FAILED — ${e.javaClass.name}: ${e.message}", e)
-				diag("setForeground: worker will continue as background job — uploads still work, just no visible notification")
-				// Don't rethrow — uploads are functional without the notification.
-				// The notification is UX-only, not a functional dependency.
-			}
+			postForegroundNotification()
 
 			val photo =
 				try {
@@ -346,115 +309,185 @@ class PhotoSyncWorker
 
 			val outcome = runCatching { performUpload(photo, batchState) }
 
-			return when {
-				outcome.isSuccess -> {
-					try {
-						val affected = photoDao.updateSyncStateReturningRows(uuid, SyncState.UPLOADED)
-						if (affected == 0) {
-							Timber.i("PhotoSyncWorker: %s was deleted during upload; skipping commit", uuid)
-							// Photo deleted during upload — still advance the batch
-							// counters so the tracker doesn't get stuck.
-							batchTracker.onWorkerSuccess(0L)
-							onBatchCompleteIfDone()
-							return Result.success()
-						}
-						SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "upload + verify succeeded")
-					} catch (e: Exception) {
-						Timber.e(e, "PhotoSyncWorker: failed to commit UPLOADED for %s", uuid)
-						return Result.failure()
-					}
-					// ─── Batch success accounting (Item 1) ────────────────────────
-					// Accumulate this photo's size into bytesCompleted and increment
-					// the completed counter. If this was the last photo in the batch,
-					// post the final summary notification (separate ID so it stays
-					// visible after WorkManager cancels the foreground notification).
-					batchTracker.onWorkerSuccess(photo.size)
-					diag(
-						"doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
-							"total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}",
-					)
-					onBatchCompleteIfDone()
-					// ─── Optional local-original deletion (Item 2) ────────────────
-					// After a verified upload the local encrypted `.crypt` original
-					// is deleted ONLY if the user opted in via the
-					// `syncDeleteAfterUpload` setting (default off). When disabled,
-					// the gallery keeps the local original for offline access and
-					// the remote is just a backup; when enabled, the local copy is
-					// dropped to free device storage and re-downloaded on demand
-					// via [SyncRestorer.ensureLocalOriginal] when the user opens
-					// the photo. The "Clean .crypt files" button in Settings
-					// provides a manual one-shot cleanup of cached originals.
-					if (config.syncDeleteAfterUpload) {
-						deleteLocalOriginalAfterUpload(photo)
-					}
-					Result.success()
-				}
+			return handleUploadOutcome(uuid, photo, batchState, outcome)
+		}
 
-				isFatalFailure(outcome.exceptionOrNull()) -> {
-					Timber.w(outcome.exceptionOrNull(), "PhotoSyncWorker: fatal failure for %s", uuid)
-					try {
-						photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
-						SyncLogger.logStateTransition(
-							uuid,
-							"UPLOAD_PENDING",
-							"UPLOAD_FAILED",
-							"fatal: ${outcome.exceptionOrNull()?.message}",
-						)
-					} catch (e: Exception) {
-						Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
-					}
-					// ─── Batch failure accounting (Item 1) ────────────────────────
-					// Permanent failure — increment the failed counter. The per-photo
-					// failure notification (with batch-failed count) was already shown
-					// inside performUpload() before the exception propagated.
-					batchTracker.onWorkerFailure()
-					onBatchCompleteIfDone()
-					Result.failure()
+		// ─── HARD GUARD helper: returns true if the upload must be aborted (no confirmed repo) ──
+		private suspend fun guardRepoSession(uuid: String): Boolean {
+			if (!config.repoConfirmed || config.syncChosenRemote.isNullOrBlank()) {
+				val msg =
+					"PhotoSyncWorker: FATAL — upload attempted without confirmed repo session " +
+						"(repoConfirmed=${config.repoConfirmed}, remote=${config.syncChosenRemote}). " +
+						"This should never happen — gallery is gated behind repo setup."
+				Timber.e(msg)
+				CrashLogger.logCrash(
+					Thread.currentThread(),
+					FatalSyncException(msg),
+					context = "PhotoSyncWorker hard guard (no repo session) uuid=$uuid",
+				)
+				try {
+					photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+				} catch (_: Exception) {
 				}
-
-				else -> {
-					if (runAttemptCount + 1 >= SyncConfig.maxSyncAttempts) {
-						Timber.w(
-							outcome.exceptionOrNull(),
-							"PhotoSyncWorker: max attempts reached for %s (attempt %d)",
-							uuid,
-							runAttemptCount + 1,
-						)
-						try {
-							photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
-							SyncLogger.logStateTransition(
-								uuid,
-								"UPLOAD_PENDING",
-								"UPLOAD_FAILED",
-								"max attempts (${runAttemptCount + 1}): ${outcome.exceptionOrNull()?.message}",
-							)
-						} catch (e: Exception) {
-							Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
-						}
-						// ─── Batch failure accounting (Item 1 — max attempts) ──────
-						// Same as the fatal-failure branch: increment failed counter,
-						// show batch summary if this was the last worker.
-						batchTracker.onWorkerFailure()
-						onBatchCompleteIfDone()
-						Result.failure()
-					} else {
-						Timber.i(
-							outcome.exceptionOrNull(),
-							"PhotoSyncWorker: retryable failure for %s (attempt %d, will retry)",
-							uuid,
-							runAttemptCount + 1,
-						)
-						// NOTE: deliberately DO NOT call onWorkerFailure() here —
-						// the worker will run again and the counters will be updated
-						// when the retry eventually succeeds or fails permanently.
-						// The per-photo failure notification shown inside
-						// performUpload() will be re-shown on the next attempt with
-						// the same `failed + 1` count (still accurate since we
-						// haven't committed the failure yet).
-						Result.retry()
-					}
-				}
+				return true
 			}
+			return false
+		}
+
+		// ─── Foreground notification (v8 Part 1 + notification-fix round) ──────
+		// setForeground() promotes this worker to a foreground service with a
+		// persistent notification. On Android 12+ this can throw
+		// ForegroundServiceStartNotAllowedException if the app is backgrounded
+		// and not in an exempt state. The prior code wrapped this in a silent
+		// runCatching{} — which meant if setForeground() threw, the worker
+		// kept running but NO notification ever appeared (the foreground
+		// service never started). This was a contributing cause of
+		// "notifications never appear despite permission granted".
+		//
+		// Now: log the result explicitly. If setForeground() fails, the worker
+		// continues (uploads still work without a foreground notification —
+		// WorkManager just runs it as a normal background job), but we log
+		// the exception so it's visible in sync_log.txt + logcat.
+		private suspend fun postForegroundNotification() {
+			try {
+				val fgInfo = getForegroundInfo()
+				setForeground(fgInfo)
+				diag("setForeground: OK — foreground notification posted (id=$NOTIFICATION_ID, type=FOREGROUND_SERVICE_TYPE_DATA_SYNC)")
+			} catch (e: Exception) {
+				diag("setForeground: FAILED — ${e.javaClass.name}: ${e.message}", e)
+				diag("setForeground: worker will continue as background job — uploads still work, just no visible notification")
+				// Don't rethrow — uploads are functional without the notification.
+				// The notification is UX-only, not a functional dependency.
+			}
+		}
+
+		private suspend fun handleUploadOutcome(
+			uuid: String,
+			photo: Photo,
+			batchState: SyncBatchTracker.BatchState,
+			outcome: Result<Unit>,
+		): Result =
+			when {
+				outcome.isSuccess -> commitUploadSuccess(uuid, photo, batchState)
+				isFatalFailure(outcome.exceptionOrNull()) -> commitUploadFatalFailure(uuid, outcome)
+				else -> commitUploadRetry(uuid, outcome)
+			}
+
+		private suspend fun commitUploadSuccess(
+			uuid: String,
+			photo: Photo,
+			batchState: SyncBatchTracker.BatchState,
+		): Result {
+			try {
+				val affected = photoDao.updateSyncStateReturningRows(uuid, SyncState.UPLOADED)
+				if (affected == 0) {
+					Timber.i("PhotoSyncWorker: %s was deleted during upload; skipping commit", uuid)
+					// Photo deleted during upload — still advance the batch
+					// counters so the tracker doesn't get stuck.
+					batchTracker.onWorkerSuccess(0L)
+					onBatchCompleteIfDone()
+					return Result.success()
+				}
+				SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "upload + verify succeeded")
+			} catch (e: Exception) {
+				Timber.e(e, "PhotoSyncWorker: failed to commit UPLOADED for %s", uuid)
+				return Result.failure()
+			}
+			// ─── Batch success accounting (Item 1) ────────────────────────
+			// Accumulate this photo's size into bytesCompleted and increment
+			// the completed counter. If this was the last photo in the batch,
+			// post the final summary notification (separate ID so it stays
+			// visible after WorkManager cancels the foreground notification).
+			batchTracker.onWorkerSuccess(photo.size)
+			diag(
+				"doWorkInternal: batch success — completed=${batchTracker.getBatchState().completed} " +
+					"total=${batchTracker.getBatchState().total} bytesCompleted=${batchTracker.getBatchState().bytesCompleted}",
+			)
+			onBatchCompleteIfDone()
+			// ─── Optional local-original deletion (Item 2) ────────────────
+			// After a verified upload the local encrypted `.crypt` original
+			// is deleted ONLY if the user opted in via the
+			// `syncDeleteAfterUpload` setting (default off). When disabled,
+			// the gallery keeps the local original for offline access and
+			// the remote is just a backup; when enabled, the local copy is
+			// dropped to free device storage and re-downloaded on demand
+			// via [SyncRestorer.ensureLocalOriginal] when the user opens
+			// the photo. The "Clean .crypt files" button in Settings
+			// provides a manual one-shot cleanup of cached originals.
+			if (config.syncDeleteAfterUpload) {
+				deleteLocalOriginalAfterUpload(photo)
+			}
+			return Result.success()
+		}
+
+		private suspend fun commitUploadFatalFailure(
+			uuid: String,
+			outcome: Result<Unit>,
+		): Result {
+			Timber.w(outcome.exceptionOrNull(), "PhotoSyncWorker: fatal failure for %s", uuid)
+			try {
+				photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+				SyncLogger.logStateTransition(
+					uuid,
+					"UPLOAD_PENDING",
+					"UPLOAD_FAILED",
+					"fatal: ${outcome.exceptionOrNull()?.message}",
+				)
+			} catch (e: Exception) {
+				Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
+			}
+			// ─── Batch failure accounting (Item 1) ────────────────────────
+			// Permanent failure — increment the failed counter. The per-photo
+			// failure notification (with batch-failed count) was already shown
+			// inside performUpload() before the exception propagated.
+			batchTracker.onWorkerFailure()
+			onBatchCompleteIfDone()
+			return Result.failure()
+		}
+
+		private suspend fun commitUploadRetry(
+			uuid: String,
+			outcome: Result<Unit>,
+		): Result {
+			if (runAttemptCount + 1 >= SyncConfig.maxSyncAttempts) {
+				Timber.w(
+					outcome.exceptionOrNull(),
+					"PhotoSyncWorker: max attempts reached for %s (attempt %d)",
+					uuid,
+					runAttemptCount + 1,
+				)
+				try {
+					photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
+					SyncLogger.logStateTransition(
+						uuid,
+						"UPLOAD_PENDING",
+						"UPLOAD_FAILED",
+						"max attempts (${runAttemptCount + 1}): ${outcome.exceptionOrNull()?.message}",
+					)
+				} catch (e: Exception) {
+					Timber.e(e, "PhotoSyncWorker: failed to mark UPLOAD_FAILED for %s", uuid)
+				}
+				// ─── Batch failure accounting (Item 1 — max attempts) ──────
+				// Same as the fatal-failure branch: increment failed counter,
+				// show batch summary if this was the last worker.
+				batchTracker.onWorkerFailure()
+				onBatchCompleteIfDone()
+				return Result.failure()
+			}
+			Timber.i(
+				outcome.exceptionOrNull(),
+				"PhotoSyncWorker: retryable failure for %s (attempt %d, will retry)",
+				uuid,
+				runAttemptCount + 1,
+			)
+			// NOTE: deliberately DO NOT call onWorkerFailure() here —
+			// the worker will run again and the counters will be updated
+			// when the retry eventually succeeds or fails permanently.
+			// The per-photo failure notification shown inside
+			// performUpload() will be re-shown on the next attempt with
+			// the same `failed + 1` count (still accurate since we
+			// haven't committed the failure yet).
+			return Result.retry()
 		}
 
 		private suspend fun performUpload(
@@ -473,83 +506,11 @@ class PhotoSyncWorker
 					"batchCurrent=${batchState.current} batchTotal=${batchState.total}",
 			)
 
-			// ─── v9 dedup: skip upload entirely if content-hash is already on the remote ──
-			// The dedup registry is a local Room cache of the encrypted `registry.json.crypt`
-			// on the remote, populated at login by [HashRegistry.downloadAndCache]. If the
-			// photo's SHA-256 (computed at import time from the plaintext bytes) matches an
-			// existing entry, the original + thumbnail + video-preview are all already on
-			// the remote under the CANONICAL UUID (the first photo that uploaded with this
-			// hash). Re-uploading them under this photo's UUID would just waste bandwidth
-			// and storage on the remote — skip the transfer entirely and transition straight
-			// to UPLOADED.
-			//
-			// Photos with `contentHash == null` (imported before v9, or import-path failure
-			// during hash computation) bypass dedup and upload normally — they'll get a
-			// registry entry created below if the upload succeeds, so future imports of the
-			// same content WILL dedup against them.
-			//
-			// The local thumbnail (created at import time) is NOT deleted — the gallery on
-			// THIS device still shows it. On a fresh-install restore, this duplicate UUID
-			// won't appear in the gallery because there's no thumbnail for it on the remote
-			// (the remote only has the canonical UUID's thumbnail). That's the intended
-			// trade-off: dedup saves bandwidth at the cost of duplicate UUIDs being
-			// device-local only.
+			if (tryDedup(photo, batchState)) return
+
 			val contentHash = photo.contentHash
-			if (!contentHash.isNullOrBlank()) {
-				val existing =
-					try {
-						hashRegistry.findExisting(contentHash, runCatching { sessionRepository.get()?.vaultId }.getOrNull())
-					} catch (e: Exception) {
-						diag("performUpload: dedup lookup FAILED (non-fatal, will upload normally): ${e.message}", e)
-						null
-					}
-				if (existing != null) {
-					diag(
-						"performUpload: DEDUP hit — contentHash=$contentHash already on remote " +
-							"under canonical uuid=${existing.uuid} (filename=${existing.filename}). " +
-							"Skipping upload; transitioning straight to UPLOADED.",
-					)
-					SyncLogger.logStateTransition(
-						uuid,
-						"UPLOAD_PENDING",
-						"UPLOADED",
-						"dedup: content_hash=$contentHash already on remote as ${existing.uuid}",
-					)
+			val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
 
-					// ─── Bug 1 fix: defensively mark the photo UPLOADED right here ──
-					// The caller (doWorkInternal) already does this via
-					// updateSyncStateReturningRows() on outcome.isSuccess, but marking
-					// it explicitly here makes the dedup path self-contained: even if
-					// the outcome-based flow is refactored later, dedup always lands
-					// the photo in UPLOADED state. Without this, the second copy of a
-					// duplicate import would sit in UPLOAD_PENDING forever (or until
-					// the next worker retry), showing a perpetual "uploading" badge in
-					// the gallery — the "UI duplicate" bug report.
-					//
-					// Failure here is non-fatal — doWorkInternal's outcome.isSuccess
-					// branch will re-attempt the update and handle the 0-rows-affected
-					// case (photo deleted during upload).
-					try {
-						photoDao.updateSyncState(uuid, SyncState.UPLOADED)
-						diag("performUpload: DEDUP — explicitly marked $uuid as UPLOADED")
-					} catch (e: Exception) {
-						diag("performUpload: DEDUP — explicit UPLOADED mark FAILED (non-fatal, doWorkInternal will retry): ${e.message}", e)
-					}
-
-					// No registry entry to add — the canonical entry already covers this hash.
-					// Just bail out; the caller (doWorkInternal) will mark UPLOADED (again,
-					// idempotently) and advance the batch tracker.
-					return
-				} else {
-					diag("performUpload: dedup miss — contentHash=$contentHash not in registry; uploading normally")
-				}
-			} else {
-				diag("performUpload: no contentHash on photo (pre-v9 import or hash failure) — skipping dedup, uploading normally")
-			}
-
-			// ─── Item 1: precompute batch-style notification text ───────────────
-			// Collapsed (single line): "Uploading N of M: filename (size)"
-			// Expanded (BigTextStyle): "Uploading N of M photos\nfilename (size)\nZ uploaded so far"
 			val fileSizeStr = formatBytes(photo.size)
 			val collapsedText = "Uploading ${batchState.current} of ${batchState.total}: ${photo.fileName} ($fileSizeStr)"
 			val expandedText =
@@ -557,275 +518,16 @@ class PhotoSyncWorker
 					"${photo.fileName} ($fileSizeStr)\n" +
 					"${formatBytes(batchState.bytesCompleted)} uploaded so far"
 
-			// ─── Upload thumbnail ──────────────────────────────────────────────
-			// @since v9 followup (Bug 4 — packed thumbnails): individual thumbnail
-			// upload is now SKIPPED. The thumbnail stays local (at
-			// `internalThumbnailFileName`) and is collected by
-			// [flushPendingThumbnailPacks] at batch end, concatenated into ≤50 MB
-			// packs at `<remote>:photoz-backup/thumbnails/pack-NNNN.pack`, and the
-			// per-hash `thumbnail_pack` / `thumbnail_offset` / `thumbnail_length`
-			// fields in the registry are filled in. The restore side
-			// ([RepoManager.restoreThumbnailsFromPacks]) downloads packs once and
-			// extracts each thumbnail by offset+length, instead of N round-trips
-			// for N individual thumbnails.
-			//
-			// The local thumbnail file is NOT deleted here — it must remain on disk
-			// so [flushPendingThumbnailPacks] can read its bytes when forming the
-			// pack. If the device crashes between this upload and the batch-end
-			// pack flush, the next batch's flush will pick up the orphan thumbnail
-			// (the registry entry has `thumbnail_pack = null`, which the packer
-			// treats as "pending pack").
-			//
-			// The local thumbnail file is also still used by the gallery's
-			// [EncryptedImageFetcher] to render the tile — so even before the pack
-			// is uploaded, the user sees the thumbnail locally.
-			val thumbPath = appContext.getFileStreamPath(photo.internalThumbnailFileName)
-			if (thumbPath.exists()) {
-				diag("performUpload: thumbnail exists locally (${thumbPath.length()} bytes) — deferring to batch-end pack upload (Bug 4)")
-			} else {
-				diag("performUpload: thumbnail file does not exist, skipping: ${thumbPath.absolutePath}")
-			}
+			logThumbnailStatus(thumbPath)
+			uploadVideoPreview(photo, remote, collapsedText, expandedText, batchState)
 
-			// ─── Upload video preview (if video) ───────────────────────────────
-			// Same as thumbnail — small file, fire-and-forget.
-			// NOTE: video previews are NOT packed (only thumbnails are). They're
-			// uploaded individually as before.
-			if (photo.type.isVideo) {
-				val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
-				if (vpPath.exists()) {
-					// Ensure remote directories exist (operations/copyfile fails if parent dir missing)
-					rcloneController.createDir("$remote:${SyncConfig.remoteOriginalsDir}").onFailure { Timber.w(it, "createDir originals failed (non-fatal)") }
-					rcloneController.createDir("$remote:${SyncConfig.remoteVideosDir}").onFailure { Timber.w(it, "createDir videos failed (non-fatal)") }
-
-					val remoteVp = "$remote:${SyncConfig.remoteVideosDir}/${vpPath.name}"
-					diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
-					updateNotification(
-						progress = null,
-						text = collapsedText,
-						bigText = expandedText,
-					)
-					try {
-						rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
-						diag("performUpload: video preview upload OK")
-					} catch (e: Exception) {
-						diag("performUpload: video preview upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-						reportUploadFailureNotification(photo.fileName, batchState)
-						throw e
-					}
-				}
-			}
-
-			// ─── Upload original ───────────────────────────────────────────────
-			// The original is the largest artifact — use uploadFileWithProgress()
-			// so the notification shows a determinate progress bar based on a
-			// size/time estimate (rclone's core/stats doesn't track
-			// operations/copyfile, so we approximate — see RcloneController for
-			// the full rationale). Thumbnails and video previews still use the
-			// plain uploadFile() — they're small enough that indeterminate is fine.
-			//
-			// @since real-upload-progress feature — switched from uploadFile()
-			//   to uploadFileWithProgress() so the user sees the bar move
-			//   instead of an indeterminate spinner for the (potentially huge)
-			//   original photo upload.
 			val origPath = appContext.getFileStreamPath(photo.internalFileName)
-			if (!origPath.exists()) {
-				diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
-				reportUploadFailureNotification(photo.fileName, batchState)
-				throw FatalSyncException(
-					"Local original file missing for $uuid before upload. " +
-						"Photo may have been deleted out-of-band.",
-				)
-			}
-			val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
-			diag("performUpload: uploading original ${origPath.absolutePath} (size=${origPath.length()}) → $remoteOrig")
-			// Pre-upload state: indeterminate progress while the upload runs.
-			// The first onProgress tick from uploadFileWithProgress() will
-			// switch the notification to a determinate bar.
-			updateNotification(
-				progress = null,
-				text = collapsedText,
-				bigText = expandedText,
-			)
-			try {
-				// JNI migration note: the new RcloneController.uploadFile() does not
-				// support progress callbacks (rclone operations/copyfile is _async
-				// server-side; polling job/status would be a separate effort). The
-				// notification stays in indeterminate mode for the duration of the
-				// upload — updateNotification(progress = null, ...) was already
-				// called above to set that up.
-				rcloneController
-					.uploadFile(
-						localPath = origPath.absolutePath,
-						remotePath = remoteOrig,
-					).getOrThrow()
-				diag("performUpload: original upload OK")
-			} catch (e: Exception) {
-				diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)
-				reportUploadFailureNotification(photo.fileName, batchState)
-				throw e
-			}
+			val remoteOrig = uploadOriginalAndNotify(origPath, remote, photo, collapsedText, expandedText, batchState)
 
-			// ─── Independent verification: file exists with correct size ───────
-			val localSize = origPath.length()
-			diag("performUpload: verifying file exists on remote (expected size=$localSize)")
-			try {
-				rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
-				diag("performUpload: verifyFileExists OK")
-			} catch (e: Exception) {
-				diag("performUpload: verifyFileExists FAILED: ${e.javaClass.name}: ${e.message}", e)
-				reportUploadFailureNotification(photo.fileName, batchState)
-				throw e
-			}
+			verifyUploadSizeAndHash(remoteOrig, origPath, uuid, photo.fileName, batchState)
+			verifyFullHash(remoteOrig, uuid, contentHash, batchState)
+			addRegistryEntry(uuid, contentHash, photo, thumbPath)
 
-			// ─── Independent verification: hash match (best-effort) ────────────
-			val localHash = sha256OfFile(origPath.absolutePath)
-			diag("performUpload: verifying hash (local sha256=$localHash)")
-			try {
-				rcloneController.verifyRemote(remoteOrig).getOrThrow()
-				diag("performUpload: remote verification OK")
-			} catch (e: Exception) {
-				// F-SYNC-003: Merged duplicate catch — benign hash-unsupported errors
-				// fall through; real errors are re-thrown so the worker retries.
-				val msg = e.message ?: ""
-				val isBenign = msg.contains("hash", ignoreCase = true) ||
-					msg.contains("unsupported", ignoreCase = true) ||
-					msg.contains("not supported", ignoreCase = true)
-				if (isBenign) {
-					diag("performUpload: remote verification skipped — ${e.message}")
-					Timber.w("PhotoSyncWorker: verification skipped for %s — %s", uuid, e.message ?: "unknown")
-					SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "hash skipped (unsupported), size verified OK")
-				} else {
-					diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
-					reportUploadFailureNotification(photo.fileName, batchState)
-					throw e
-				}
-			}
-
-			// ─── Item 3: optional full hash verification by re-download + decrypt ──
-			// The remote-side `verifyRemote` above only works if the backend supports
-			// server-side hashsum. Koofr (and many other backends) don't — the call
-			// falls through to the `HashNotSupportedException` branch and we're left
-			// trusting only the size check. This optional pass, gated on the user's
-			// `syncVerifyHash` setting (default OFF — doubles bandwidth per upload),
-			// downloads the freshly-uploaded remote file, decrypts it with the VMK,
-			// recomputes the SHA-256 of the plaintext, and compares it against the
-			// photo's stored `contentHash`. If they don't match → throw + mark
-			// UPLOAD_FAILED so WorkManager retries the whole upload.
-			//
-			// This is the only way to truly verify upload integrity against backends
-			// that can't compute server-side hashes. It's expensive (download = full
-			// upload size again) so it's off by default and surfaced as a Settings
-			// toggle for paranoiac users.
-			if (config.syncVerifyHash && !contentHash.isNullOrBlank()) {
-				diag("performUpload: syncVerifyHash is ON — performing full re-download + decrypt + sha256 verification")
-				val verifyFile = File(appContext.cacheDir, "verify-${photo.uuid}.crypt")
-				try {
-					rcloneController.downloadFile(remoteOrig, verifyFile.absolutePath).getOrThrow()
-					diag("performUpload: hash verification — downloaded ${verifyFile.length()} bytes to ${verifyFile.absolutePath}")
-
-					val session = sessionRepository.get()
-					if (session == null) {
-						diag("performUpload: hash verification SKIPPED — vault session is null (locked). Size check still passed.")
-					} else {
-						val md = MessageDigest.getInstance("SHA-256")
-						FileInputStream(verifyFile).use { fis ->
-							val decryptedStream = cryptoEngine.createDecryptStream(fis, session)
-							if (decryptedStream == null) {
-								throw IOException("Failed to create decrypt stream for hash verification (uuid=$uuid)")
-							}
-							decryptedStream.use { stream ->
-								val buf = ByteArray(64 * 1024)
-								while (true) {
-									val n = stream.read(buf)
-									if (n <= 0) break
-									md.update(buf, 0, n)
-								}
-							}
-						}
-						val actualHash = md.digest().joinToString("") { "%02x".format(it) }
-						if (!actualHash.equals(contentHash, ignoreCase = true)) {
-							throw IOException(
-								"Hash mismatch after upload: expected=$contentHash actual=$actualHash (uuid=$uuid). " +
-									"Remote file may be corrupt or was tampered with.",
-							)
-						}
-						diag("performUpload: hash verification OK — remote sha256 matches photo.contentHash ($actualHash)")
-						SyncLogger.logStateTransition(
-							uuid,
-							"UPLOAD_PENDING",
-							"UPLOADED",
-							"full re-download + decrypt + sha256 verified OK ($actualHash)",
-						)
-					}
-				} catch (e: Exception) {
-					diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
-					reportUploadFailureNotification(photo.fileName, batchState)
-					throw e
-				} finally {
-					verifyFile.delete()
-				}
-			} else if (config.syncVerifyHash && contentHash.isNullOrBlank()) {
-				diag("performUpload: syncVerifyHash is ON but photo has no contentHash (pre-v9 import) — skipping full verification")
-			}
-
-			// ─── v9 dedup: append to the local registry cache ────────────────────
-			// The original + thumbnail are now on the remote under THIS photo's UUID
-			// (the canonical UUID for this content-hash). Record the hash → UUID
-			// mapping in the local registry cache so:
-			//   (a) future imports of the same content on THIS device dedup against
-			//       this UUID (no remote round-trip needed for the lookup — the
-			//       cache is consulted directly);
-			//   (b) the next [flushRegistryIfBatchComplete] call serializes the
-			//       cache (including this new entry) and uploads it as
-			//       `registry.json.crypt` to the remote, so OTHER devices will
-			//       dedup against this UUID after their next login.
-			//
-			// Failure here is non-fatal — the photo's encrypted artifacts are
-			// already uploaded + verified. We just lose dedup coverage for this
-			// hash until the next successful registry add. Logged + continued.
-			if (!contentHash.isNullOrBlank()) {
-				try {
-					val entry =
-						HashRegistryEntry(
-							contentHash = contentHash,
-							uuid = uuid,
-							filename = photo.fileName,
-							albumPath = photo.albumPath ?: photo.relativePath,
-							size = photo.size,
-							type = photo.type.name,
-							// thumbnail_pack = null means "individual file, not packed" —
-							// the thumbnail is at `<remote>:thumbnails/<uuid>.crypt.tn`.
-							// The future packed-thumbnails optimization will set this to
-							// `pack-NNN` and fill in offset/length.
-							thumbnailPack = null,
-							thumbnailOffset = 0L,
-							thumbnailLength = thumbPath.takeIf { it.exists() }?.length() ?: 0L,
-							deleted = false,
-							// Sprint 2 / M7 — tag with the current vault's vault_id.
-							// The upload worker only runs for the syncing vault (the
-							// one with a recovery phrase), so this entry will be
-							// included in the next registry flush. Additional vaults
-							// never trigger uploads (no recovery phrase → no sync).
-							vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
-						)
-					hashRegistry.addEntry(entry)
-					diag("performUpload: added registry entry contentHash=$contentHash uuid=$uuid")
-				} catch (e: Exception) {
-					diag("performUpload: registry addEntry FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
-					Timber.w(e, "PhotoSyncWorker: registry addEntry failed for %s — photo is still UPLOADED", uuid)
-				}
-			}
-
-			// ─── Post-upload success state ────────────────────────────────────
-			// Brief "Uploaded" state. The worker returns Result.success() right
-			// after this, WorkManager cancels the foreground notification, and
-			// the user sees the notification disappear (or transition to whatever
-			// the next queued worker shows).
-			//
-			// Item 1: show batch-style success text ("Uploaded N of M: filename")
-			// so the user sees batch progress in the brief moment between this
-			// worker finishing and the next one starting (or the batch-complete
-			// summary if this was the last photo).
 			val doneCollapsed = "Uploaded ${batchState.current} of ${batchState.total}: ${photo.fileName}"
 			val doneExpanded =
 				"Uploaded ${batchState.current} of ${batchState.total} photos\n${photo.fileName}\n" +
@@ -837,6 +539,251 @@ class PhotoSyncWorker
 			)
 
 			diag("performUpload: DONE — all uploads + verifications succeeded for $uuid")
+		}
+
+		private suspend fun tryDedup(
+			photo: Photo,
+			batchState: SyncBatchTracker.BatchState,
+		): Boolean {
+			val uuid = photo.uuid
+			val contentHash = photo.contentHash
+			if (contentHash.isNullOrBlank()) {
+				diag("performUpload: no contentHash on photo (pre-v9 import or hash failure) — skipping dedup, uploading normally")
+				return false
+			}
+			val existing =
+				try {
+					hashRegistry.findExisting(contentHash, runCatching { sessionRepository.get()?.vaultId }.getOrNull())
+				} catch (e: Exception) {
+					diag("performUpload: dedup lookup FAILED (non-fatal, will upload normally): ${e.message}", e)
+					null
+				}
+			if (existing == null) {
+				diag("performUpload: dedup miss — contentHash=$contentHash not in registry; uploading normally")
+				return false
+			}
+			diag(
+				"performUpload: DEDUP hit — contentHash=$contentHash already on remote " +
+					"under canonical uuid=${existing.uuid} (filename=${existing.filename}). " +
+					"Skipping upload; transitioning straight to UPLOADED.",
+			)
+			SyncLogger.logStateTransition(
+				uuid,
+				"UPLOAD_PENDING",
+				"UPLOADED",
+				"dedup: content_hash=$contentHash already on remote as ${existing.uuid}",
+			)
+			try {
+				photoDao.updateSyncState(uuid, SyncState.UPLOADED)
+				diag("performUpload: DEDUP — explicitly marked $uuid as UPLOADED")
+			} catch (e: Exception) {
+				diag("performUpload: DEDUP — explicit UPLOADED mark FAILED (non-fatal, doWorkInternal will retry): ${e.message}", e)
+			}
+			return true
+		}
+
+		private fun logThumbnailStatus(thumbPath: File) {
+			if (thumbPath.exists()) {
+				diag("performUpload: thumbnail exists locally (${thumbPath.length()} bytes) — deferring to batch-end pack upload (Bug 4)")
+			} else {
+				diag("performUpload: thumbnail file does not exist, skipping: ${thumbPath.absolutePath}")
+			}
+		}
+
+		private suspend fun uploadVideoPreview(
+			photo: Photo,
+			remote: String,
+			collapsedText: String,
+			expandedText: String,
+			batchState: SyncBatchTracker.BatchState,
+		) {
+			if (!photo.type.isVideo) return
+			val vpPath = appContext.getFileStreamPath(photo.internalVideoPreviewFileName)
+			if (!vpPath.exists()) return
+			rcloneController.createDir("$remote:${SyncConfig.remoteOriginalsDir}").onFailure { Timber.w(it, "createDir originals failed (non-fatal)") }
+			rcloneController.createDir("$remote:${SyncConfig.remoteVideosDir}").onFailure { Timber.w(it, "createDir videos failed (non-fatal)") }
+			val remoteVp = "$remote:${SyncConfig.remoteVideosDir}/${vpPath.name}"
+			diag("performUpload: uploading video preview ${vpPath.absolutePath} (size=${vpPath.length()}) → $remoteVp")
+			updateNotification(
+				progress = null,
+				text = collapsedText,
+				bigText = expandedText,
+			)
+			try {
+				rcloneController.uploadFile(vpPath.absolutePath, remoteVp).getOrThrow()
+				diag("performUpload: video preview upload OK")
+			} catch (e: Exception) {
+				diag("performUpload: video preview upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+				reportUploadFailureNotification(photo.fileName, batchState)
+				throw e
+			}
+		}
+
+		private suspend fun uploadOriginalAndNotify(
+			origPath: File,
+			remote: String,
+			photo: Photo,
+			collapsedText: String,
+			expandedText: String,
+			batchState: SyncBatchTracker.BatchState,
+		): String {
+			if (!origPath.exists()) {
+				diag("performUpload: FATAL — local original missing: ${origPath.absolutePath}")
+				reportUploadFailureNotification(photo.fileName, batchState)
+				throw FatalSyncException(
+					"Local original file missing for ${photo.uuid} before upload. " +
+						"Photo may have been deleted out-of-band.",
+				)
+			}
+			val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${origPath.name}"
+			diag("performUpload: uploading original ${origPath.absolutePath} (size=${origPath.length()}) → $remoteOrig")
+			updateNotification(
+				progress = null,
+				text = collapsedText,
+				bigText = expandedText,
+			)
+			try {
+				rcloneController
+					.uploadFile(
+						localPath = origPath.absolutePath,
+						remotePath = remoteOrig,
+					).getOrThrow()
+				diag("performUpload: original upload OK")
+			} catch (e: Exception) {
+				diag("performUpload: original upload FAILED: ${e.javaClass.name}: ${e.message}", e)
+				reportUploadFailureNotification(photo.fileName, batchState)
+				throw e
+			}
+			return remoteOrig
+		}
+
+		private suspend fun verifyUploadSizeAndHash(
+			remoteOrig: String,
+			origPath: File,
+			uuid: String,
+			fileName: String,
+			batchState: SyncBatchTracker.BatchState,
+		) {
+			val localSize = origPath.length()
+			diag("performUpload: verifying file exists on remote (expected size=$localSize)")
+			try {
+				rcloneController.verifyFileExists(remoteOrig, localSize).getOrThrow()
+				diag("performUpload: verifyFileExists OK")
+			} catch (e: Exception) {
+				diag("performUpload: verifyFileExists FAILED: ${e.javaClass.name}: ${e.message}", e)
+				reportUploadFailureNotification(fileName, batchState)
+				throw e
+			}
+			val localHash = sha256OfFile(origPath.absolutePath)
+			diag("performUpload: verifying hash (local sha256=$localHash)")
+			try {
+				rcloneController.verifyRemote(remoteOrig).getOrThrow()
+				diag("performUpload: remote verification OK")
+			} catch (e: Exception) {
+				val msg = e.message ?: ""
+				val isBenign = msg.contains("hash", ignoreCase = true) ||
+					msg.contains("unsupported", ignoreCase = true) ||
+					msg.contains("not supported", ignoreCase = true)
+				if (isBenign) {
+					diag("performUpload: remote verification skipped — ${e.message}")
+					Timber.w("PhotoSyncWorker: verification skipped for %s — %s", uuid, e.message ?: "unknown")
+					SyncLogger.logStateTransition(uuid, "UPLOAD_PENDING", "UPLOADED", "hash skipped (unsupported), size verified OK")
+				} else {
+					diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+					reportUploadFailureNotification(fileName, batchState)
+					throw e
+				}
+			}
+		}
+
+		private suspend fun verifyFullHash(
+			remoteOrig: String,
+			uuid: String,
+			contentHash: String?,
+			batchState: SyncBatchTracker.BatchState,
+		) {
+			if (!config.syncVerifyHash || contentHash.isNullOrBlank()) {
+				if (config.syncVerifyHash && contentHash.isNullOrBlank()) {
+					diag("performUpload: syncVerifyHash is ON but photo has no contentHash (pre-v9 import) — skipping full verification")
+				}
+				return
+			}
+			diag("performUpload: syncVerifyHash is ON — performing full re-download + decrypt + sha256 verification")
+			val verifyFile = File(appContext.cacheDir, "verify-$uuid.crypt")
+			try {
+				rcloneController.downloadFile(remoteOrig, verifyFile.absolutePath).getOrThrow()
+				diag("performUpload: hash verification — downloaded ${verifyFile.length()} bytes to ${verifyFile.absolutePath}")
+				val session = sessionRepository.get()
+				if (session == null) {
+					diag("performUpload: hash verification SKIPPED — vault session is null (locked). Size check still passed.")
+				} else {
+					val md = MessageDigest.getInstance("SHA-256")
+					FileInputStream(verifyFile).use { fis ->
+						val decryptedStream = cryptoEngine.createDecryptStream(fis, session)
+						if (decryptedStream == null) {
+							throw IOException("Failed to create decrypt stream for hash verification (uuid=$uuid)")
+						}
+						decryptedStream.use { stream ->
+							val buf = ByteArray(64 * 1024)
+							while (true) {
+								val n = stream.read(buf)
+								if (n <= 0) break
+								md.update(buf, 0, n)
+							}
+						}
+					}
+					val actualHash = md.digest().joinToString("") { "%02x".format(it) }
+					if (!actualHash.equals(contentHash, ignoreCase = true)) {
+						throw IOException(
+							"Hash mismatch after upload: expected=$contentHash actual=$actualHash (uuid=$uuid). " +
+								"Remote file may be corrupt or was tampered with.",
+						)
+					}
+					diag("performUpload: hash verification OK — remote sha256 matches photo.contentHash ($actualHash)")
+					SyncLogger.logStateTransition(
+						uuid,
+						"UPLOAD_PENDING",
+						"UPLOADED",
+						"full re-download + decrypt + sha256 verified OK ($actualHash)",
+					)
+				}
+			} catch (e: Exception) {
+				diag("performUpload: hash verification FAILED: ${e.javaClass.name}: ${e.message}", e)
+				reportUploadFailureNotification("", batchState)
+				throw e
+			} finally {
+				verifyFile.delete()
+			}
+		}
+
+		private suspend fun addRegistryEntry(
+			uuid: String,
+			contentHash: String?,
+			photo: Photo,
+			thumbPath: File,
+		) {
+			if (contentHash.isNullOrBlank()) return
+			try {
+				val entry =
+					HashRegistryEntry(
+						contentHash = contentHash,
+						uuid = uuid,
+						filename = photo.fileName,
+						albumPath = photo.albumPath ?: photo.relativePath,
+						size = photo.size,
+						type = photo.type.name,
+						thumbnailPack = null,
+						thumbnailOffset = 0L,
+						thumbnailLength = thumbPath.takeIf { it.exists() }?.length() ?: 0L,
+						deleted = false,
+						vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
+					)
+				hashRegistry.addEntry(entry)
+				diag("performUpload: added registry entry contentHash=$contentHash uuid=$uuid")
+			} catch (e: Exception) {
+				diag("performUpload: registry addEntry FAILED (non-fatal): ${e.javaClass.name}: ${e.message}", e)
+				Timber.w(e, "PhotoSyncWorker: registry addEntry failed for %s — photo is still UPLOADED", uuid)
+			}
 		}
 
 		/**

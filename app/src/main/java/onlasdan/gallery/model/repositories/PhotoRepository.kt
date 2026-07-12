@@ -297,67 +297,17 @@ class PhotoRepository
 			// hash now represents the photo's unencrypted content — store its hex
 			// string on the Photo row so the upload worker can consult the dedup
 			// registry without re-reading the file.
-			if (created && sha256 != null) {
-				val hashHex = sha256.digest().joinToString("") { "%02x".format(it) }
-				try {
-					photoDao.updateContentHash(photo.uuid, hashHex)
-
-					// ─── Sprint 10+ / M10 Part 3: Symlink album dedup ──────────────
-					// If another Photo row with the same content_hash already exists,
-					// convert THIS photo into a SYMLINK instead of deleting it.
-					//
-					// The symlink's `canonical_uuid` points to the existing (canonical)
-					// photo's UUID. The encrypted file + thumbnail are deleted from
-					// this photo's UUID (they were just written) — the symlink will
-					// read from the canonical's files via `internalFileName(canonicalUuid ?: uuid)`.
-					//
-					// This allows the same file to appear in multiple albums without
-					// duplicating storage. The user sees two gallery entries (one per
-					// album), but only one encrypted file exists on disk + remote.
-					//
-					// Previously (Bug 1 fix): the duplicate was deleted entirely —
-					// the photo only appeared in the first album that imported it.
-					val existing =
-						photoDao.findByContentHash(
-							hashHex,
-							excludeUuid = photo.uuid,
-							vaultId = currentVaultId(),
-						)
-					if (existing != null) {
-						Timber.i(
-							"Symlink dedup: content_hash=%s already exists as uuid=%s — creating symlink %s → %s",
-							hashHex,
-							existing.uuid,
-							photo.uuid,
-							existing.uuid,
-						)
-
-						// Determine the canonical UUID: if `existing` is itself a
-						// symlink, follow the chain to the real canonical. This
-						// handles the case where the user imports the same file 3+
-						// times — all symlinks point to the same root canonical.
-						val canonicalUuid = existing.canonicalUuid ?: existing.uuid
-
-						// Delete the just-written encrypted file + thumbnail for
-						// THIS photo's UUID — the symlink will use the canonical's.
-						deleteInternalPhotoData(photo)
-
-						// Update this photo to be a symlink.
-						photoDao.updateCanonicalUuid(photo.uuid, canonicalUuid)
-
-						// Link the symlink to its album (if albumPath is set).
-						try {
-							ensureAlbumForPhoto(photo)
-						} catch (e: Exception) {
-							Timber.w(e, "Symlink dedup: ensureAlbumForPhoto failed (non-fatal)")
-						}
-
-						return photo.uuid // signal: import succeeded as a symlink
-					}
-				} catch (e: Exception) {
-					Timber.w(e, "Failed to persist contentHash or dedup check for %s", photo.uuid)
-				}
-			}
+			// ─── v9 dedup: finalize the SHA-256 hash and stash it on the Photo ──
+			// The digest was updated incrementally inside createPhotoFile() as the
+			// plaintext bytes were streamed through. If the import succeeded, the
+			// hash now represents the photo's unencrypted content — store its hex
+			// string on the Photo row so the upload worker can consult the dedup
+			// registry without re-reading the file.
+			//
+			// Returns the photo's UUID if it was finalized as a symlink (the caller
+			// returns immediately); null to continue normal import flow.
+			val symlinkUuid = finalizeHashAndMaybeSymlink(photo, sha256, created)
+			if (symlinkUuid != null) return symlinkUuid
 
 			if (!created) {
 				return String.empty
@@ -390,6 +340,91 @@ class PhotoRepository
 
 			val deleted = io.deleteFile(sourceUri)
 			return if (deleted == true) photo.uuid else String.empty
+		}
+
+		/**
+		 * Persist the photo's finalized SHA-256 content hash and run the symlink
+		 * dedup check.
+		 *
+		 * If a different Photo row already shares this content hash, THIS photo is
+		 * converted into a SYMLINK pointing at that existing canonical — its just-
+		 * written encrypted file + thumbnail are deleted and the photo is linked
+		 * to its album. The photo's UUID is returned so the caller can return it
+		 * immediately (import succeeded as a symlink).
+		 *
+		 * Returns `null` when the photo was NOT finalized as a symlink (i.e. the
+		 * caller should continue the normal import flow). Non-fatal failures are
+		 * logged and treated as "no symlink".
+		 *
+		 * @since Sprint 10+ / M10 Part 3 — symlink dedup
+		 */
+		private suspend fun finalizeHashAndMaybeSymlink(
+			photo: Photo,
+			sha256: java.security.MessageDigest?,
+			created: Boolean,
+		): String? {
+			if (!created || sha256 == null) return null
+
+			val hashHex = sha256.digest().joinToString("") { "%02x".format(it) }
+			try {
+				photoDao.updateContentHash(photo.uuid, hashHex)
+
+				// ─── Sprint 10+ / M10 Part 3: Symlink album dedup ──────────────
+				// If another Photo row with the same content_hash already exists,
+				// convert THIS photo into a SYMLINK instead of deleting it.
+				//
+				// The symlink's `canonical_uuid` points to the existing (canonical)
+				// photo's UUID. The encrypted file + thumbnail are deleted from
+				// this photo's UUID (they were just written) — the symlink will
+				// read from the canonical's files via `internalFileName(canonicalUuid ?: uuid)`.
+				//
+				// This allows the same file to appear in multiple albums without
+				// duplicating storage. The user sees two gallery entries (one per
+				// album), but only one encrypted file exists on disk + remote.
+				//
+				// Previously (Bug 1 fix): the duplicate was deleted entirely —
+				// the photo only appeared in the first album that imported it.
+				val existing =
+					photoDao.findByContentHash(
+						hashHex,
+						excludeUuid = photo.uuid,
+						vaultId = currentVaultId(),
+					)
+				if (existing != null) {
+					Timber.i(
+						"Symlink dedup: content_hash=%s already exists as uuid=%s — creating symlink %s → %s",
+						hashHex,
+						existing.uuid,
+						photo.uuid,
+						existing.uuid,
+					)
+
+					// Determine the canonical UUID: if `existing` is itself a
+					// symlink, follow the chain to the real canonical. This
+					// handles the case where the user imports the same file 3+
+					// times — all symlinks point to the same root canonical.
+					val canonicalUuid = existing.canonicalUuid ?: existing.uuid
+
+					// Delete the just-written encrypted file + thumbnail for
+					// THIS photo's UUID — the symlink will use the canonical's.
+					deleteInternalPhotoData(photo)
+
+					// Update this photo to be a symlink.
+					photoDao.updateCanonicalUuid(photo.uuid, canonicalUuid)
+
+					// Link the symlink to its album (if albumPath is set).
+					try {
+						ensureAlbumForPhoto(photo)
+					} catch (e: Exception) {
+						Timber.w(e, "Symlink dedup: ensureAlbumForPhoto failed (non-fatal)")
+					}
+
+					return photo.uuid // signal: import succeeded as a symlink
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "Failed to persist contentHash or dedup check for %s", photo.uuid)
+			}
+			return null
 		}
 
 		/**
@@ -708,25 +743,15 @@ class PhotoRepository
 			// DB row + encrypted files.
 			//
 			// If no symlinks, delete normally (DB row + encrypted files).
-			val isSymlink = photo.canonicalUuid != null
 
-			if (isSymlink) {
-				// Symlink: just delete the DB row + album links. NO file deletion.
+			// Symlink: just delete the DB row + album links. NO file deletion.
+			if (photo.canonicalUuid != null) {
 				Timber.i(
 					"permanentlyDeletePhoto: %s is a symlink (canonical=%s) — deleting DB row only",
 					photo.uuid,
 					photo.canonicalUuid,
 				)
-				try {
-					photoDao.delete(photo)
-				} catch (e: Exception) {
-					Timber.w(e, "permanentlyDeletePhoto: photoDao.delete FAILED for symlink %s", photo.uuid)
-				}
-				try {
-					albumDao.unlink(photo.uuid)
-				} catch (e: Exception) {
-					Timber.w(e, "permanentlyDeletePhoto: albumDao.unlink FAILED (non-fatal) for symlink %s", photo.uuid)
-				}
+				deletePhotoRowAndLinks(photo)
 				return
 			}
 
@@ -740,57 +765,7 @@ class PhotoRepository
 				}
 
 			if (symlinks.isNotEmpty()) {
-				// Promote the oldest symlink to canonical.
-				val promoted = symlinks.first()
-				Timber.i(
-					"permanentlyDeletePhoto: canonical %s has %d symlink(s) — promoting %s to canonical",
-					photo.uuid,
-					symlinks.size,
-					promoted.uuid,
-				)
-
-				try {
-					// Rename the encrypted files from old canonical UUID to promoted UUID.
-					// Use the standalone function (not Photo.internalFileName) because
-					// we're working with raw UUIDs, not Photo objects.
-					val oldOrig =
-						app.getFileStreamPath(
-							onlasdan.gallery.model.database.entity
-								.internalFileName(photo.uuid),
-						)
-					val newOrig =
-						app.getFileStreamPath(
-							onlasdan.gallery.model.database.entity
-								.internalFileName(promoted.uuid),
-						)
-					if (oldOrig.exists()) oldOrig.renameTo(newOrig)
-
-					val oldTn =
-						app.getFileStreamPath(
-							onlasdan.gallery.model.database.entity
-								.internalThumbnailFileName(photo.uuid),
-						)
-					val newTn =
-						app.getFileStreamPath(
-							onlasdan.gallery.model.database.entity
-								.internalThumbnailFileName(promoted.uuid),
-						)
-					if (oldTn.exists()) oldTn.renameTo(newTn)
-
-					// Update the promoted row: clear canonical_uuid (it's now the owner).
-					photoDao.updateCanonicalUuid(promoted.uuid, null)
-
-					// Update all remaining symlinks to point to the promoted UUID.
-					for (s in symlinks.drop(1)) {
-						photoDao.updateCanonicalUuid(s.uuid, promoted.uuid)
-					}
-				} catch (e: Exception) {
-					Timber.e(
-						e,
-						"permanentlyDeletePhoto: symlink promotion FAILED for %s — files may be orphaned",
-						photo.uuid,
-					)
-				}
+				promoteOldestSymlinkAndClearFiles(photo, symlinks)
 			} else {
 				// No symlinks — delete the encrypted files normally.
 				try {
@@ -800,6 +775,79 @@ class PhotoRepository
 				}
 			}
 
+			deletePhotoRowAndLinks(photo)
+		}
+
+		/**
+		 * Promote the oldest symlink of [photo] to canonical: rename [photo]'s
+		 * encrypted file + thumbnail to the promoted symlink's UUID, clear the
+		 * promoted row's `canonical_uuid`, and point all remaining symlinks at
+		 * the promoted UUID. Best-effort — failures are logged as orphan risk.
+		 *
+		 * @since Sprint 10+ / M10 Part 3 — per-album refcounted delete
+		 */
+		private suspend fun promoteOldestSymlinkAndClearFiles(
+			photo: Photo,
+			symlinks: List<Photo>,
+		) {
+			val promoted = symlinks.first()
+			Timber.i(
+				"permanentlyDeletePhoto: canonical %s has %d symlink(s) — promoting %s to canonical",
+				photo.uuid,
+				symlinks.size,
+				promoted.uuid,
+			)
+
+			try {
+				// Rename the encrypted files from old canonical UUID to promoted UUID.
+				// Use the standalone function (not Photo.internalFileName) because
+				// we're working with raw UUIDs, not Photo objects.
+				val oldOrig =
+					app.getFileStreamPath(
+						onlasdan.gallery.model.database.entity
+							.internalFileName(photo.uuid),
+					)
+				val newOrig =
+					app.getFileStreamPath(
+						onlasdan.gallery.model.database.entity
+							.internalFileName(promoted.uuid),
+					)
+				if (oldOrig.exists()) oldOrig.renameTo(newOrig)
+
+				val oldTn =
+					app.getFileStreamPath(
+						onlasdan.gallery.model.database.entity
+							.internalThumbnailFileName(photo.uuid),
+					)
+				val newTn =
+					app.getFileStreamPath(
+						onlasdan.gallery.model.database.entity
+							.internalThumbnailFileName(promoted.uuid),
+					)
+				if (oldTn.exists()) oldTn.renameTo(newTn)
+
+				// Update the promoted row: clear canonical_uuid (it's now the owner).
+				photoDao.updateCanonicalUuid(promoted.uuid, null)
+
+				// Update all remaining symlinks to point to the promoted UUID.
+				for (s in symlinks.drop(1)) {
+					photoDao.updateCanonicalUuid(s.uuid, promoted.uuid)
+				}
+			} catch (e: Exception) {
+				Timber.e(
+					e,
+					"permanentlyDeletePhoto: symlink promotion FAILED for %s — files may be orphaned",
+					photo.uuid,
+				)
+			}
+		}
+
+		/**
+		 * Delete the DB row + album cross-ref links for [photo] (best-effort).
+		 *
+		 * @since Sprint 10+ / M10 Part 3 — per-album refcounted delete
+		 */
+		private suspend fun deletePhotoRowAndLinks(photo: Photo) {
 			try {
 				photoDao.delete(photo)
 			} catch (e: Exception) {
@@ -1252,38 +1300,7 @@ class PhotoRepository
 					zipIn = java.util.zip.ZipInputStream(java.io.BufferedInputStream(inStream))
 
 					// First pass: find manifest.json and parse it.
-					var manifest: ZipManifest? = null
-					val entryBytesByUuid = mutableMapOf<String, ByteArray>()
-					var entry = zipIn.nextEntry
-					while (entry != null) {
-						if (entry.name == ZIP_MANIFEST_ENTRY_NAME) {
-							val bytes = zipIn.readBytes()
-							manifest =
-								try {
-									gson.fromJson(
-										String(bytes, Charsets.UTF_8),
-										ZipManifest::class.java,
-									)
-								} catch (e: Exception) {
-									Timber.w(e, "importFromZip: manifest.json parse FAILED")
-									null
-								}
-						} else if (!entry.isDirectory) {
-							// Top-level folder name = original uuid
-							val topFolder = entry.name.substringBefore('/', "")
-							if (topFolder.isNotBlank()) {
-								// Defer reading bytes — we'll only read entries that
-								// appear in the manifest. Read everything though, since
-								// the ZIP is small relative to gallery size and we
-								// need to enumerate entries sequentially anyway.
-								val bytes = zipIn.readBytes()
-								entryBytesByUuid[topFolder] = bytes
-							}
-						}
-						zipIn.closeEntry()
-						entry = zipIn.nextEntry
-					}
-
+					val (manifest, entryBytesByUuid) = readZipManifestAndEntries(zipIn)
 					val manifestResolved =
 						manifest ?: run {
 							Timber.w("importFromZip: no manifest.json in ZIP — aborting")
@@ -1292,91 +1309,8 @@ class PhotoRepository
 
 					for (meta in manifestResolved.photos) {
 						val bytes = entryBytesByUuid[meta.uuid] ?: continue
-						// Skip duplicates: same fileName + same content_hash.
-						if (!meta.contentHash.isNullOrBlank()) {
-							val existing =
-								try {
-									photoDao.findByContentHash(
-										meta.contentHash,
-										excludeUuid = meta.uuid,
-										vaultId = currentVaultId(),
-									)
-								} catch (e: Exception) {
-									null
-								}
-							if (existing != null) {
-								Timber.i(
-									"importFromZip: skip duplicate %s (hash=%s)",
-									meta.fileName,
-									meta.contentHash,
-								)
-								continue
-							}
-						}
-
-						val newUuid = UUID.randomUUID().toString()
-						val type =
-							runCatching { PhotoType.valueOf(meta.type).takeIf { it != PhotoType.UNDEFINED } }
-								.getOrNull() ?: PhotoType.JPEG
-
-						// Sprint 6 / M4 — extract EXIF from the in-memory bytes
-						// (ZIP import doesn't have a URI to stream from).
-						val exif =
-							if (!type.isVideo && !type.isFile) {
-								onlasdan.gallery.model.io
-									.extractExifMetadata(bytes)
-							} else {
-								onlasdan.gallery.model.io
-									.ExifMetadata()
-							}
-
-						val photo =
-							Photo(
-								fileName = meta.fileName,
-								importedAt = System.currentTimeMillis(),
-								lastModified = null,
-								type = type,
-								size = bytes.size.toLong(),
-								uuid = newUuid,
-								relativePath = meta.albumPath ?: meta.fileName,
-								albumPath = meta.albumPath,
-								contentHash = meta.contentHash,
-								// Sprint 2 / M7 — tag with current vault_id
-								vaultId = runCatching { currentVaultId() }.getOrNull(),
-								// Sprint 6 / M4 — EXIF from in-memory bytes
-								exifDateTaken = exif.dateTaken,
-								exifGpsLat = exif.gpsLat,
-								exifGpsLon = exif.gpsLon,
-								exifCamera = exif.camera,
-							)
-
-						// Write the plaintext bytes through the encrypt stream.
-						val written =
-							try {
-								val encOut = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
-								if (encOut == null) {
-									Timber.w(
-										"importFromZip: openEncryptedOutput FAILED for %s",
-										newUuid,
-									)
-									false
-								} else {
-									encOut.use { it.write(bytes) }
-									true
-								}
-							} catch (e: Exception) {
-								Timber.w(e, "importFromZip: encrypt+write FAILED for %s", newUuid)
-								false
-							}
-						if (!written) continue
-
-						try {
-							photoDao.insert(photo)
-							imported++
-						} catch (e: Exception) {
-							Timber.w(e, "importFromZip: insert FAILED for %s", newUuid)
-							runCatching { vaultFileStorage.deleteEncryptedFile(photo.internalFileName) }
-						}
+						if (!importSingleZipPhoto(meta, bytes)) continue
+						imported++
 					}
 
 					Timber.i("importFromZip: imported %d photos from %s", imported, sourceUri)
@@ -1388,6 +1322,151 @@ class PhotoRepository
 					runCatching { zipIn?.close() }
 				}
 			}
+
+		/**
+		 * Walk [zipIn] once, returning the parsed [ZipManifest] (if present) and a
+		 * map of top-level-folder-UUID → entry bytes for every non-directory entry.
+		 *
+		 * @since Item 1 — ZIP backup import
+		 */
+		private fun readZipManifestAndEntries(
+			zipIn: java.util.zip.ZipInputStream,
+		): Pair<ZipManifest?, Map<String, ByteArray>> {
+			var manifest: ZipManifest? = null
+			val entryBytesByUuid = mutableMapOf<String, ByteArray>()
+			var entry = zipIn.nextEntry
+			while (entry != null) {
+				if (entry.name == ZIP_MANIFEST_ENTRY_NAME) {
+					val bytes = zipIn.readBytes()
+					manifest =
+						try {
+							gson.fromJson(
+								String(bytes, Charsets.UTF_8),
+								ZipManifest::class.java,
+							)
+						} catch (e: Exception) {
+							Timber.w(e, "importFromZip: manifest.json parse FAILED")
+							null
+						}
+				} else if (!entry.isDirectory) {
+					// Top-level folder name = original uuid
+					val topFolder = entry.name.substringBefore('/', "")
+					if (topFolder.isNotBlank()) {
+						// Defer reading bytes — we'll only read entries that
+						// appear in the manifest. Read everything though, since
+						// the ZIP is small relative to gallery size and we
+						// need to enumerate entries sequentially anyway.
+						val bytes = zipIn.readBytes()
+						entryBytesByUuid[topFolder] = bytes
+					}
+				}
+				zipIn.closeEntry()
+				entry = zipIn.nextEntry
+			}
+			return manifest to entryBytesByUuid
+		}
+
+		/**
+		 * Import a single photo described by [meta] from the in-memory [bytes].
+		 * Returns true if the photo was successfully inserted (or was a duplicate
+		 * that should NOT count), false if it should be skipped without counting.
+		 *
+		 * Skip-duplicates rule: a [ZipManifestEntry] with the same fileName +
+		 * content_hash as an existing Photo is skipped.
+		 *
+		 * @since Item 1 — ZIP backup import
+		 */
+		private suspend fun importSingleZipPhoto(
+			meta: ZipManifestEntry,
+			bytes: ByteArray,
+		): Boolean {
+			// Skip duplicates: same fileName + same content_hash.
+			if (!meta.contentHash.isNullOrBlank()) {
+				val existing =
+					try {
+						photoDao.findByContentHash(
+							meta.contentHash,
+							excludeUuid = meta.uuid,
+							vaultId = currentVaultId(),
+						)
+					} catch (e: Exception) {
+						null
+					}
+				if (existing != null) {
+					Timber.i(
+						"importFromZip: skip duplicate %s (hash=%s)",
+						meta.fileName,
+						meta.contentHash,
+					)
+					return false
+				}
+			}
+
+			val newUuid = UUID.randomUUID().toString()
+			val type =
+				runCatching { PhotoType.valueOf(meta.type).takeIf { it != PhotoType.UNDEFINED } }
+					.getOrNull() ?: PhotoType.JPEG
+
+			// Sprint 6 / M4 — extract EXIF from the in-memory bytes
+			// (ZIP import doesn't have a URI to stream from).
+			val exif =
+				if (!type.isVideo && !type.isFile) {
+					onlasdan.gallery.model.io
+						.extractExifMetadata(bytes)
+				} else {
+					onlasdan.gallery.model.io
+						.ExifMetadata()
+				}
+
+			val photo =
+				Photo(
+					fileName = meta.fileName,
+					importedAt = System.currentTimeMillis(),
+					lastModified = null,
+					type = type,
+					size = bytes.size.toLong(),
+					uuid = newUuid,
+					relativePath = meta.albumPath ?: meta.fileName,
+					albumPath = meta.albumPath,
+					contentHash = meta.contentHash,
+					// Sprint 2 / M7 — tag with current vault_id
+					vaultId = runCatching { currentVaultId() }.getOrNull(),
+					// Sprint 6 / M4 — EXIF from in-memory bytes
+					exifDateTaken = exif.dateTaken,
+					exifGpsLat = exif.gpsLat,
+					exifGpsLon = exif.gpsLon,
+					exifCamera = exif.camera,
+				)
+
+			// Write the plaintext bytes through the encrypt stream.
+			val written =
+				try {
+					val encOut = vaultFileStorage.openEncryptedOutput(photo.internalFileName)
+					if (encOut == null) {
+						Timber.w(
+							"importFromZip: openEncryptedOutput FAILED for %s",
+							newUuid,
+						)
+						false
+					} else {
+						encOut.use { it.write(bytes) }
+						true
+					}
+				} catch (e: Exception) {
+					Timber.w(e, "importFromZip: encrypt+write FAILED for %s", newUuid)
+					false
+				}
+			if (!written) return false
+
+			try {
+				photoDao.insert(photo)
+			} catch (e: Exception) {
+				Timber.w(e, "importFromZip: insert FAILED for %s", newUuid)
+				runCatching { vaultFileStorage.deleteEncryptedFile(photo.internalFileName) }
+				return false
+			}
+			return true
+		}
 
 		// endregion
 
