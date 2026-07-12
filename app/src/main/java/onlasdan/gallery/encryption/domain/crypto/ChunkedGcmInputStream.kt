@@ -38,150 +38,151 @@ import javax.crypto.spec.GCMParameterSpec
  * @since v15 — TODO #2 chunked streaming encryption
  */
 class ChunkedGcmInputStream(
-	private val input: InputStream,
-	private val vmk: SecretKey,
+        private val input: InputStream,
+        private val vmk: SecretKey,
 ) : InputStream() {
-	private var chunkSize: Int = CHUNK_SIZE
-	private var totalPlaintextSize: Long = -1L // -1 = unknown (read until EOF)
-	private var bytesRead: Long = 0L
-	private var currentChunk: ByteArray? = null
-	private var currentChunkPos: Int = 0
-	private var eof: Boolean = false
+        private var chunkSize: Int = CHUNK_SIZE
+        private var totalPlaintextSize: Long = -1L // -1 = unknown (read until EOF)
+        private var bytesRead: Long = 0L
+        private var currentChunk: ByteArray? = null
+        private var currentChunkPos: Int = 0
+        private var eof: Boolean = false
 
-	init {
-		readHeader()
-	}
+        init {
+                readHeader()
+        }
 
-	private fun readHeader() {
-		// NOTE: The version byte (0x04) has ALREADY been consumed by
-		// HybridCryptoEngine.createDecryptStream() before constructing this
-		// stream. We must NOT read it again — the input stream is now
-		// positioned at the chunk_size field.
-		//
-		// Chunk size (4 bytes, big-endian)
-		val csBytes = ByteArray(4)
-		if (input.read(csBytes) != 4) throw IOException("ChunkedGcmInputStream: truncated header (chunk_size)")
-		chunkSize = ByteBuffer.wrap(csBytes).int
-		if (chunkSize <= 0 || chunkSize > 100 * CHUNK_SIZE) {
-			throw IOException("ChunkedGcmInputStream: invalid chunk_size=$chunkSize")
-		}
-		// Total plaintext size (8 bytes, big-endian)
-		val tsBytes = ByteArray(8)
-		if (input.read(tsBytes) != 8) throw IOException("ChunkedGcmInputStream: truncated header (total_size)")
-		totalPlaintextSize = ByteBuffer.wrap(tsBytes).long
-		Timber.d("ChunkedGcmInputStream: chunkSize=%d totalPlaintextSize=%d", chunkSize, totalPlaintextSize)
-	}
+        private fun readHeader() {
+                // NOTE: The version byte (0x04) has ALREADY been consumed by
+                // HybridCryptoEngine.createDecryptStream() before constructing this
+                // stream. We must NOT read it again — the input stream is now
+                // positioned at the chunk_size field.
+                //
+                // Chunk size (4 bytes, big-endian)
+                val csBytes = ByteArray(4)
+                if (input.read(csBytes) != 4) throw IOException("ChunkedGcmInputStream: truncated header (chunk_size)")
+                chunkSize = ByteBuffer.wrap(csBytes).int
+                if (chunkSize <= 0 || chunkSize > 100 * CHUNK_SIZE) {
+                        throw IOException("ChunkedGcmInputStream: invalid chunk_size=$chunkSize")
+                }
+                // Total plaintext size (8 bytes, big-endian)
+                val tsBytes = ByteArray(8)
+                if (input.read(tsBytes) != 8) throw IOException("ChunkedGcmInputStream: truncated header (total_size)")
+                totalPlaintextSize = ByteBuffer.wrap(tsBytes).long
+                Timber.d("ChunkedGcmInputStream: chunkSize=%d totalPlaintextSize=%d", chunkSize, totalPlaintextSize)
+        }
 
-	override fun read(): Int {
-		val b = ByteArray(1)
-		val n = read(b, 0, 1)
-		return if (n <= 0) -1 else b[0].toInt() and 0xFF
-	}
+        override fun read(): Int {
+                val b = ByteArray(1)
+                val n = read(b, 0, 1)
+                return if (n <= 0) -1 else b[0].toInt() and 0xFF
+        }
 
-	override fun read(
-		b: ByteArray,
-		off: Int,
-		len: Int,
-	): Int {
-		if (len == 0) return 0
-		if (eof) return -1
+        override fun read(
+                b: ByteArray,
+                off: Int,
+                len: Int,
+        ): Int {
+                if (len == 0) return 0
+                if (eof) return -1
 
-		// Check if we've read all expected plaintext
-		if (totalPlaintextSize > 0 && bytesRead >= totalPlaintextSize) {
-			eof = true
-			return -1
-		}
+                // Check if we've read all expected plaintext
+                if (totalPlaintextSize > 0 && bytesRead >= totalPlaintextSize) {
+                        eof = true
+                        return -1
+                }
 
-		// Ensure we have decrypted data available
-		if (currentChunk == null || currentChunkPos >= currentChunk!!.size) {
-			if (!loadNextChunk()) {
-				eof = true
-				return -1
-			}
-		}
+                // Ensure we have decrypted data available
+                if (currentChunk == null || currentChunkPos >= currentChunk!!.size) {
+                        if (!loadNextChunk()) {
+                                eof = true
+                                return -1
+                        }
+                }
 
-		val chunk = currentChunk!!
-		val available = chunk.size - currentChunkPos
-		val toRead = minOf(len, available)
-		System.arraycopy(chunk, currentChunkPos, b, off, toRead)
-		currentChunkPos += toRead
-		bytesRead += toRead
-		return toRead
-	}
+                val chunk = currentChunk!!
+                val available = chunk.size - currentChunkPos
+                val toRead = minOf(len, available)
+                System.arraycopy(chunk, currentChunkPos, b, off, toRead)
+                currentChunkPos += toRead
+                bytesRead += toRead
+                return toRead
+        }
 
-	private fun loadNextChunk(): Boolean {
-		return try {
-			// Read nonce (12 bytes)
-			val nonce = ByteArray(GCM_IV_SIZE)
-			val nonceRead = input.read(nonce)
-			if (nonceRead < GCM_IV_SIZE) {
-				// F-003 fix: distinguish genuine EOF (nonceRead == -1 or 0 at chunk boundary)
-				// from truncated chunk (nonceRead > 0 but < GCM_IV_SIZE).
-				if (nonceRead <= 0) {
-					return false // Genuine EOF — clean end of stream at chunk boundary
-				}
-				throw IOException("ChunkedGcmInputStream: truncated nonce (read=$nonceRead, expected=$GCM_IV_SIZE)")
-			}
+        @Suppress("ThrowsCount") // F-003 fix: must distinguish AEAD tag failure, truncated chunk, and other corruption
+        private fun loadNextChunk(): Boolean {
+                return try {
+                        // Read nonce (12 bytes)
+                        val nonce = ByteArray(GCM_IV_SIZE)
+                        val nonceRead = input.read(nonce)
+                        if (nonceRead < GCM_IV_SIZE) {
+                                // F-003 fix: distinguish genuine EOF (nonceRead == -1 or 0 at chunk boundary)
+                                // from truncated chunk (nonceRead > 0 but < GCM_IV_SIZE).
+                                if (nonceRead <= 0) {
+                                        return false // Genuine EOF — clean end of stream at chunk boundary
+                                }
+                                throw IOException("ChunkedGcmInputStream: truncated nonce (read=$nonceRead, expected=$GCM_IV_SIZE)")
+                        }
 
-			// Read ciphertext + tag. We don't know the exact size of this chunk
-			// (last chunk may be smaller). Read available bytes.
-			// For non-last chunks: ciphertext = chunkSize bytes, tag = 16 bytes.
-			// For last chunk: ciphertext = (totalPlaintextSize % chunkSize) bytes,
-			//   but if totalPlaintextSize = 0 (unknown), we read until EOF.
+                        // Read ciphertext + tag. We don't know the exact size of this chunk
+                        // (last chunk may be smaller). Read available bytes.
+                        // For non-last chunks: ciphertext = chunkSize bytes, tag = 16 bytes.
+                        // For last chunk: ciphertext = (totalPlaintextSize % chunkSize) bytes,
+                        //   but if totalPlaintextSize = 0 (unknown), we read until EOF.
 
-			val expectedCipherLen =
-				if (totalPlaintextSize > 0) {
-					val remaining = totalPlaintextSize - bytesRead
-					minOf(remaining, chunkSize.toLong()).toInt()
-				} else {
-					chunkSize // Assume full chunk (may be wrong for last chunk)
-				}
+                        val expectedCipherLen =
+                                if (totalPlaintextSize > 0) {
+                                        val remaining = totalPlaintextSize - bytesRead
+                                        minOf(remaining, chunkSize.toLong()).toInt()
+                                } else {
+                                        chunkSize // Assume full chunk (may be wrong for last chunk)
+                                }
 
-			val cipherBuf = ByteArray(expectedCipherLen + GCM_TAG_SIZE)
-			var totalRead = 0
-			while (totalRead < cipherBuf.size) {
-				val n = input.read(cipherBuf, totalRead, cipherBuf.size - totalRead)
-				if (n < 0) break
-				totalRead += n
-			}
-			if (totalRead == 0) return false
+                        val cipherBuf = ByteArray(expectedCipherLen + GCM_TAG_SIZE)
+                        var totalRead = 0
+                        while (totalRead < cipherBuf.size) {
+                                val n = input.read(cipherBuf, totalRead, cipherBuf.size - totalRead)
+                                if (n < 0) break
+                                totalRead += n
+                        }
+                        if (totalRead == 0) return false
 
-			// If we read less than expected, trim the buffer
-			val actualCipher =
-				if (totalRead < cipherBuf.size) {
-					cipherBuf.copyOf(totalRead)
-				} else {
-					cipherBuf
-				}
+                        // If we read less than expected, trim the buffer
+                        val actualCipher =
+                                if (totalRead < cipherBuf.size) {
+                                        cipherBuf.copyOf(totalRead)
+                                } else {
+                                        cipherBuf
+                                }
 
-			// Decrypt
-			val cipher =
-				Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
-					init(Cipher.DECRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
-				}
-			val plaintext = cipher.doFinal(actualCipher)
+                        // Decrypt
+                        val cipher =
+                                Cipher.getInstance(Algorithm.AesGcmNoPadding.value).apply {
+                                        init(Cipher.DECRYPT_MODE, vmk, GCMParameterSpec(GCM_TAG_SIZE * 8, nonce))
+                                }
+                        val plaintext = cipher.doFinal(actualCipher)
 
-			currentChunk = plaintext
-			currentChunkPos = 0
-			true
-		} catch (e: javax.crypto.AEADBadTagException) {
-			// F-ENC-011: Do NOT silently swallow GCM auth tag failures.
-			// Throw IOException so the caller knows the file is corrupted/tampered.
-			throw java.io.IOException(
-				"ChunkedGcmInputStream: GCM auth tag verification failed at chunk (bytesRead=$bytesRead) — file corrupted or tampered",
-				e,
-			)
-		} catch (e: java.io.IOException) {
-			// F-003 fix: rethrow IOException (truncated chunk, etc.) — do NOT convert to false (silent EOF)
-			throw e
-		} catch (e: Exception) {
-			// F-003 fix: log and rethrow — do not swallow as silent EOF
-			Timber.e(e, "ChunkedGcmInputStream: loadNextChunk failed")
-			throw java.io.IOException("ChunkedGcmInputStream: loadNextChunk failed at bytesRead=$bytesRead", e)
-		}
-	}
+                        currentChunk = plaintext
+                        currentChunkPos = 0
+                        true
+                } catch (e: javax.crypto.AEADBadTagException) {
+                        // F-ENC-011: Do NOT silently swallow GCM auth tag failures.
+                        // Throw IOException so the caller knows the file is corrupted/tampered.
+                        throw java.io.IOException(
+                                "ChunkedGcmInputStream: GCM auth tag verification failed at chunk (bytesRead=$bytesRead) — file corrupted or tampered",
+                                e,
+                        )
+                } catch (e: java.io.IOException) {
+                        // F-003 fix: rethrow IOException (truncated chunk, etc.) — do NOT convert to false (silent EOF)
+                        throw e
+                } catch (e: Exception) {
+                        // F-003 fix: log and rethrow — do not swallow as silent EOF
+                        Timber.e(e, "ChunkedGcmInputStream: loadNextChunk failed")
+                        throw java.io.IOException("ChunkedGcmInputStream: loadNextChunk failed at bytesRead=$bytesRead", e)
+                }
+        }
 
-	override fun close() {
-		input.close()
-	}
+        override fun close() {
+                input.close()
+        }
 }
