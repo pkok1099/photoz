@@ -22,6 +22,8 @@ import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
+private const val CRASH_LOG_FILE = "crash_log.txt"
+
 /**
  * Persistent crash logger writing full stack traces (including the entire `Caused by` chain)
  * to `<filesDir>/crash_log.txt` in app-private storage. Readable via:
@@ -45,7 +47,7 @@ object CrashLogger {
 		context: String = "",
 	) {
 		runCatching {
-			val file = File(filesDir, "crash_log.txt")
+			val file = File(filesDir, CRASH_LOG_FILE)
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 
@@ -131,7 +133,7 @@ object CrashLogger {
 	fun read(): String =
 		runCatching {
 			if (!::filesDir.isInitialized) return "(CrashLogger not initialized)"
-			val file = File(filesDir, "crash_log.txt")
+			val file = File(filesDir, CRASH_LOG_FILE)
 			if (!file.exists()) return "(no crash log yet)"
 			file.readText()
 		}.getOrDefault("(failed to read crash log)")
@@ -139,7 +141,7 @@ object CrashLogger {
 	fun clear() =
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			File(filesDir, "crash_log.txt").delete()
+			File(filesDir, CRASH_LOG_FILE).delete()
 			Timber.i("CrashLogger: log cleared")
 		}.onFailure { }
 }

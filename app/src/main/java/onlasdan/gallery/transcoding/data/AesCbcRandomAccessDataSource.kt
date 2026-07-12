@@ -261,7 +261,9 @@ class AesCbcRandomAccessDataSource(
 		length: Int,
 	): Int = if (length == 0) 0 else inputStream?.read(target, offset, length) ?: 0
 
-	override fun addTransferListener(transferListener: TransferListener) {}
+	override fun addTransferListener(transferListener: TransferListener) {
+		// No-op: this data source does not emit transfer progress events.
+	}
 
 	override fun getUri(): Uri = uri
 

@@ -22,6 +22,7 @@ import java.io.IOException
 import java.lang.reflect.Method
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -29,6 +30,8 @@ import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val RC_OP_COPYFILE = "operations/copyfile"
 
 /**
  * Sprint 8+ — RcloneController using gomobile JNI (replaces ProcessBuilder subprocess).
@@ -250,7 +253,7 @@ class RcloneController
 						"""
 						{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc(RC_OP_COPYFILE, input)
 					Timber.d("uploadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -286,7 +289,7 @@ class RcloneController
 					val (remote, path) = parseRemotePath(remotePath)
 					val (dstFs, dstFile) = splitRemotePath(remote, path)
 					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc(RC_OP_COPYFILE, startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
 					}
@@ -351,7 +354,7 @@ class RcloneController
 						"""
 						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc(RC_OP_COPYFILE, input)
 					Timber.d("downloadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -384,7 +387,7 @@ class RcloneController
 					val (srcFs, srcFile) = splitRemotePath(remote, path)
 					val (dstFs, dstRemote) = splitLocalPath(localPath)
 					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc(RC_OP_COPYFILE, startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async start error: $startResult"))
 					}

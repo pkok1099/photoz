@@ -266,7 +266,7 @@ class RepoManager
 				val remote = config.syncChosenRemote
 				if (remote.isNullOrBlank()) {
 					android.util.Log.e("RcloneDiag", "detectRepo: ABORT — no remote chosen")
-					return@withContext RepoState.ERROR("No remote chosen")
+					return@withContext RepoState.ERROR(ERR_NO_REMOTE_CHOSEN)
 				}
 
 				val repoRoot = "$remote:$REPO_DIR"
@@ -275,7 +275,7 @@ class RepoManager
 					android.util.Log.e("RcloneDiag", "detectRepo: calling listRemote($repoRoot)")
 					val result = rcloneController.listRemote("$remote:", REPO_DIR)
 					if (result.isFailure) {
-						val err = result.exceptionOrNull()?.message ?: "unknown error"
+						val err = result.exceptionOrNull()?.message ?: ERR_UNKNOWN
 						android.util.Log.e(
 							"RcloneDiag",
 							"detectRepo: listRemote FAILED class=${result.exceptionOrNull()?.javaClass?.name} msg=$err",
@@ -289,7 +289,7 @@ class RepoManager
 						val isDirNotFound =
 							err.contains("directory not found", ignoreCase = true) ||
 								err.contains("error in ListJSON", ignoreCase = true) ||
-								err.contains("not found", ignoreCase = true)
+								err.contains(ERR_NOT_FOUND, ignoreCase = true)
 						if (isDirNotFound) {
 							android.util.Log.e("RcloneDiag", "detectRepo: classifying as NOT_INITIALIZED (dir not found)")
 							return@withContext RepoState.NOT_INITIALIZED
@@ -365,14 +365,14 @@ class RepoManager
 				try {
 					val result = rcloneController.listRemote("$remoteName:", REPO_DIR)
 					if (result.isFailure) {
-						val err = result.exceptionOrNull()?.message ?: "unknown error"
+						val err = result.exceptionOrNull()?.message ?: ERR_UNKNOWN
 						// Mirror detectRepo()'s dir-not-found classification — a missing
 						// repo dir is NOT an error here, it just means "no repo".
 						val isDirNotFound =
 							err.contains("directory not found", ignoreCase = true) ||
 								err.contains("error in ListJSON", ignoreCase = true) ||
 								(
-									err.contains("not found", ignoreCase = true) &&
+									err.contains(ERR_NOT_FOUND, ignoreCase = true) &&
 										!err.contains("binary", ignoreCase = true) &&
 										!err.contains("rclone", ignoreCase = true)
 								)
@@ -403,7 +403,7 @@ class RepoManager
 				runCatching {
 					val remote =
 						config.syncChosenRemote
-							?: throw IllegalStateException("No remote chosen")
+							?: throw IllegalStateException(ERR_NO_REMOTE_CHOSEN)
 
 					val marker =
 						RepoMarker(
@@ -539,7 +539,7 @@ class RepoManager
 						// F-SYNC-004: A download ERROR is NOT "no escrow on remote". Treating it as
 						// EscrowType.NONE routes user to SetupFragment -> new VMK -> data loss.
 						// Surface as login FAILURE so user can retry on stable network.
-						val err = escrowResult.exceptionOrNull()?.message ?: "unknown error"
+						val err = escrowResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 						diag("loginRepo: Layer 1 escrow download FAILED (blocking): $err", escrowResult.exceptionOrNull())
 						downloadedWrappedPhrase = null
 						return@runCatching LoginResult.Failure(
@@ -655,7 +655,7 @@ class RepoManager
 
 				val listResult = rcloneController.listRemote("$remote:", thumbnailsDir)
 				if (listResult.isFailure) {
-					val err = listResult.exceptionOrNull()?.message ?: "unknown error"
+					val err = listResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 					diag(
 						"restoreThumbnailsAfterLogin: listRemote FAILED: $err — treating as 0 thumbnails",
 						listResult.exceptionOrNull(),
@@ -1274,7 +1274,7 @@ class RepoManager
 				runCatching {
 					val remote =
 						config.syncChosenRemote
-							?: throw IllegalStateException("No remote chosen")
+							?: throw IllegalStateException(ERR_NO_REMOTE_CHOSEN)
 
 					diag("uploadRecoveryPhraseEscrow: BEGIN remote=$remote")
 
@@ -1425,7 +1425,7 @@ class RepoManager
 				runCatching {
 					val remote =
 						config.syncChosenRemote
-							?: throw IllegalStateException("No remote chosen")
+							?: throw IllegalStateException(ERR_NO_REMOTE_CHOSEN)
 
 					diag("downloadVaultProtectionEscrow: BEGIN remote=$remote hasVmk=${vmkBytes != null}")
 
@@ -1455,13 +1455,13 @@ class RepoManager
 							// .crypt file existed but failed to decrypt — surface as a real
 							// error (don't silently fall back to legacy .json, since that
 							// might hide a real corruption / wrong-VMK issue).
-							val err = cryptResult.exceptionOrNull()?.message ?: "unknown error"
+							val err = cryptResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 							val isNotFound =
-								err.contains("not found", ignoreCase = true) ||
-									err.contains("doesn't exist", ignoreCase = true) ||
-									err.contains("does not exist", ignoreCase = true) ||
-									err.contains("no such file", ignoreCase = true) ||
-									err.contains("object not found", ignoreCase = true)
+								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
 							if (!isNotFound) {
 								diag(
 									"downloadVaultProtectionEscrow: .crypt exists but decrypt FAILED: $err",
@@ -1498,13 +1498,13 @@ class RepoManager
 						diag("downloadVaultProtectionEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
 						val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
 						if (dlResult.isFailure) {
-							val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
+							val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 							val isNotFound =
-								err.contains("not found", ignoreCase = true) ||
-									err.contains("doesn't exist", ignoreCase = true) ||
-									err.contains("does not exist", ignoreCase = true) ||
-									err.contains("no such file", ignoreCase = true) ||
-									err.contains("object not found", ignoreCase = true)
+								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
 							if (isNotFound) {
 								diag("downloadVaultProtectionEscrow: legacy .json not on remote either — returning null")
 								return@runCatching null
@@ -1679,7 +1679,7 @@ class RepoManager
 				runCatching {
 					val remote =
 						config.syncChosenRemote
-							?: throw IllegalStateException("No remote chosen")
+							?: throw IllegalStateException(ERR_NO_REMOTE_CHOSEN)
 
 					diag("uploadWrappedPhraseEscrow: BEGIN remote=$remote")
 
@@ -1801,7 +1801,7 @@ class RepoManager
 				runCatching {
 					val remote =
 						config.syncChosenRemote
-							?: throw IllegalStateException("No remote chosen")
+							?: throw IllegalStateException(ERR_NO_REMOTE_CHOSEN)
 
 					diag("downloadWrappedPhraseEscrow: BEGIN remote=$remote hasVmk=${vmkBytes != null}")
 
@@ -1814,13 +1814,13 @@ class RepoManager
 								label = "WrappedPhrase",
 							)
 						if (cryptResult.isFailure) {
-							val err = cryptResult.exceptionOrNull()?.message ?: "unknown error"
+							val err = cryptResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 							val isNotFound =
-								err.contains("not found", ignoreCase = true) ||
-									err.contains("doesn't exist", ignoreCase = true) ||
-									err.contains("does not exist", ignoreCase = true) ||
-									err.contains("no such file", ignoreCase = true) ||
-									err.contains("object not found", ignoreCase = true)
+								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
 							if (!isNotFound) {
 								diag(
 									"downloadWrappedPhraseEscrow: .crypt exists but decrypt FAILED: $err",
@@ -1855,13 +1855,13 @@ class RepoManager
 						diag("downloadWrappedPhraseEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
 						val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
 						if (dlResult.isFailure) {
-							val err = dlResult.exceptionOrNull()?.message ?: "unknown error"
+							val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
 							val isNotFound =
-								err.contains("not found", ignoreCase = true) ||
-									err.contains("doesn't exist", ignoreCase = true) ||
-									err.contains("does not exist", ignoreCase = true) ||
-									err.contains("no such file", ignoreCase = true) ||
-									err.contains("object not found", ignoreCase = true)
+								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
 							if (isNotFound) {
 								diag("downloadWrappedPhraseEscrow: legacy .json not on remote either — returning null")
 								return@runCatching null
@@ -2097,6 +2097,15 @@ class RepoManager
 		companion object {
 			const val REPO_DIR = "photoz-backup"
 			const val MARKER_FILENAME = "repo-config.json"
+
+			private const val ERR_NO_REMOTE_CHOSEN = "No remote chosen"
+			private const val ERR_UNKNOWN = "unknown error"
+			private const val ERR_NOT_FOUND = "not found"
+			private const val ERR_DIR_NOT_FOUND = "directory not found"
+			private const val ERR_DOESNT_EXIST = "doesn't exist"
+			private const val ERR_DOES_NOT_EXIST = "does not exist"
+			private const val ERR_NO_SUCH_FILE = "no such file"
+			private const val ERR_OBJECT_NOT_FOUND = "object not found"
 
 			// @since PR4 sync — thumbnail filename suffix, mirrors
 			// internalThumbnailFileName(uuid) = "${uuid}.$PHOTOK_FILE_EXTENSION.tn"

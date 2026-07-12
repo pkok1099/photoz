@@ -116,5 +116,6 @@ abstract class ObservableViewModel(
 	 * Used for setting up the viewModel. Can be overridden.
 	 */
 	open fun setup() {
+		// No-op by default; subclasses override to perform one-time view-model setup.
 	}
 }

@@ -105,6 +105,8 @@ import onlasdan.gallery.telemetry.ui.TelemetryExplanationSheet
 import onlasdan.gallery.ui.LocalFragment
 import onlasdan.gallery.ui.theme.AppTheme
 
+private const val MIME_TYPE_ZIP = "application/zip"
+
 val LocalPreferencesValues: ProvidableCompositionLocal<Map<String, *>> =
 	compositionLocalOf { emptyMap<String, String>() }
 
@@ -117,7 +119,7 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 	val activity = LocalActivity.current
 
 	val backupLauncher =
-		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(MIME_TYPE_ZIP)) { uri ->
 			uri ?: return@rememberLauncherForActivityResult
 			fragment ?: return@rememberLauncherForActivityResult
 			BackupBottomSheetDialogFragment(
@@ -130,7 +132,7 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 	// (SAF CreateDocument — file is created at the chosen location).
 	// @since Item 1 ZIP backup
 	val exportZipLauncher =
-		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+		rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(MIME_TYPE_ZIP)) { uri ->
 			uri ?: return@rememberLauncherForActivityResult
 			viewModel.exportVaultToZip(uri)
 		}
@@ -292,7 +294,7 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 		// and creating fresh Photo DB rows.
 		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_IMPORT_ZIP) {
 			importZipLauncher.launchAndIgnoreTimer(
-				input = arrayOf("application/zip", "application/octet-stream"),
+				input = arrayOf(MIME_TYPE_ZIP, "application/octet-stream"),
 				activity = activity,
 			)
 			false

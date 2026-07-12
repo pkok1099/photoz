@@ -34,5 +34,7 @@ abstract class DaggerBroadcastReceiver : BroadcastReceiver() {
 	override fun onReceive(
 		context: Context?,
 		intent: Intent?,
-	) {}
+	) {
+		// Subclasses implement onReceive(context, intent) via Dagger injection.
+	}
 }

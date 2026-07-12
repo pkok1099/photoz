@@ -227,7 +227,9 @@ class ChunkedGcmRandomAccessDataSource(
 		return toRead
 	}
 
-	override fun addTransferListener(transferListener: TransferListener) {}
+	override fun addTransferListener(transferListener: TransferListener) {
+		// No-op: this data source does not emit transfer progress events.
+	}
 
 	override fun getUri(): Uri = uri
 

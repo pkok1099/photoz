@@ -28,9 +28,13 @@ interface BackupStrategy {
 		Legacy(R.string.backup_processing_title),
 	}
 
-	suspend fun preBackup() {}
+	suspend fun preBackup() {
+		// No-op by default; subclasses override to perform work before/after backup.
+	}
 
-	suspend fun postBackup() {}
+	suspend fun postBackup() {
+		// No-op by default; subclasses override to perform work before/after backup.
+	}
 
 	suspend fun writePhotoToBackup(
 		photo: Photo,

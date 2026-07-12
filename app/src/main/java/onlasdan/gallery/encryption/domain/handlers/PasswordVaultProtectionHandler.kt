@@ -286,5 +286,7 @@ class PasswordVaultProtectionHandler
 			)
 		}
 
-		override suspend fun reset() {}
+		override suspend fun reset() {
+			// No state to reset; password-based protection has no persisted key material.
+		}
 	}

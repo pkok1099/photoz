@@ -36,6 +36,8 @@ import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val PREF_CHOSEN_REMOTE = "sync^chosenRemote"
+
 /**
  * Manages the encrypted dedup registry on the rclone remote.
  *
@@ -301,7 +303,7 @@ class HashRegistry
 								Config.FILE_NAME,
 								android.content.Context.MODE_PRIVATE,
 							)
-						config.getString("sync^chosenRemote", null)
+						config.getString(PREF_CHOSEN_REMOTE, null)
 					} catch (e: Exception) {
 						null
 					} ?: run {
@@ -400,7 +402,7 @@ class HashRegistry
 								Config.FILE_NAME,
 								android.content.Context.MODE_PRIVATE,
 							)
-						config.getString("sync^chosenRemote", null)
+						config.getString(PREF_CHOSEN_REMOTE, null)
 					} catch (e: Exception) {
 						null
 					} ?: run {
@@ -600,7 +602,7 @@ class HashRegistry
 								Config.FILE_NAME,
 								android.content.Context.MODE_PRIVATE,
 							)
-						config.getString("sync^chosenRemote", null)
+						config.getString(PREF_CHOSEN_REMOTE, null)
 					} catch (e: Exception) {
 						null
 					} ?: run {
@@ -866,7 +868,7 @@ class HashRegistry
 								Config.FILE_NAME,
 								android.content.Context.MODE_PRIVATE,
 							)
-						config.getString("sync^chosenRemote", null)
+						config.getString(PREF_CHOSEN_REMOTE, null)
 					} catch (e: Exception) {
 						null
 					} ?: run {
@@ -1133,7 +1135,7 @@ class HashRegistry
 								Config.FILE_NAME,
 								android.content.Context.MODE_PRIVATE,
 							)
-						config.getString("sync^chosenRemote", null)
+						config.getString(PREF_CHOSEN_REMOTE, null)
 					} catch (e: Exception) {
 						null
 					} ?: run {
