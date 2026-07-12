@@ -43,17 +43,17 @@ import java.io.IOException
  */
 @UnstableApi
 class VersionDispatchDataSourceFactory(
-	private val sessionRepository: SessionRepository,
-	private val availableBytesProvider: (Uri) -> Long = { -1L },
-	private val downloadCompleteProvider: (Uri) -> Boolean = { true },
+        private val sessionRepository: SessionRepository,
+        private val availableBytesProvider: (Uri) -> Long = { -1L },
+        private val downloadCompleteProvider: (Uri) -> Boolean = { true },
 ) : DataSource.Factory {
-	override fun createDataSource(): DataSource {
-		return VersionDispatchDataSource(
-			sessionRepository = sessionRepository,
-			availableBytesProvider = availableBytesProvider,
-			downloadCompleteProvider = downloadCompleteProvider,
-		)
-	}
+        override fun createDataSource(): DataSource {
+                return VersionDispatchDataSource(
+                        sessionRepository = sessionRepository,
+                        availableBytesProvider = availableBytesProvider,
+                        downloadCompleteProvider = downloadCompleteProvider,
+                )
+        }
 }
 
 /**
@@ -65,99 +65,99 @@ class VersionDispatchDataSourceFactory(
  */
 @UnstableApi
 class VersionDispatchDataSource(
-	private val sessionRepository: SessionRepository,
-	private val availableBytesProvider: (Uri) -> Long = { -1L },
-	private val downloadCompleteProvider: (Uri) -> Boolean = { true },
+        private val sessionRepository: SessionRepository,
+        private val availableBytesProvider: (Uri) -> Long = { -1L },
+        private val downloadCompleteProvider: (Uri) -> Boolean = { true },
 ) : DataSource {
-	private var delegate: DataSource? = null
+        private var delegate: DataSource? = null
 
-	override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-		val uri = dataSpec.uri
-		val path = uri.path ?: return 0
-		val file = File(path).canonicalFile
+        override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
+                val uri = dataSpec.uri
+                val path = uri.path ?: return 0
+                val file = File(path).canonicalFile
 
-		// Wait for at least 1 byte (version byte) to be available.
-		// For progressive download, this blocks until the first byte arrives.
-		val available = availableBytesProvider(uri)
-		if (available in 0..0) {
-			// 0 bytes available but file might exist locally
-		}
+                // Wait for at least 1 byte (version byte) to be available.
+                // For progressive download, this blocks until the first byte arrives.
+                val available = availableBytesProvider(uri)
+                if (available in 0..0) {
+                        // 0 bytes available but file might exist locally
+                }
 
-		// Read the version byte
-		val versionByte: Byte = try {
-			if (!file.exists()) {
-				// F-UV-013: Wait for file to appear instead of defaulting to 0x02.
-				// Defaulting to CBC breaks progressive streaming of chunked-GCM videos (0x04).
-				val deadline = System.currentTimeMillis() + 10_000L
-				while (!file.exists() && System.currentTimeMillis() < deadline) {
-					try {
-						Thread.sleep(100)
-					} catch (e: InterruptedException) {
-						// F-012 fix (related): wrap InterruptedException as IOException per DataSource contract
-						Thread.currentThread().interrupt()
-						throw IOException("Interrupted while waiting for file to appear: ${file.absolutePath}", e)
-					}
-				}
-				if (!file.exists()) {
-					throw IOException("VersionDispatchDataSource: file not found after 10s: ${file.absolutePath}")
-				}
-				val firstByte = ByteArray(1)
-				file.inputStream().use { it.read(firstByte) }
-				firstByte[0]
-			} else {
-				val firstByte = ByteArray(1)
-				file.inputStream().use { it.read(firstByte) }
-				firstByte[0]
-			}
-		} catch (e: IOException) {
-			// Re-throw IOException (don't default to 0x02 — that masks the real problem)
-			throw e
-		} catch (e: Exception) {
-			// F-012 fix: don't default to 0x02 on unknown errors — that silently dispatches
-			// to CBC path which then throws IllegalStateException (RuntimeException, not IOException).
-			// Throw IOException so ExoPlayer's error handler sees a contract-compliant exception.
-			throw IOException("VersionDispatchDataSource: could not read version byte from ${file.absolutePath}", e)
-		}
+                // Read the version byte
+                val versionByte: Byte = try {
+                        if (!file.exists()) {
+                                // F-UV-013: Wait for file to appear instead of defaulting to 0x02.
+                                // Defaulting to CBC breaks progressive streaming of chunked-GCM videos (0x04).
+                                val deadline = System.currentTimeMillis() + 10_000L
+                                while (!file.exists() && System.currentTimeMillis() < deadline) {
+                                        try {
+                                                Thread.sleep(100)
+                                        } catch (e: InterruptedException) {
+                                                // F-012 fix (related): wrap InterruptedException as IOException per DataSource contract
+                                                Thread.currentThread().interrupt()
+                                                throw IOException("Interrupted while waiting for file to appear: ${file.absolutePath}", e)
+                                        }
+                                }
+                                if (!file.exists()) {
+                                        throw IOException("VersionDispatchDataSource: file not found after 10s: ${file.absolutePath}")
+                                }
+                                val firstByte = ByteArray(1)
+                                file.inputStream().use { it.read(firstByte) }
+                                firstByte[0]
+                        } else {
+                                val firstByte = ByteArray(1)
+                                file.inputStream().use { it.read(firstByte) }
+                                firstByte[0]
+                        }
+                } catch (e: IOException) {
+                        // Re-throw IOException (don't default to 0x02 — that masks the real problem)
+                        throw e
+                } catch (e: Exception) {
+                        // F-012 fix: don't default to 0x02 on unknown errors — that silently dispatches
+                        // to CBC path which then throws IllegalStateException (RuntimeException, not IOException).
+                        // Throw IOException so ExoPlayer's error handler sees a contract-compliant exception.
+                        throw IOException("VersionDispatchDataSource: could not read version byte from ${file.absolutePath}", e)
+                }
 
-		// Dispatch based on version byte
-		delegate = when (versionByte) {
-			// Version 0x04 — chunked GCM (new format, Sprint 1 / TODO #2)
-			0x04.toByte() -> ChunkedGcmRandomAccessDataSource(
-				sessionRepository = sessionRepository,
-				availableBytesProvider = availableBytesProvider,
-				downloadCompleteProvider = downloadCompleteProvider,
-			)
-			// Version 0x01, 0x02 — CBC path (legacy)
-			0x01.toByte(), 0x02.toByte() -> AesCbcRandomAccessDataSource(
-				sessionRepository = sessionRepository,
-				availableBytesProvider = availableBytesProvider,
-				downloadCompleteProvider = downloadCompleteProvider,
-			)
-			// F-012 fix: explicit handling for 0x03 (videos should never be v3)
-			// and unknown bytes (0x05+, future versions). Throw IOException per DataSource contract.
-			0x03.toByte() -> throw IOException(
-				"VersionDispatchDataSource: version 0x03 (single-stream GCM) is not supported for video streaming"
-			)
-			else -> throw IOException(
-				"VersionDispatchDataSource: unknown encryption version byte 0x${versionByte.toInt() and 0xFF} " +
-				"(file: ${file.absolutePath}). Supported: 0x01, 0x02, 0x04."
-			)
-		}
+                // Dispatch based on version byte
+                delegate = when (versionByte) {
+                        // Version 0x04 — chunked GCM (new format, Sprint 1 / TODO #2)
+                        0x04.toByte() -> ChunkedGcmRandomAccessDataSource(
+                                sessionRepository = sessionRepository,
+                                availableBytesProvider = availableBytesProvider,
+                                downloadCompleteProvider = downloadCompleteProvider,
+                        )
+                        // Version 0x01, 0x02 — CBC path (legacy)
+                        0x01.toByte(), 0x02.toByte() -> AesCbcRandomAccessDataSource(
+                                sessionRepository = sessionRepository,
+                                availableBytesProvider = availableBytesProvider,
+                                downloadCompleteProvider = downloadCompleteProvider,
+                        )
+                        // F-012 fix: explicit handling for 0x03 (videos should never be v3)
+                        // and unknown bytes (0x05+, future versions). Throw IOException per DataSource contract.
+                        0x03.toByte() -> throw IOException(
+                                "VersionDispatchDataSource: version 0x03 (single-stream GCM) is not supported for video streaming"
+                        )
+                        else -> throw IOException(
+                                "VersionDispatchDataSource: unknown encryption version byte 0x${versionByte.toInt() and 0xFF} " +
+                                        "(file: ${file.absolutePath}). Supported: 0x01, 0x02, 0x04."
+                        )
+                }
 
-		return delegate!!.open(dataSpec)
-	}
+                return delegate!!.open(dataSpec)
+        }
 
-	override fun read(target: ByteArray, offset: Int, length: Int): Int {
-		return delegate?.read(target, offset, length) ?: 0
-	}
+        override fun read(target: ByteArray, offset: Int, length: Int): Int {
+                return delegate?.read(target, offset, length) ?: 0
+        }
 
-	override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
-		delegate?.addTransferListener(transferListener)
-	}
+        override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
+                delegate?.addTransferListener(transferListener)
+        }
 
-	override fun getUri(): Uri? = delegate?.uri
+        override fun getUri(): Uri? = delegate?.uri
 
-	override fun close() {
-		delegate?.close()
-	}
+        override fun close() {
+                delegate?.close()
+        }
 }
