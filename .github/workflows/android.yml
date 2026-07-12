@@ -54,6 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -84,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -112,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -140,6 +146,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -161,3 +169,15 @@ jobs:
           name: foss-debug-arm64-apk
           path: app/build/outputs/apk/foss/debug/*.apk
           retention-days: 14
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # SonarCloud needs the full history for PR decoration + new-code detection
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
