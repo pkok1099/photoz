@@ -184,4 +184,25 @@ class ChunkedGcmRandomAccessDataSourceTest {
 		assertNotNull("read() must throw IOException on truncated chunk, not return -1 silently", caught)
 		ds.close()
 	}
+
+	@Test
+	fun `F-015 open() honors dataSpec length when bounded`() {
+		// F-015: open() always returns totalPlaintextSize - plainOffset, ignoring
+		// dataSpec.length. ExoPlayer may issue bounded range requests; the return
+		// value should reflect the requested range, not the full remaining size.
+		val plaintext = ByteArray(1000) { it.toByte() }
+		val file = makeVaultFile(plaintext)
+		val repo = makeSessionRepository(VaultSession(vmk))
+		val ds = makeDataSource(file, repo)
+
+		// Request a bounded range: position=200, length=100
+		val dataSpec = androidx.media3.datasource.DataSpec(
+			android.net.Uri.fromFile(file),
+			200L,
+			100L,
+		)
+		val returned = ds.open(dataSpec)
+		assertEquals("open() must honor dataSpec.length when bounded", 100L, returned)
+		ds.close()
+	}
 }

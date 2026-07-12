@@ -150,12 +150,19 @@ class ChunkedGcmRandomAccessDataSource(
 
 		// Return content length (remaining bytes from this position)
 		// F-002 fix: coerce to 0 — never return negative (ExoPlayer contract violation)
+		// F-015 fix: honor dataSpec.length when bounded (ExoPlayer may issue range requests)
 		val totalPlaintextSize = ByteBuffer.wrap(headerBuf, 5, 8).long
 		val plainOffset = dataSpec.position
-		return if (totalPlaintextSize > 0) {
+		val remaining = if (totalPlaintextSize > 0) {
 			(totalPlaintextSize - plainOffset).coerceAtLeast(0L)
 		} else {
 			java.lang.Long.MAX_VALUE // unknown — stream until EOF
+		}
+		return if (dataSpec.length != androidx.media3.common.C.LENGTH_UNBOUNDED.toLong()) {
+			// Bounded request — return the requested length (clamped to remaining)
+			minOf(dataSpec.length, remaining).coerceAtLeast(0L)
+		} else {
+			remaining
 		}
 	}
 
