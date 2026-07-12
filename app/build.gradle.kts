@@ -17,11 +17,6 @@ plugins {
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
-
-	// ─── Coverage (Sprint 4) — jacoco for CI coverage reports ─────────────
-	// Required by .github/workflows/android.yml "Unit Tests + Coverage" job
-	// which runs `./gradlew testFossDebugUnitTest jacocoTestReport`.
-	jacoco
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }

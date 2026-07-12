@@ -202,10 +202,13 @@ class ChunkedGcmStreamTest {
 		// F-001: close() must not swallow exceptions from flushChunk/output.flush
 		val failingStream = object : java.io.OutputStream() {
 			private var closed = false
-			override fun write(b: Int) { /* no-op, buffer in ChunkedGcmOutputStream */ }
+
+			override fun write(b: Int) { /* no-op */ }
+
 			override fun flush() {
 				throw java.io.IOException("simulated flush failure (disk full)")
 			}
+
 			override fun close() { closed = true }
 		}
 		val out = ChunkedGcmOutputStream(failingStream, vmk)

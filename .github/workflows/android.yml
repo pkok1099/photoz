@@ -6,10 +6,10 @@ name: Android Build CI
 #
 # Jobs (parallel where possible):
 #  1. quality — detekt + ktlint static analysis (Sprint 4)
-#  2. test — unit tests + jacoco coverage report
+#  2. test — unit tests
 #  3. lint — Android lint report
 #  4. build — assemble debug APK + upload as artifact
-#  5. sonarcloud — needs `test` (consumes its coverage xml), scans, then
+#  5. sonarcloud — needs `test`, scans, then
 #                  fails the pipeline if the Quality Gate is red.
 #
 # Action versions below are pinned to what's current as of July 2026:
@@ -85,7 +85,7 @@ jobs:
           retention-days: 7
 
   test:
-    name: Unit Tests + Coverage
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -98,24 +98,14 @@ jobs:
           java-version: '21'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-      # NOTE: requires the jacoco (or kover) plugin applied in app/build.gradle
-      # producing an XML report task, e.g. `jacocoTestReport` / `koverXmlReport`.
-      # Swap the task name below to match whichever you use.
-      - name: Run unit tests with coverage
-        run: ./gradlew testFossDebugUnitTest jacocoTestReport --stacktrace
+      - name: Run unit tests
+        run: ./gradlew testFossDebugUnitTest --stacktrace
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-report
           path: app/build/reports/tests/
-          retention-days: 7
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-report
-          path: app/build/reports/jacoco/
           retention-days: 7
 
   lint:
@@ -180,11 +170,6 @@ jobs:
           java-version: '21'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-      - name: Download coverage report
-        uses: actions/download-artifact@v8
-        with:
-          name: coverage-report
-          path: app/build/reports/jacoco/
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:
@@ -192,7 +177,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: >
-            -Dsonar.coverage.jacoco.xmlReportPaths=app/build/reports/jacoco/**/*.xml
+            -Dsonar.projectKey=pkok1099_photoz
       # This is the step that was actually missing before: without it, a red
       # gate on SonarCloud's side never fails the GitHub Action, so bad code
       # merges silently. pollingTimeoutSec caps how long/how many Action

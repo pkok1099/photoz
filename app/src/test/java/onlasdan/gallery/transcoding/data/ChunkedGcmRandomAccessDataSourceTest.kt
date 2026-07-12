@@ -38,8 +38,11 @@ class ChunkedGcmRandomAccessDataSourceTest {
 	private fun makeSessionRepository(session: VaultSession?): SessionRepository =
 		object : SessionRepository {
 			override fun get(): VaultSession? = session
+
 			override fun set(session: VaultSession) { /* no-op for test */ }
+
 			override fun require(): VaultSession = session ?: error("no session")
+
 			override fun reset() { /* no-op */ }
 		}
 
@@ -56,7 +59,7 @@ class ChunkedGcmRandomAccessDataSourceTest {
 	private fun makeDataSource(sessionRepo: SessionRepository): ChunkedGcmRandomAccessDataSource =
 		ChunkedGcmRandomAccessDataSource(
 			sessionRepository = sessionRepo,
-			availableBytesProvider = { _ -> -1L },     // always "fully available"
+			availableBytesProvider = { _ -> -1L },   // always "fully available"
 			downloadCompleteProvider = { _ -> true },
 		)
 
