@@ -1338,6 +1338,27 @@ class RepoManager
 								?: IOException("Escrow upload failed")
 						}
 
+						// F-HOTFIX-005 (CRITICAL): ALSO upload plaintext .json — this is the file
+						// that fresh-install login downloads. Without it, loginRepo returns
+						// EscrowType.NONE → NoEscrowAvailable → new VMK → DATA LOSS.
+						// The .json.crypt is encrypted with VMK which is NOT available on fresh
+						// install (chicken-and-egg). The plaintext .json contains the VMK WRAPPED
+						// with the recovery phrase — still secure (attacker needs phrase to unwrap).
+						val legacyTempFile = File(app.cacheDir, "vault-protection-legacy-${System.currentTimeMillis()}.json")
+						try {
+							legacyTempFile.writeText(json)
+							val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
+							diag("uploadRecoveryPhraseEscrow: uploading plaintext → $legacyRemotePath")
+							val legacyResult = rcloneController.uploadFile(legacyTempFile.absolutePath, legacyRemotePath)
+							if (legacyResult.isFailure) {
+								throw legacyResult.exceptionOrNull()
+									?: IOException("F-HOTFIX-005: plaintext .json upload FAILED — fresh-install recovery will NOT work")
+							}
+							diag("uploadRecoveryPhraseEscrow: plaintext .json uploaded OK")
+						} finally {
+							legacyTempFile.delete()
+						}
+
 						// Independent verification — same pattern as registerRepo() marker.
 						val verifyResult =
 							rcloneController.listRemote(
@@ -1407,6 +1428,20 @@ class RepoManager
 							?: throw IllegalStateException("No remote chosen")
 
 					diag("downloadVaultProtectionEscrow: BEGIN remote=$remote hasVmk=${vmkBytes != null}")
+
+					// F-HOTFIX-005: list the vault-protection directory FIRST so we can see
+					// exactly what files are on the remote. This helps diagnose missing escrow.
+					val listingResult =
+						rcloneController.listRemote(
+							"$remote:",
+							"$REPO_DIR/$VAULT_PROTECTION_DIR",
+						)
+					if (listingResult.isSuccess) {
+						val fileList = listingResult.getOrThrow().map { "${it.name}(${it.size}b)" }
+						diag("downloadVaultProtectionEscrow: remote vault-protection dir contents: $fileList")
+					} else {
+						diag("downloadVaultProtectionEscrow: listRemote failed: ${listingResult.exceptionOrNull()?.message}")
+					}
 
 					// ─── Try the encrypted .json.crypt path first (new repos) ──────
 					if (vmkBytes != null) {
@@ -1688,6 +1723,23 @@ class RepoManager
 								?: IOException("Wrapped-phrase upload failed")
 						}
 
+						// F-HOTFIX-002: ALSO upload plaintext .json for fresh-install recovery.
+						// See uploadRecoveryPhraseEscrow for the full rationale.
+						val legacyTempFile = File(app.cacheDir, "wrapped-phrase-legacy-${System.currentTimeMillis()}.json")
+						try {
+							legacyTempFile.writeText(json)
+							val legacyRemotePath = "$remote:$WRAPPED_PHRASE_LEGACY_REMOTE_PATH"
+							diag("uploadWrappedPhraseEscrow: uploading plaintext fallback → $legacyRemotePath")
+							val legacyUploadResult = rcloneController.uploadFile(legacyTempFile.absolutePath, legacyRemotePath)
+							if (legacyUploadResult.isFailure) {
+								throw legacyUploadResult.exceptionOrNull()
+									?: IOException("F-HOTFIX-005: plaintext .json upload FAILED — fresh-install recovery will NOT work")
+							}
+							diag("uploadWrappedPhraseEscrow: plaintext .json uploaded OK")
+						} finally {
+							legacyTempFile.delete()
+						}
+
 						// Independent verification — same pattern as Layer 1 + registerRepo() marker.
 						val verifyResult =
 							rcloneController.listRemote(
@@ -1945,9 +1997,9 @@ class RepoManager
 				val id = obj.optString("id")
 				val typeStr = obj.optString("type")
 				val wrappedVmkB64 = obj.optString("wrappedVMK")
-				val salt = if (obj.isNull("salt")) null else obj.optString("salt", null)
+				val salt = if (obj.isNull("salt")) null else obj.optString("salt")
 				val iv = obj.optString("iv")
-				val kdfStr = obj.optString("kdf", null)
+				val kdfStr = obj.optString("kdf")
 				val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
 				val algorithmStr = obj.optString("algorithm")
 				val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
@@ -1974,7 +2026,9 @@ class RepoManager
 					diag("parseVaultProtection: unknown algorithm=$algorithmStr")
 					return null
 				}
-				val kdf = kdfStr?.let { s -> Kdf.entries.find { it.value == s } }
+				// F-WARN-010: kdfStr is non-null String (optString returns "" if missing).
+				// Use takeIf to skip lookup when empty, instead of unnecessary ?.let.
+				val kdf = kdfStr.takeIf { it.isNotEmpty() }?.let { s -> Kdf.entries.find { it.value == s } }
 				val wrappedVMK = Base64.getDecoder().decode(wrappedVmkB64)
 
 				VaultProtection(

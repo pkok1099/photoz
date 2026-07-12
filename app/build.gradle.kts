@@ -21,10 +21,12 @@ plugins {
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
 
-val appVersionName: String by project
-val appVersionCode: String by project
+// F-WARN-006: replaced deprecated `by project` (provideDelegate) with explicit
+// project.property() calls. Gradle 9.6 deprecates the property delegate syntax.
+val appVersionName: String = project.property("appVersionName") as String
+val appVersionCode: String = project.property("appVersionCode") as String
 
-val telemetryDeckAppId: String? by project
+val telemetryDeckAppId: String? = project.findProperty("telemetryDeckAppId") as String?
 
 apply(plugin = "androidx.navigation.safeargs.kotlin")
 apply(plugin = "dagger.hilt.android.plugin")
@@ -46,12 +48,10 @@ android {
 			abiFilters += "arm64-v8a"
 		}
 
-		javaCompileOptions {
-			annotationProcessorOptions {
-				arguments += "room.incremental" to "true"
-				arguments += "room.schemaLocation" to "$projectDir/schemas"
-			}
-		}
+		// F-WARN-007: removed annotationProcessorOptions (room.incremental, room.schemaLocation)
+		// — these are kapt args but Room now uses KSP (see ksp { arg(...) } block below).
+		// kapt only processes DataBinding which doesn't recognize Room args, causing
+		// the build warning: "options not recognized by any processor".
 
 		base {
 			archivesName = "photok-$versionName"
@@ -203,7 +203,8 @@ dependencies {
 	// Architectural Components
 	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
 	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-	implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
+	// F-PERF-004 (v1.0.2): removed deprecated lifecycle-extensions:2.2.0 — was unused.
+	// DefaultLifecycleObserver (used in BaseApplication) comes from lifecycle-common (transitive).
 
 	// Room
 	implementation("androidx.room:room-runtime:2.8.4")
@@ -243,7 +244,7 @@ dependencies {
 	implementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
 	// ViewPager2
-	implementation("androidx.viewpager2:viewpager2:1.1.0")
+	// F-PERF-004 (v1.0.2): removed androidx.viewpager2:viewpager2:1.1.0 — was unused (all pagers migrated to Compose HorizontalPager).
 
 	// Coroutines
 	// Bumped 1.10.2 → 1.11.0 (Batch 3 — safe dep bumps from dependabot branch).

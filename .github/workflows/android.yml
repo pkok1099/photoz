@@ -25,6 +25,7 @@ on:
       - main
       - audit-b2-fixes
       - B2
+      - ui-optimization
     paths-ignore:
       - '**.md'
       - 'docs/**'

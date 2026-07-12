@@ -298,7 +298,7 @@
     <string name="migration_initial_stage_ready_button">Start migration</string> <!-- TODO -->
 
     <string name="migration_running_title">Migrating your gallery</string> <!-- TODO -->
-    <string name="migration_running_progress">%d of %d files processed</string> <!-- TODO -->
+    <string name="migration_running_progress" formatted="false">%d of %d files processed</string> <!-- TODO -->
     <string name="migration_running_advice">If this screen stays open, the migration will run faster</string> <!-- TODO -->
 
     <string name="migration_done_title">Gallery migration done</string> <!-- TODO -->

@@ -1260,10 +1260,13 @@ class HashRegistry
 						val uuid = obj.optString("uuid")
 						if (hash.isEmpty() || uuid.isEmpty()) continue
 						val filename = obj.optString("filename", "")
-						val albumPath = if (obj.isNull("album_path")) null else obj.optString("album_path", null)
+						// F-WARN-009: simplified optString null handling — use isNull check + optString(key)
+						// (which returns "" if missing) instead of optString(key, null as String?) which
+						// caused Java type mismatch warnings.
+						val albumPath = if (obj.isNull("album_path")) null else obj.optString("album_path")
 						val size = obj.optLong("size", 0L)
 						val type = obj.optString("type", "JPEG")
-						val thumbPack = if (obj.isNull("thumbnail_pack")) null else obj.optString("thumbnail_pack", null)
+						val thumbPack = if (obj.isNull("thumbnail_pack")) null else obj.optString("thumbnail_pack")
 						val thumbOffset = obj.optLong("thumbnail_offset", 0L)
 						val thumbLength = obj.optLong("thumbnail_length", 0L)
 						val deleted = obj.optBoolean("deleted", false)

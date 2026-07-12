@@ -109,7 +109,7 @@ private fun CreateAlbumDialogContent(
 				keyboardOptions =
 					KeyboardOptions(
 						capitalization = KeyboardCapitalization.Words,
-						autoCorrect = true,
+						autoCorrectEnabled = true,
 						keyboardType = KeyboardType.Text,
 						imeAction = ImeAction.Done,
 					),

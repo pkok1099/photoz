@@ -62,6 +62,7 @@ object CrashLogger {
 					append("Thread: ")
 					append(thread.name)
 					append(" (id=")
+					@Suppress("DEPRECATION") // Thread.id deprecated in Java 19+, Android API 35 still uses it
 					append(thread.id)
 					append(")\n")
 					append("Exception: ")

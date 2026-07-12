@@ -613,7 +613,7 @@ class RcloneController
 						Result.failure(IOException("rclone hash error: $result"))
 					} else {
 						val json = JSONObject(result)
-						val hash = if (json.isNull("hash")) null else json.optString("hash", null)
+						val hash = if (json.isNull("hash")) null else json.optString("hash")
 						Result.success(hash)
 					}
 				} catch (e: Exception) {
@@ -747,7 +747,7 @@ class RcloneController
 							name = name,
 							size = obj.optLong("Size", 0L),
 							isDir = obj.optBoolean("IsDir", false),
-							mimeType = if (obj.isNull("MimeType")) null else obj.optString("MimeType", null),
+							mimeType = if (obj.isNull("MimeType")) null else obj.optString("MimeType"),
 						)
 					}
 				}

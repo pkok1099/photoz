@@ -297,7 +297,7 @@
     <string name="migration_initial_stage_ready_button">Avvia migrazione</string>
 
     <string name="migration_running_title">Migrazione della tua galleria</string>
-    <string name="migration_running_progress">%d di %d file elaborati</string>
+    <string name="migration_running_progress" formatted="false">%d di %d file elaborati</string>
     <string name="migration_running_advice">Se questa schermata rimane aperta, la migrazione verrà eseguita più rapidamente.</string>
 
     <string name="migration_done_title">Migrazione della galleria completata</string>
