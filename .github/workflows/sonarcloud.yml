@@ -1,0 +1,35 @@
+name: SonarCloud
+
+# Scans `main` and every PR to `main` with SonarCloud.
+# Uses the official SonarSource scan-action, which reads sonar-project.properties.
+# Requires a `SONAR_TOKEN` repository secret (SonarCloud project token).
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # SonarCloud needs the full history for PR decoration + new-code detection
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
