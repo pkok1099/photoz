@@ -266,7 +266,15 @@ class ChunkedGcmRandomAccessDataSource(
 			if (System.currentTimeMillis() > deadline) {
 				throw IOException("Timeout waiting for download: needed $minBytes bytes")
 			}
-			Thread.sleep(50)
+			try {
+				Thread.sleep(50)
+			} catch (e: InterruptedException) {
+				// F-004 fix: DataSource.open/read declare throws IOException; raw
+				// InterruptedException violates the contract. Re-set the interrupt
+				// flag so upstream cancellation checks see it, then throw IOException.
+				Thread.currentThread().interrupt()
+				throw IOException("Interrupted while waiting for download (needed $minBytes bytes)", e)
+			}
 		}
 	}
 }

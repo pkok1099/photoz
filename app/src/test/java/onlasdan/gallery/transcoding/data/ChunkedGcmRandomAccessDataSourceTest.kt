@@ -101,4 +101,38 @@ class ChunkedGcmRandomAccessDataSourceTest {
 		assertEquals("remaining bytes", plaintext.size - seekPos, returned)
 		ds.close()
 	}
+
+	@Test
+	fun `F-004 waitForBytesAvailable wraps InterruptedException as IOException`() {
+		// F-004: when ExoPlayer interrupts the loading thread (viewer close),
+		// InterruptedException must be wrapped as IOException, not escape raw.
+		val plaintext = ByteArray(100) { it.toByte() }
+		val file = makeVaultFile(plaintext)
+		val repo = makeSessionRepository(VaultSession(vmk))
+
+		// Provider that always reports "still downloading" so waitForBytesAvailable enters the poll loop
+		val ds = ChunkedGcmRandomAccessDataSource(
+			sessionRepository = repo,
+			availableBytesProvider = { _ -> 0L },  // 0 bytes available — forces polling
+			downloadCompleteProvider = { _ -> false },
+		)
+
+		// Run open() on a thread we can interrupt
+		val dataSpec = makeDataSpec(file)
+		val thread = Thread {
+			try {
+				ds.open(dataSpec)
+				fail("open() should have thrown IOException from InterruptedException")
+			} catch (e: IOException) {
+				// Expected — InterruptedException wrapped as IOException
+				assertTrue("expected 'Interrupted' in message, got: ${e.message}", e.message?.contains("Interrupted") == true)
+			} catch (e: InterruptedException) {
+				fail("InterruptedException must be wrapped as IOException, not escape raw: ${e.javaClass.simpleName}")
+			}
+		}
+		thread.start()
+		Thread.sleep(200) // let it enter the poll loop
+		thread.interrupt()
+		thread.join(5000)
+	}
 }
