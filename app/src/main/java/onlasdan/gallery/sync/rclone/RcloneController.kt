@@ -303,28 +303,9 @@ class RcloneController
 					}
 
 					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone upload job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
+					return@withContext pollJobProgress(jobid, onProgress) { jid, err ->
+						"rclone upload job $jid failed: $err"
 					}
-					Result.success(Unit)
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -401,28 +382,9 @@ class RcloneController
 					}
 
 					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
+					return@withContext pollJobProgress(jobid, onProgress) { jid, err ->
+						"rclone job $jid failed: $err"
 					}
-					Result.success(Unit)
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -643,6 +605,42 @@ class RcloneController
 		}
 
 		// ─── Helpers ──────────────────────────────────────────────────────
+
+		/**
+		 * Poll an rclone async job via job/status every 500ms until it finishes
+		 * or an RPC error occurs. Runs inline in the caller's Dispatchers.IO context.
+		 *
+		 * @param jobid rclone job id
+		 * @param onProgress progress callback (0.0-100.0)
+		 * @param failureMessage builds the IOException message on job failure
+		 */
+		private suspend fun pollJobProgress(
+			jobid: Long,
+			onProgress: (Float) -> Unit,
+			failureMessage: (Long, String) -> String,
+		): Result<Unit> {
+			while (true) {
+				delay(500)
+				val statusResult = rpc("job/status", """{"jobid":$jobid}""")
+				if (hasRpcError(statusResult)) return Result.success(Unit)
+				val statusJson = JSONObject(statusResult)
+				val finished = statusJson.optBoolean("finished", false)
+				val completed = statusJson.optLong("completed", -1L)
+				val total = statusJson.optLong("total", -1L)
+				if (total > 0 && completed >= 0) {
+					onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
+				}
+				if (finished) {
+					val success = statusJson.optBoolean("success", false)
+					if (!success) {
+						val errorMsg = statusJson.optString("error", "unknown error")
+						return Result.failure(IOException(failureMessage(jobid, errorMsg)))
+					}
+					onProgress(100f)
+					return Result.success(Unit)
+				}
+			}
+		}
 
 		/**
 		 * F-SYNC-001: JSON-based error detection — replaces fragile substring
