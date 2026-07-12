@@ -1,0 +1,19 @@
+{
+  "name": "photoz-local",
+  "description": "Local marketplace exposing the vendored Superpowers plugin for Claude Code, Cursor, Codex, Kimi, OpenCode, Pi, and other supported harnesses.",
+  "owner": {
+    "name": "pkok1099"
+  },
+  "plugins": [
+    {
+      "name": "superpowers",
+      "description": "Core skills library: TDD, debugging, collaboration patterns, and proven techniques (vendored from obra/superpowers)",
+      "source": "./vendor/superpowers",
+      "version": "6.1.1",
+      "author": {
+        "name": "Jesse Vincent",
+        "email": "jesse@fsck.com"
+      }
+    }
+  ]
+}
