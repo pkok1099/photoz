@@ -113,6 +113,11 @@ class ChunkedGcmRandomAccessDataSource(
 
 			// Compute the chunk containing the requested position
 			val plainOffset = dataSpec.position
+			// F-002 fix: validate plainOffset fits in Int range before .toInt() cast.
+			// Long→Int truncation on huge seeks produces negative chunkIndex → IllegalArgumentException.
+			if (plainOffset > Int.MAX_VALUE.toLong()) {
+				throw IOException("ChunkedGcmRA: plainOffset $plainOffset exceeds Int.MAX_VALUE (chunk index overflow)")
+			}
 			val chunkIndex = (plainOffset / chunkSize).toInt()
 			val offsetInChunk = (plainOffset % chunkSize).toInt()
 
@@ -125,18 +130,30 @@ class ChunkedGcmRandomAccessDataSource(
 				totalPlaintextSize,
 			)
 
+			// F-002 fix: guard against seek past EOF before loadChunk.
+			// ExoPlayer's DataSource.open() contract: return non-negative byte count, or throw IOException.
+			if (totalPlaintextSize > 0 && plainOffset >= totalPlaintextSize) {
+				throw IOException("ChunkedGcmRA: seek past EOF (plainOffset=$plainOffset, totalPlaintextSize=$totalPlaintextSize)")
+			}
+
 			// Load the target chunk
-			loadChunk(chunkIndex, channel)
+			// F-009 fix: wrap AEADBadTagException as IOException to satisfy DataSource.open contract
+			try {
+				loadChunk(chunkIndex, channel)
+			} catch (e: javax.crypto.AEADBadTagException) {
+				throw IOException("ChunkedGcmRA: GCM auth tag verification failed on chunk $chunkIndex", e)
+			}
 			currentChunkPos = offsetInChunk
 		} finally {
 			channel.close()
 		}
 
 		// Return content length (remaining bytes from this position)
+		// F-002 fix: coerce to 0 — never return negative (ExoPlayer contract violation)
 		val totalPlaintextSize = ByteBuffer.wrap(headerBuf, 5, 8).long
 		val plainOffset = dataSpec.position
 		return if (totalPlaintextSize > 0) {
-			totalPlaintextSize - plainOffset
+			(totalPlaintextSize - plainOffset).coerceAtLeast(0L)
 		} else {
 			java.lang.Long.MAX_VALUE // unknown — stream until EOF
 		}
