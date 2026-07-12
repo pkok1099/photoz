@@ -656,7 +656,7 @@ class PhotoSyncWorker
 			//   to uploadFileWithProgress() so the user sees the bar move
 			//   instead of an indeterminate spinner for the (potentially huge)
 			//   original photo upload.
-			val remoteOrig = uploadAndVerifyOriginal(photo, remote, collapsedText, expandedText, batchState)
+			val remoteOrig = uploadAndVerifyOriginal(photo, remote, collapsedText, expandedText, batchState, uuid)
 
 			// ─── Item 3: optional full hash verification by re-download + decrypt ──
 			// The remote-side `verifyRemote` above only works if the backend supports
@@ -674,7 +674,7 @@ class PhotoSyncWorker
 			// upload size again) so it's off by default and surfaced as a Settings
 			// toggle for paranoiac users.
 			if (config.syncVerifyHash && !contentHash.isNullOrBlank()) {
-				performFullHashVerification(photo, remoteOrig, contentHash, batchState)
+				performFullHashVerification(photo, remoteOrig, contentHash, batchState, uuid)
 			} else if (config.syncVerifyHash && contentHash.isNullOrBlank()) {
 				diag("performUpload: syncVerifyHash is ON but photo has no contentHash (pre-v9 import) — skipping full verification")
 			}
@@ -695,7 +695,7 @@ class PhotoSyncWorker
 			// already uploaded + verified. We just lose dedup coverage for this
 			// hash until the next successful registry add. Logged + continued.
 			if (!contentHash.isNullOrBlank()) {
-				addRegistryEntry(photo, contentHash, thumbPath)
+				addRegistryEntry(photo, contentHash, thumbPath, uuid)
 			}
 
 			// ─── Post-upload success state ────────────────────────────────────
@@ -759,6 +759,7 @@ class PhotoSyncWorker
 			collapsedText: String,
 			expandedText: String,
 			batchState: SyncBatchTracker.BatchState,
+			uuid: String,
 		): String {
 			val origPath = appContext.getFileStreamPath(photo.internalFileName)
 			if (!origPath.exists()) {
@@ -914,6 +915,7 @@ class PhotoSyncWorker
 			remoteOrig: String,
 			contentHash: String,
 			batchState: SyncBatchTracker.BatchState,
+			uuid: String,
 		) {
 			diag("performUpload: syncVerifyHash is ON — performing full re-download + decrypt + sha256 verification")
 			val verifyFile = File(appContext.cacheDir, "verify-${photo.uuid}.crypt")
@@ -979,7 +981,7 @@ class PhotoSyncWorker
 		// Failure here is non-fatal — the photo's encrypted artifacts are
 		// already uploaded + verified. We just lose dedup coverage for this
 		// hash until the next successful registry add. Logged + continued.
-		private suspend fun addRegistryEntry(photo: Photo, contentHash: String, thumbPath: File) {
+		private suspend fun addRegistryEntry(photo: Photo, contentHash: String, thumbPath: File, uuid: String) {
 			try {
 				val entry =
 					HashRegistryEntry(
