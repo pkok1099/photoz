@@ -286,10 +286,7 @@ class RepoManager
 						// that would also match "rclone binary not found" from locateRcloneBinary(),
 						// swallowing a real infrastructure error as a false "repo doesn't exist yet".
 						// @since PR1 sync — fix for error-swallowing bug that hid binary-not-found
-						val isDirNotFound =
-							err.contains("directory not found", ignoreCase = true) ||
-								err.contains("error in ListJSON", ignoreCase = true) ||
-								err.contains(ERR_NOT_FOUND, ignoreCase = true)
+						val isDirNotFound = isDirNotFound(err)
 						if (isDirNotFound) {
 							android.util.Log.e("RcloneDiag", "detectRepo: classifying as NOT_INITIALIZED (dir not found)")
 							return@withContext RepoState.NOT_INITIALIZED
@@ -306,32 +303,7 @@ class RepoManager
 						return@withContext RepoState.NOT_INITIALIZED
 					}
 
-					// Marker exists — download and parse it
-					android.util.Log.e("RcloneDiag", "detectRepo: marker found, downloading")
-					val tempMarker = File(app.cacheDir, "repo-config-download-${System.currentTimeMillis()}.json")
-					val downloadResult =
-						rcloneController.downloadFile(
-							"$remote:$REPO_DIR/$MARKER_FILENAME",
-							tempMarker.absolutePath,
-						)
-					if (downloadResult.isFailure) {
-						android.util.Log.e(
-							"RcloneDiag",
-							"detectRepo: downloadFile FAILED msg=${downloadResult.exceptionOrNull()?.message}",
-						)
-						return@withContext RepoState.ERROR(
-							"Failed to download marker: ${downloadResult.exceptionOrNull()?.message}",
-						)
-					}
-
-					val markerContent = tempMarker.readText()
-					tempMarker.delete()
-					val marker =
-						parseMarker(markerContent)
-							?: return@withContext RepoState.ERROR("Malformed marker file")
-
-					android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LOGGED_IN repoId=${marker.repoId}")
-					RepoState.LOGGED_IN(marker)
+					detectRepoDownloadAndParseMarker(remote)
 				} catch (e: Exception) {
 					android.util.Log.e("RcloneDiag", "detectRepo: CAUGHT ${e.javaClass.name}: ${e.message}", e)
 					RepoState.ERROR(e.message ?: e.javaClass.simpleName)
@@ -421,20 +393,7 @@ class RepoManager
 						// Ensure repo directory exists. Try mkdir first (idempotent — no error if exists).
 						// If fails: purge anything at path (stale file from previous attempt),
 						// then retry mkdir. operations/copyfile needs parent dir to exist.
-						Timber.i("registerRepo: ensuring directory $REPO_DIR exists")
-						val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
-						if (createDirResult.isFailure) {
-							val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
-							Timber.w("registerRepo: createDir failed ($dirErr) — purge + retry")
-							rcloneController.removeDir("$remote:$REPO_DIR", recursive = true).onFailure { }
-							val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
-							if (retryResult.isFailure) {
-								throw IOException("Cannot create $REPO_DIR: $dirErr / ${retryResult.exceptionOrNull()?.message}")
-							}
-							Timber.i("registerRepo: createDir OK (after purge)")
-						} else {
-							Timber.i("registerRepo: createDir OK")
-						}
+						ensureRepoDir(remote)
 
 						val remotePath = "$remote:$REPO_DIR/$MARKER_FILENAME"
 						val uploadResult = rcloneController.uploadFile(tempFile.absolutePath, remotePath)
@@ -445,22 +404,7 @@ class RepoManager
 						// ─── INDEPENDENT VERIFICATION ─────────────────────────────────
 						// Re-list the repo root to confirm the marker actually landed.
 						// The upload call's return value alone is NOT sufficient proof.
-						val verifyResult = rcloneController.listRemote("$remote:", REPO_DIR)
-						if (verifyResult.isFailure) {
-							throw IOException(
-								"Upload succeeded but independent verification failed: " +
-									"${verifyResult.exceptionOrNull()?.message}",
-							)
-						}
-
-						val files = verifyResult.getOrThrow()
-						val found = files.any { it.name == MARKER_FILENAME && it.size > 0 }
-						if (!found) {
-							throw IOException(
-								"Upload succeeded but marker file not found in independent listing. " +
-									"Files: $files",
-							)
-						}
+						verifyMarkerUploaded(remote)
 
 						// NOTE: The recovery-phrase wrapped-VMK escrow is NO LONGER uploaded here.
 						// The prior uploadVaultProtectionEscrow() call was the root cause of the
@@ -711,74 +655,8 @@ class RepoManager
 						continue
 					}
 
-					// Download the thumbnail to the same local path the gallery tile reads from
-					// (app filesDir/<uuid>.crypt.tn — see VaultFileStorage / app.openFileInput).
-					val localThumb = app.getFileStreamPath("$uuid$THUMBNAIL_SUFFIX")
-					val remoteThumbPath = "$remote:$thumbnailsDir/$name"
-					diag("restoreThumbnailsAfterLogin: downloading $remoteThumbPath → ${localThumb.absolutePath}")
-					val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
-					if (dlResult.isFailure) {
-						diag(
-							"restoreThumbnailsAfterLogin: download FAILED for $uuid: ${dlResult.exceptionOrNull()?.message}",
-							dlResult.exceptionOrNull(),
-						)
-						continue
-					}
-
-					// ─── v9 dedup: metadata now lives in the registry, not per-file sidecars ──
-					// The v8 per-photo `metadata/<uuid>.json` sidecar is GONE in v9 —
-					// replaced by the encrypted `registry.json.crypt` (one entry per
-					// content-hash, see [HashRegistry]). The registry can only be
-					// decrypted with the VMK, which ISN'T available at this point in the
-					// login flow (the user hasn't entered their password yet — see
-					// [RepoSetupViewModel.checkRemoteAndDetectRepo]). So we insert the
-					// Photo row with PLACEHOLDER metadata (type=JPEG, size=0, relativePath=null)
-					// here, and rely on:
-					//   (a) the future [downloadRegistry] call (after vault unlock) to
-					//       populate the dedup cache for future uploads;
-					//   (b) the existing on-demand original-fetch path ([SyncRestorer])
-					//       to correct the type/size when the user actually opens the
-					//       photo (the original's bytes are decrypted with the VMK and
-					//       the type is inferred from the decrypted content).
-					//
-					// TODO(v9-followup): after [downloadRegistry] runs (post-unlock), we
-					//   could UPDATE the Photo rows with the registry's per-hash
-					//   metadata (type, size, albumPath, contentHash) so the gallery
-					//   shows accurate info without needing to fetch the original. For
-					//   now, the placeholder behavior matches the pre-v8 PR4 default.
-
-					// Create a DB row for the photo. The original is NOT local — it will be
-					// fetched on-demand by SyncRestorer when the user opens the photo.
-					val photo =
-						Photo(
-							fileName = "$uuid.$PHOTOK_FILE_EXTENSION",
-							importedAt = System.currentTimeMillis(),
-							lastModified = null,
-							type = PhotoType.JPEG,
-							size = 0L,
-							uuid = uuid,
-							syncState = SyncState.UPLOADED,
-							relativePath = null,
-							// Sprint 2 / M7 — tag with the syncing vault's vault_id
-							vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
-						)
-					try {
-						photoDao.insert(photo)
-						restored++
-						diag(
-							"restoreThumbnailsAfterLogin: inserted DB row for $uuid " +
-								"(syncState=UPLOADED, type=${photo.type}, size=${photo.size}, " +
-								"relativePath=${photo.relativePath}, metaSource=defaults)",
-						)
-					} catch (e: Exception) {
-						diag(
-							"restoreThumbnailsAfterLogin: insert FAILED for $uuid: ${e.message}",
-							e,
-						)
-						// Best-effort cleanup of the orphaned local thumbnail file so a
-						// later retry doesn't see a stray file with no DB row.
-						localThumb.delete()
-					}
+					val inserted = downloadAndInsertThumbnail(uuid, name, remote, thumbnailsDir)
+					if (inserted) restored++
 				}
 
 				diag("restoreThumbnailsAfterLogin: DONE — restored $restored thumbnails")
@@ -883,61 +761,7 @@ class RepoManager
 
 				var backfilled = 0
 				for (photo in placeholderPhotos) {
-					val entry =
-						try {
-							hashRegistry.findByUuid(photo.uuid)
-						} catch (e: Exception) {
-							diag("applyRegistryMetadataToPhotos: registry lookup FAILED for ${photo.uuid}: ${e.message}")
-							null
-						}
-					if (entry == null) {
-						diag(
-							"applyRegistryMetadataToPhotos: no registry entry for uuid=${photo.uuid} — leaving placeholder (will be corrected on-demand via SyncRestorer)",
-						)
-						continue
-					}
-
-					val type =
-						try {
-							PhotoType.fromName(entry.type)
-						} catch (e: Exception) {
-							PhotoType.JPEG
-						}
-
-					try {
-						// Bug fix: if albumPath == filename, it's the SAF fallback —
-						// the original import had no RELATIVE_PATH. Set albumPath to
-						// null so ensureAlbumForRestoredPhoto doesn't skip (it would
-						// skip because albumPath == fileName). With null, the photo
-						// just lives in "All Photos" without an album — same as the
-						// original import's behavior.
-						val effectiveAlbumPath =
-							entry.albumPath?.let { ap ->
-								val fname = entry.filename.ifBlank { photo.fileName }
-								if (ap.trim() == fname.trim()) null else ap
-							}
-
-						val affected =
-							photoDao.backfillMetadataFromRegistry(
-								uuid = photo.uuid,
-								filename = entry.filename.ifBlank { photo.fileName },
-								size = entry.size,
-								type = type.value,
-								relativePath = effectiveAlbumPath ?: photo.relativePath,
-								albumPath = effectiveAlbumPath,
-								contentHash = entry.contentHash,
-							)
-						if (affected > 0) {
-							backfilled++
-							diag(
-								"applyRegistryMetadataToPhotos: backfilled ${photo.uuid} " +
-									"(filename=${entry.filename}, size=${entry.size}, type=$type, " +
-									"albumPath=$effectiveAlbumPath, contentHash=${entry.contentHash})",
-							)
-						}
-					} catch (e: Exception) {
-						diag("applyRegistryMetadataToPhotos: backfill FAILED for ${photo.uuid}: ${e.message}", e)
-					}
+					backfilled += backfillPhotoFromRegistry(photo)
 				}
 
 				diag("applyRegistryMetadataToPhotos: DONE — backfilled $backfilled of ${placeholderPhotos.size} placeholder rows")
@@ -1031,85 +855,12 @@ class RepoManager
 				// ─── Pack-based download: one pack → N thumbnails ──────────────────
 				for ((packName, packMembers) in packEntries) {
 					if (packName == null) continue
-					// Skip if ALL members already have local thumbnails.
-					val missing =
-						packMembers.filter { entry ->
-							val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
-							!localThumb.exists() || localThumb.length() == 0L
-						}
-					if (missing.isEmpty()) {
-						diag("restoreThumbnailsFromPacks: pack $packName — all ${packMembers.size} thumbnails already local, skipping")
-						continue
-					}
-					// Download the pack once into a cache file.
-					val packRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-					val packLocalFile = File(app.cacheDir, "$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
-					try {
-						diag(
-							"restoreThumbnailsFromPacks: downloading pack $packRemotePath (${missing.size} of ${packMembers.size} thumbnails missing) → ${packLocalFile.absolutePath}",
-						)
-						val dlResult = rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath)
-						if (dlResult.isFailure) {
-							diag(
-								"restoreThumbnailsFromPacks: pack $packName download FAILED: ${dlResult.exceptionOrNull()?.message}",
-								dlResult.exceptionOrNull(),
-							)
-							continue
-						}
-						val packBytes = packLocalFile.readBytes()
-						diag("restoreThumbnailsFromPacks: pack $packName downloaded (${packBytes.size} bytes)")
-
-						// Extract each missing member's thumbnail by offset+length.
-						for (entry in missing) {
-							val offset = entry.thumbnailOffset
-							val length = entry.thumbnailLength
-							if (length <= 0L || offset < 0L || offset + length > packBytes.size) {
-								diag(
-									"restoreThumbnailsFromPacks: skipping ${entry.uuid} — invalid offset/length (offset=$offset length=$length packSize=${packBytes.size})",
-								)
-								continue
-							}
-							val thumbBytes = packBytes.copyOfRange(offset.toInt(), (offset + length).toInt())
-							val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
-							try {
-								app.openFileOutput(localThumb.name, android.content.Context.MODE_PRIVATE).use { it.write(thumbBytes) }
-								restored++
-								diag("restoreThumbnailsFromPacks: extracted ${entry.uuid} thumbnail ($length bytes) from pack $packName")
-								// Ensure a Photo row exists for this UUID (new repos
-								// created after Bug 4 may not have one yet, since
-								// restoreThumbnailsAfterLogin found no individual
-								// thumbnails to download).
-								ensurePhotoRowForRestoredEntry(entry)
-							} catch (e: Exception) {
-								diag("restoreThumbnailsFromPacks: FAILED to write thumbnail for ${entry.uuid}: ${e.message}", e)
-							}
-						}
-					} finally {
-						packLocalFile.delete()
-					}
+					restored += restoreThumbnailsFromPack(remote, packName, packMembers)
 				}
 
 				// ─── Legacy individual-thumbnail download (pre-Bug-4 repos) ─────────
 				for (entry in legacyEntries) {
-					val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
-					if (localThumb.exists() && localThumb.length() > 0L) {
-						continue // already local (e.g. from restoreThumbnailsAfterLogin)
-					}
-					val remoteThumbPath = "$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}$THUMBNAIL_SUFFIX"
-					try {
-						diag("restoreThumbnailsFromPacks: legacy individual download for ${entry.uuid} → $remoteThumbPath")
-						val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
-						if (dlResult.isFailure) {
-							diag(
-								"restoreThumbnailsFromPacks: legacy download FAILED for ${entry.uuid}: ${dlResult.exceptionOrNull()?.message}",
-							)
-							continue
-						}
-						restored++
-						ensurePhotoRowForRestoredEntry(entry)
-					} catch (e: Exception) {
-						diag("restoreThumbnailsFromPacks: legacy download exception for ${entry.uuid}: ${e.message}", e)
-					}
+					restored += restoreLegacyThumbnail(remote, entry)
 				}
 
 				diag("restoreThumbnailsFromPacks: DONE — restored $restored thumbnails")
@@ -1132,6 +883,97 @@ class RepoManager
 		 *
 		 * @since v9 followup — packed thumbnails (Bug 4)
 		 */
+		private suspend fun restoreThumbnailsFromPack(
+			remote: String,
+			packName: String,
+			packMembers: List<HashRegistryEntry>,
+		): Int {
+			// Skip if ALL members already have local thumbnails.
+			val missing =
+				packMembers.filter { entry ->
+					val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+					!localThumb.exists() || localThumb.length() == 0L
+				}
+			if (missing.isEmpty()) {
+				diag("restoreThumbnailsFromPacks: pack $packName — all ${packMembers.size} thumbnails already local, skipping")
+				return 0
+			}
+			// Download the pack once into a cache file.
+			val packRemotePath = "$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+			val packLocalFile = File(app.cacheDir, "$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+			var restored = 0
+			try {
+				diag(
+					"restoreThumbnailsFromPacks: downloading pack $packRemotePath (${missing.size} of ${packMembers.size} thumbnails missing) → ${packLocalFile.absolutePath}",
+				)
+				val dlResult = rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath)
+				if (dlResult.isFailure) {
+					diag(
+						"restoreThumbnailsFromPacks: pack $packName download FAILED: ${dlResult.exceptionOrNull()?.message}",
+						dlResult.exceptionOrNull(),
+					)
+					return 0
+				}
+				val packBytes = packLocalFile.readBytes()
+				diag("restoreThumbnailsFromPacks: pack $packName downloaded (${packBytes.size} bytes)")
+
+				// Extract each missing member's thumbnail by offset+length.
+				for (entry in missing) {
+					val offset = entry.thumbnailOffset
+					val length = entry.thumbnailLength
+					if (length <= 0L || offset < 0L || offset + length > packBytes.size) {
+						diag(
+							"restoreThumbnailsFromPacks: skipping ${entry.uuid} — invalid offset/length (offset=$offset length=$length packSize=${packBytes.size})",
+						)
+						continue
+					}
+					val thumbBytes = packBytes.copyOfRange(offset.toInt(), (offset + length).toInt())
+					val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+					try {
+						app.openFileOutput(localThumb.name, android.content.Context.MODE_PRIVATE).use { it.write(thumbBytes) }
+						restored++
+						diag("restoreThumbnailsFromPacks: extracted ${entry.uuid} thumbnail ($length bytes) from pack $packName")
+						// Ensure a Photo row exists for this UUID (new repos
+						// created after Bug 4 may not have one yet, since
+						// restoreThumbnailsAfterLogin found no individual
+						// thumbnails to download).
+						ensurePhotoRowForRestoredEntry(entry)
+					} catch (e: Exception) {
+						diag("restoreThumbnailsFromPacks: FAILED to write thumbnail for ${entry.uuid}: ${e.message}", e)
+					}
+				}
+			} finally {
+				packLocalFile.delete()
+			}
+			return restored
+		}
+
+		private suspend fun restoreLegacyThumbnail(
+			remote: String,
+			entry: HashRegistryEntry,
+		): Int {
+			val localThumb = app.getFileStreamPath("${entry.uuid}$THUMBNAIL_SUFFIX")
+			if (localThumb.exists() && localThumb.length() > 0L) {
+				return 0 // already local (e.g. from restoreThumbnailsAfterLogin)
+			}
+			val remoteThumbPath = "$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}$THUMBNAIL_SUFFIX"
+			try {
+				diag("restoreThumbnailsFromPacks: legacy individual download for ${entry.uuid} → $remoteThumbPath")
+				val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
+				if (dlResult.isFailure) {
+					diag(
+						"restoreThumbnailsFromPacks: legacy download FAILED for ${entry.uuid}: ${dlResult.exceptionOrNull()?.message}",
+					)
+					return 0
+				}
+				ensurePhotoRowForRestoredEntry(entry)
+				return 1
+			} catch (e: Exception) {
+				diag("restoreThumbnailsFromPacks: legacy download exception for ${entry.uuid}: ${e.message}", e)
+				return 0
+			}
+		}
+
 		private suspend fun ensurePhotoRowForRestoredEntry(entry: HashRegistryEntry) {
 			val existing = runCatching { photoDao.get(entry.uuid) }.getOrNull()
 			if (existing != null) {
@@ -1344,20 +1186,7 @@ class RepoManager
 						// The .json.crypt is encrypted with VMK which is NOT available on fresh
 						// install (chicken-and-egg). The plaintext .json contains the VMK WRAPPED
 						// with the recovery phrase — still secure (attacker needs phrase to unwrap).
-						val legacyTempFile = File(app.cacheDir, "vault-protection-legacy-${System.currentTimeMillis()}.json")
-						try {
-							legacyTempFile.writeText(json)
-							val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
-							diag("uploadRecoveryPhraseEscrow: uploading plaintext → $legacyRemotePath")
-							val legacyResult = rcloneController.uploadFile(legacyTempFile.absolutePath, legacyRemotePath)
-							if (legacyResult.isFailure) {
-								throw legacyResult.exceptionOrNull()
-									?: IOException("F-HOTFIX-005: plaintext .json upload FAILED — fresh-install recovery will NOT work")
-							}
-							diag("uploadRecoveryPhraseEscrow: plaintext .json uploaded OK")
-						} finally {
-							legacyTempFile.delete()
-						}
+						uploadLegacyVaultProtectionJson(remote, json)
 
 						// Independent verification — same pattern as registerRepo() marker.
 						val verifyResult =
@@ -1420,6 +1249,23 @@ class RepoManager
 		 *   and downloaded as `.json.crypt` (was plaintext `.json`). The legacy
 		 *   plaintext path is retained as a fallback for old repos.
 		 */
+		private suspend fun uploadLegacyVaultProtectionJson(remote: String, json: String) {
+			val legacyTempFile = File(app.cacheDir, "vault-protection-legacy-${System.currentTimeMillis()}.json")
+			try {
+				legacyTempFile.writeText(json)
+				val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
+				diag("uploadRecoveryPhraseEscrow: uploading plaintext → $legacyRemotePath")
+				val legacyResult = rcloneController.uploadFile(legacyTempFile.absolutePath, legacyRemotePath)
+				if (legacyResult.isFailure) {
+					throw legacyResult.exceptionOrNull()
+						?: IOException("F-HOTFIX-005: plaintext .json upload FAILED — fresh-install recovery will NOT work")
+				}
+				diag("uploadRecoveryPhraseEscrow: plaintext .json uploaded OK")
+			} finally {
+				legacyTempFile.delete()
+			}
+		}
+
 		private suspend fun downloadVaultProtectionEscrow(vmkBytes: ByteArray? = null): Result<VaultProtection?> =
 			withContext(Dispatchers.IO) {
 				runCatching {
@@ -1488,47 +1334,7 @@ class RepoManager
 					}
 
 					// ─── Legacy plaintext .json fallback (old repos) ───────────────
-					val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
-					val tempFile =
-						File(
-							app.cacheDir,
-							"vault-protection-dl-${System.currentTimeMillis()}.json",
-						)
-					try {
-						diag("downloadVaultProtectionEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
-						val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
-						if (dlResult.isFailure) {
-							val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
-							val isNotFound =
-								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
-									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
-									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
-									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
-									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
-							if (isNotFound) {
-								diag("downloadVaultProtectionEscrow: legacy .json not on remote either — returning null")
-								return@runCatching null
-							}
-							throw dlResult.exceptionOrNull()
-								?: IOException("Escrow download failed: $err")
-						}
-
-						if (!tempFile.exists() || tempFile.length() == 0L) {
-							diag("downloadVaultProtectionEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
-							return@runCatching null
-						}
-
-						val json = tempFile.readText()
-						diag("downloadVaultProtectionEscrow: downloaded legacy ${json.length} chars")
-
-						val protection =
-							parseVaultProtection(json)
-								?: throw IOException("Malformed vault-protection JSON")
-						persistVaultProtection(protection)
-						protection
-					} finally {
-						tempFile.delete()
-					}
+					downloadVaultProtectionLegacyJson(remote)
 				}
 			}
 
@@ -1540,6 +1346,50 @@ class RepoManager
 		 * @since v9 followup — extracted from downloadVaultProtectionEscrow for
 		 *   reuse by both the .crypt and legacy .json download paths.
 		 */
+		private suspend fun downloadVaultProtectionLegacyJson(remote: String): VaultProtection? {
+			val legacyRemotePath = "$remote:$VAULT_PROTECTION_LEGACY_REMOTE_PATH"
+			val tempFile =
+				File(
+					app.cacheDir,
+					"vault-protection-dl-${System.currentTimeMillis()}.json",
+				)
+			try {
+				diag("downloadVaultProtectionEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
+				val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
+				if (dlResult.isFailure) {
+					val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
+					val isNotFound =
+						err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+							err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+							err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+							err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+							err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
+					if (isNotFound) {
+						diag("downloadVaultProtectionEscrow: legacy .json not on remote either — returning null")
+						return null
+					}
+					throw dlResult.exceptionOrNull()
+						?: IOException("Escrow download failed: $err")
+				}
+
+				if (!tempFile.exists() || tempFile.length() == 0L) {
+					diag("downloadVaultProtectionEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
+					return null
+				}
+
+				val json = tempFile.readText()
+				diag("downloadVaultProtectionEscrow: downloaded legacy ${json.length} chars")
+
+				val protection =
+					parseVaultProtection(json)
+						?: throw IOException("Malformed vault-protection JSON")
+				persistVaultProtection(protection)
+				return protection
+			} finally {
+				tempFile.delete()
+			}
+		}
+
 		private suspend fun persistVaultProtection(protection: VaultProtection) {
 			val existing =
 				vaultProtectionRepository
@@ -1845,51 +1695,7 @@ class RepoManager
 					}
 
 					// ─── Legacy plaintext .json fallback (old repos) ───────────────
-					val legacyRemotePath = "$remote:$WRAPPED_PHRASE_LEGACY_REMOTE_PATH"
-					val tempFile =
-						File(
-							app.cacheDir,
-							"wrapped-phrase-dl-${System.currentTimeMillis()}.json",
-						)
-					try {
-						diag("downloadWrappedPhraseEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
-						val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
-						if (dlResult.isFailure) {
-							val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
-							val isNotFound =
-								err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
-									err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
-									err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
-									err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
-									err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
-							if (isNotFound) {
-								diag("downloadWrappedPhraseEscrow: legacy .json not on remote either — returning null")
-								return@runCatching null
-							}
-							throw dlResult.exceptionOrNull()
-								?: IOException("Wrapped-phrase download failed: $err")
-						}
-
-						if (!tempFile.exists() || tempFile.length() == 0L) {
-							diag("downloadWrappedPhraseEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
-							return@runCatching null
-						}
-
-						val json = tempFile.readText()
-						diag("downloadWrappedPhraseEscrow: downloaded legacy ${json.length} chars")
-
-						val wrapped =
-							PhraseEscrowWrapper.WrappedPhrase.fromJson(json)
-								?: throw IOException("Malformed wrapped-phrase JSON")
-						diag(
-							"downloadWrappedPhraseEscrow: parsed " +
-								"(wrappedLen=${wrapped.wrappedPhrase.size} kdf=${wrapped.kdf.value} " +
-								"iter=${wrapped.kdfIterations} alg=${wrapped.algorithm.value})",
-						)
-						wrapped
-					} finally {
-						tempFile.delete()
-					}
+					downloadWrappedPhraseLegacyJson(remote)
 				}
 			}
 
@@ -1901,6 +1707,54 @@ class RepoManager
 		 *
 		 * @since v9 followup — outer-encryption helper for the escrow .crypt files
 		 */
+		private suspend fun downloadWrappedPhraseLegacyJson(remote: String): PhraseEscrowWrapper.WrappedPhrase? {
+			val legacyRemotePath = "$remote:$WRAPPED_PHRASE_LEGACY_REMOTE_PATH"
+			val tempFile =
+				File(
+					app.cacheDir,
+					"wrapped-phrase-dl-${System.currentTimeMillis()}.json",
+				)
+			try {
+				diag("downloadWrappedPhraseEscrow: downloading legacy $legacyRemotePath → ${tempFile.absolutePath}")
+				val dlResult = rcloneController.downloadFile(legacyRemotePath, tempFile.absolutePath)
+				if (dlResult.isFailure) {
+					val err = dlResult.exceptionOrNull()?.message ?: ERR_UNKNOWN
+					val isNotFound =
+						err.contains(ERR_NOT_FOUND, ignoreCase = true) ||
+							err.contains(ERR_DOESNT_EXIST, ignoreCase = true) ||
+							err.contains(ERR_DOES_NOT_EXIST, ignoreCase = true) ||
+							err.contains(ERR_NO_SUCH_FILE, ignoreCase = true) ||
+							err.contains(ERR_OBJECT_NOT_FOUND, ignoreCase = true)
+					if (isNotFound) {
+						diag("downloadWrappedPhraseEscrow: legacy .json not on remote either — returning null")
+						return null
+					}
+					throw dlResult.exceptionOrNull()
+						?: IOException("Wrapped-phrase download failed: $err")
+				}
+
+				if (!tempFile.exists() || tempFile.length() == 0L) {
+					diag("downloadWrappedPhraseEscrow: downloaded legacy file missing or empty — treating as not-on-remote")
+					return null
+				}
+
+				val json = tempFile.readText()
+				diag("downloadWrappedPhraseEscrow: downloaded legacy ${json.length} chars")
+
+				val wrapped =
+					PhraseEscrowWrapper.WrappedPhrase.fromJson(json)
+						?: throw IOException("Malformed wrapped-phrase JSON")
+				diag(
+					"downloadWrappedPhraseEscrow: parsed " +
+						"(wrappedLen=${wrapped.wrappedPhrase.size} kdf=${wrapped.kdf.value} " +
+						"iter=${wrapped.kdfIterations} alg=${wrapped.algorithm.value})",
+				)
+				return wrapped
+			} finally {
+				tempFile.delete()
+			}
+		}
+
 		private fun encryptBlobVmk(
 			plaintext: ByteArray,
 			vmkBytes: ByteArray,
@@ -2093,6 +1947,211 @@ class RepoManager
 			} catch (e: Exception) {
 				null
 			}
+
+		private suspend fun ensureRepoDir(remote: String) {
+			Timber.i("registerRepo: ensuring directory $REPO_DIR exists")
+			val createDirResult = rcloneController.createDir("$remote:$REPO_DIR")
+			if (createDirResult.isFailure) {
+				val dirErr = createDirResult.exceptionOrNull()?.message ?: "unknown"
+				Timber.w("registerRepo: createDir failed ($dirErr) — purge + retry")
+				rcloneController.removeDir("$remote:$REPO_DIR", recursive = true).onFailure { }
+				val retryResult = rcloneController.createDir("$remote:$REPO_DIR")
+				if (retryResult.isFailure) {
+					throw IOException("Cannot create $REPO_DIR: $dirErr / ${retryResult.exceptionOrNull()?.message}")
+				}
+				Timber.i("registerRepo: createDir OK (after purge)")
+			} else {
+				Timber.i("registerRepo: createDir OK")
+			}
+		}
+
+		private suspend fun verifyMarkerUploaded(remote: String) {
+			val verifyResult = rcloneController.listRemote("$remote:", REPO_DIR)
+			if (verifyResult.isFailure) {
+				throw IOException(
+					"Upload succeeded but independent verification failed: " +
+						"${verifyResult.exceptionOrNull()?.message}",
+				)
+			}
+
+			val files = verifyResult.getOrThrow()
+			val found = files.any { it.name == MARKER_FILENAME && it.size > 0 }
+			if (!found) {
+				throw IOException(
+					"Upload succeeded but marker file not found in independent listing. " +
+						"Files: $files",
+				)
+			}
+		}
+
+		private fun isDirNotFound(err: String): Boolean =
+			err.contains("directory not found", ignoreCase = true) ||
+				err.contains("error in ListJSON", ignoreCase = true) ||
+				err.contains(ERR_NOT_FOUND, ignoreCase = true)
+
+		private suspend fun detectRepoDownloadAndParseMarker(remote: String): RepoState {
+			android.util.Log.e("RcloneDiag", "detectRepo: marker found, downloading")
+			val tempMarker = File(app.cacheDir, "repo-config-download-${System.currentTimeMillis()}.json")
+			val downloadResult =
+				rcloneController.downloadFile(
+					"$remote:$REPO_DIR/$MARKER_FILENAME",
+					tempMarker.absolutePath,
+				)
+			if (downloadResult.isFailure) {
+				android.util.Log.e(
+					"RcloneDiag",
+					"detectRepo: downloadFile FAILED msg=${downloadResult.exceptionOrNull()?.message}",
+				)
+				return RepoState.ERROR(
+					"Failed to download marker: ${downloadResult.exceptionOrNull()?.message}",
+				)
+			}
+
+			val markerContent = tempMarker.readText()
+			tempMarker.delete()
+			val marker =
+				parseMarker(markerContent)
+					?: return RepoState.ERROR("Malformed marker file")
+
+			android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LOGGED_IN repoId=${marker.repoId}")
+			return RepoState.LOGGED_IN(marker)
+		}
+
+		private suspend fun downloadAndInsertThumbnail(
+			uuid: String,
+			name: String,
+			remote: String,
+			thumbnailsDir: String,
+		): Boolean {
+			// Download the thumbnail to the same local path the gallery tile reads from
+			// (app filesDir/<uuid>.crypt.tn — see VaultFileStorage / app.openFileInput).
+			val localThumb = app.getFileStreamPath("$uuid$THUMBNAIL_SUFFIX")
+			val remoteThumbPath = "$remote:$thumbnailsDir/$name"
+			diag("restoreThumbnailsAfterLogin: downloading $remoteThumbPath → ${localThumb.absolutePath}")
+			val dlResult = rcloneController.downloadFile(remoteThumbPath, localThumb.absolutePath)
+			if (dlResult.isFailure) {
+				diag(
+					"restoreThumbnailsAfterLogin: download FAILED for $uuid: ${dlResult.exceptionOrNull()?.message}",
+					dlResult.exceptionOrNull(),
+				)
+				return false
+			}
+
+			// ─── v9 dedup: metadata now lives in the registry, not per-file sidecars ──
+			// The v8 per-photo `metadata/<uuid>.json` sidecar is GONE in v9 —
+			// replaced by the encrypted `registry.json.crypt` (one entry per
+			// content-hash, see [HashRegistry]). The registry can only be
+			// decrypted with the VMK, which ISN'T available at this point in the
+			// login flow (the user hasn't entered their password yet — see
+			// [RepoSetupViewModel.checkRemoteAndDetectRepo]). So we insert the
+			// Photo row with PLACEHOLDER metadata (type=JPEG, size=0, relativePath=null)
+			// here, and rely on:
+			//   (a) the future [downloadRegistry] call (after vault unlock) to
+			//       populate the dedup cache for future uploads;
+			//   (b) the existing on-demand original-fetch path ([SyncRestorer])
+			//       to correct the type/size when the user actually opens the
+			//       photo (the original's bytes are decrypted with the VMK and
+			//       the type is inferred from the decrypted content).
+			//
+			// TODO(v9-followup): after [downloadRegistry] runs (post-unlock), we
+			//   could UPDATE the Photo rows with the registry's per-hash
+			//   metadata (type, size, albumPath, contentHash) so the gallery
+			//   shows accurate info without needing to fetch the original. For
+			//   now, the placeholder behavior matches the pre-v8 PR4 default.
+
+			// Create a DB row for the photo. The original is NOT local — it will be
+			// fetched on-demand by SyncRestorer when the user opens the photo.
+			val photo =
+				Photo(
+					fileName = "$uuid.$PHOTOK_FILE_EXTENSION",
+					importedAt = System.currentTimeMillis(),
+					lastModified = null,
+					type = PhotoType.JPEG,
+					size = 0L,
+					uuid = uuid,
+					syncState = SyncState.UPLOADED,
+					relativePath = null,
+					// Sprint 2 / M7 — tag with the syncing vault's vault_id
+					vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull(),
+				)
+			try {
+				photoDao.insert(photo)
+				diag(
+					"restoreThumbnailsAfterLogin: inserted DB row for $uuid " +
+						"(syncState=UPLOADED, type=${photo.type}, size=${photo.size}, " +
+						"relativePath=${photo.relativePath}, metaSource=defaults)",
+				)
+				return true
+			} catch (e: Exception) {
+				diag(
+					"restoreThumbnailsAfterLogin: insert FAILED for $uuid: ${e.message}",
+					e,
+				)
+				// Best-effort cleanup of the orphaned local thumbnail file so a
+				// later retry doesn't see a stray file with no DB row.
+				localThumb.delete()
+				return false
+			}
+		}
+
+		private suspend fun backfillPhotoFromRegistry(photo: Photo): Int {
+			val entry =
+				try {
+					hashRegistry.findByUuid(photo.uuid)
+				} catch (e: Exception) {
+					diag("applyRegistryMetadataToPhotos: registry lookup FAILED for ${photo.uuid}: ${e.message}")
+					null
+				}
+			if (entry == null) {
+				diag(
+					"applyRegistryMetadataToPhotos: no registry entry for uuid=${photo.uuid} — leaving placeholder (will be corrected on-demand via SyncRestorer)",
+				)
+				return 0
+			}
+
+			val type =
+				try {
+					PhotoType.fromName(entry.type)
+				} catch (e: Exception) {
+					PhotoType.JPEG
+				}
+
+			try {
+				// Bug fix: if albumPath == filename, it's the SAF fallback —
+				// the original import had no RELATIVE_PATH. Set albumPath to
+				// null so ensureAlbumForRestoredPhoto doesn't skip (it would
+				// skip because albumPath == fileName). With null, the photo
+				// just lives in "All Photos" without an album — same as the
+				// original import's behavior.
+				val effectiveAlbumPath =
+					entry.albumPath?.let { ap ->
+						val fname = entry.filename.ifBlank { photo.fileName }
+						if (ap.trim() == fname.trim()) null else ap
+					}
+
+				val affected =
+					photoDao.backfillMetadataFromRegistry(
+						uuid = photo.uuid,
+						filename = entry.filename.ifBlank { photo.fileName },
+						size = entry.size,
+						type = type.value,
+						relativePath = effectiveAlbumPath ?: photo.relativePath,
+						albumPath = effectiveAlbumPath,
+						contentHash = entry.contentHash,
+					)
+				if (affected > 0) {
+					diag(
+						"applyRegistryMetadataToPhotos: backfilled ${photo.uuid} " +
+							"(filename=${entry.filename}, size=${entry.size}, type=$type, " +
+							"albumPath=$effectiveAlbumPath, contentHash=${entry.contentHash})",
+					)
+					return 1
+				}
+			} catch (e: Exception) {
+				diag("applyRegistryMetadataToPhotos: backfill FAILED for ${photo.uuid}: ${e.message}", e)
+			}
+			return 0
+		}
 
 		companion object {
 			const val REPO_DIR = "photoz-backup"
