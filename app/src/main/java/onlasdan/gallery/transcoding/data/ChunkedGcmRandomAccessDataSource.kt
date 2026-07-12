@@ -132,7 +132,7 @@ class ChunkedGcmRandomAccessDataSource(
 
 			// F-002 fix: guard against seek past EOF before loadChunk.
 			// ExoPlayer's DataSource.open() contract: return non-negative byte count, or throw IOException.
-			if (totalPlaintextSize > 0 && plainOffset >= totalPlaintextSize) {
+			if (totalPlaintextSize > 0 && plainOffset > totalPlaintextSize) {
 				throw IOException("ChunkedGcmRA: seek past EOF (plainOffset=$plainOffset, totalPlaintextSize=$totalPlaintextSize)")
 			}
 
