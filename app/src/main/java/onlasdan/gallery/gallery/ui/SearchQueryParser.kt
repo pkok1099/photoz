@@ -159,61 +159,59 @@ fun parseSearchQuery(raw: String): SearchQuery {
  */
 fun List<Photo>.filterBySearchQuery(query: SearchQuery): List<Photo> {
 	if (query.isEmpty) return this
+
 	return this.filter { photo ->
-		if (!photoMatchesTextTokens(photo, query.textTokens)) return@filter false
-		if (!photoMatchesDatePrefix(photo, query.datePrefix)) return@filter false
-		if (!photoMatchesCameraPrefix(photo, query.cameraPrefix)) return@filter false
-		if (!photoMatchesLocation(photo, query.location)) return@filter false
-		if (!photoMatchesTagPrefix(photo, query.tagPrefix)) return@filter false
+		// ─── Text tokens: filename contains (case-insensitive) ─────────────
+		val filenameLower = photo.fileName.lowercase(Locale.US)
+		val matchesText =
+			query.textTokens.all { token ->
+				filenameLower.contains(token.lowercase(Locale.US))
+			}
+		if (!matchesText) return@filter false
+
+		// ─── Date prefix: EXIF date starts with the prefix ─────────────────
+		if (query.datePrefix.isNotEmpty()) {
+			val dateStr = formatDateTakenForSearch(photo.exifDateTaken)
+			// formatDateTakenForSearch returns "yyyy-MM-dd HH:mm" — the
+			// user's prefix can be "2024" (year), "2024-01" (year-month),
+			// or "2024-01-15" (full date). All three are prefixes of the
+			// formatted string, so a simple startsWith works.
+			if (!dateStr.startsWith(query.datePrefix)) return@filter false
+		}
+
+		// ─── Camera prefix: EXIF camera contains (case-insensitive) ────────
+		if (query.cameraPrefix.isNotEmpty()) {
+			val camera = photo.exifCamera ?: return@filter false
+			if (!camera.lowercase(Locale.US).contains(
+					query.cameraPrefix.lowercase(Locale.US),
+				)
+			) {
+				return@filter false
+			}
+		}
+
+		// ─── Location: EXIF GPS within ~50km of the target ─────────────────
+		if (query.location != null) {
+			val lat = photo.exifGpsLat ?: return@filter false
+			val lon = photo.exifGpsLon ?: return@filter false
+			val (targetLat, targetLon) = query.location
+			val distanceM = haversineDistance(lat, lon, targetLat, targetLon)
+			if (distanceM > LOCATION_MATCH_RADIUS_M) return@filter false
+		}
+
+		// ─── Sprint 9 / L6 — AI tag prefix: comma-separated tags contain ──
+		// The photo's `aiTags` field is a comma-separated string like
+		// "beach,sunset,ocean". The user's `tag:beach` query matches if
+		// any tag in that list contains "beach" (case-insensitive).
+		if (query.tagPrefix.isNotEmpty()) {
+			val tags = photo.aiTags ?: return@filter false
+			val tagList = tags.split(",").map { it.trim().lowercase(Locale.US) }
+			val needle = query.tagPrefix.lowercase(Locale.US)
+			if (tagList.none { it.contains(needle) }) return@filter false
+		}
+
 		true
 	}
-}
-
-
-private fun photoMatchesTextTokens(photo: Photo, textTokens: List<String>): Boolean {
-	if (textTokens.isEmpty()) return true
-	val filenameLower = photo.fileName.lowercase(Locale.US)
-	return textTokens.all { token ->
-		filenameLower.contains(token.lowercase(Locale.US))
-	}
-}
-
-@Suppress("SameParameterValue")
-private fun photoMatchesDatePrefix(photo: Photo, datePrefix: String): Boolean {
-	if (datePrefix.isEmpty()) return true
-	val dateStr = formatDateTakenForSearch(photo.exifDateTaken)
-	return dateStr.startsWith(datePrefix)
-}
-
-private fun photoMatchesCameraPrefix(photo: Photo, cameraPrefix: String): Boolean {
-	if (cameraPrefix.isEmpty()) return true
-	val camera = photo.exifCamera ?: return false
-	return camera.lowercase(Locale.US).contains(cameraPrefix.lowercase(Locale.US))
-}
-
-private fun photoMatchesTagPrefix(photo: Photo, tagPrefix: String): Boolean {
-	if (tagPrefix.isEmpty()) return true
-	val tags = photo.aiTags ?: return false
-	val tagList = tags.split(",").map { it.trim().lowercase(Locale.US) }
-	val needle = tagPrefix.lowercase(Locale.US)
-	return tagList.any { it.contains(needle) }
-}
-
-private fun photoMatchesLocation(photo: Photo, location: Pair<Double, Double>?): Boolean {
-	if (location == null) return true
-	val lat = photo.exifGpsLat ?: return false
-	val lon = photo.exifGpsLon ?: return false
-	val (targetLat, targetLon) = location
-	val distanceM = haversineDistance(lat, lon, targetLat, targetLon)
-	return distanceM <= LOCATION_MATCH_RADIUS_M
-}
-
-private fun parseLocationToken(value: String): Pair<Double, Double>? {
-	val parts = value.split(",")
-	if (parts.size != 2) return null
-	val lat = parts[0].trim().toDoubleOrNull() ?: return null
-	val lon = parts[1].trim().toDoubleOrNull() ?: return null
-	return lat to lon
 }
 
 /** ~50km radius for location: prefix matches. Coarse but useful for "city-level" search. */

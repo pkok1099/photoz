@@ -155,10 +155,33 @@ fun SecretLaunchCodeDialog(
 									),
 								cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
 								decorationBox = { innerTextField ->
-									LaunchCodeDecorationBox(
-										codeText = code.text,
-										innerTextField = innerTextField,
-									)
+									val borderColor = MaterialTheme.colorScheme.primary
+
+									Box(
+										contentAlignment = Alignment.Center,
+										modifier =
+											Modifier
+												.drawWithContent {
+													drawContent()
+													drawLine(
+														color = borderColor,
+														start = Offset(0f, size.height),
+														end = Offset(this.size.width, size.height),
+														strokeWidth = Stroke.DefaultMiter,
+													)
+												},
+									) {
+										if (code.text.isEmpty()) {
+											Text(
+												text = LAUNCH_CODE_DEFAULT,
+												textAlign = TextAlign.Center,
+												color = LocalContentColor.current.copy(alpha = 0.3f),
+												fontWeight = FontWeight.SemiBold,
+												fontSize = 16.sp,
+											)
+										}
+										innerTextField()
+									}
 								},
 								modifier =
 									Modifier
@@ -173,45 +196,6 @@ fun SecretLaunchCodeDialog(
 				},
 			)
 		}
-	}
-}
-
-/**
- * Decoration box for the launch-code [BasicTextField] — draws the bottom
- * border line and the placeholder when the field is empty. Extracted from
- * [SecretLaunchCodeDialog] to reduce its cognitive complexity.
- */
-@Composable
-private fun LaunchCodeDecorationBox(
-	codeText: String,
-	innerTextField: @Composable () -> Unit,
-) {
-	val borderColor = MaterialTheme.colorScheme.primary
-
-	Box(
-		contentAlignment = Alignment.Center,
-		modifier =
-			Modifier
-				.drawWithContent {
-					drawContent()
-					drawLine(
-						color = borderColor,
-						start = Offset(0f, size.height),
-						end = Offset(this.size.width, size.height),
-						strokeWidth = Stroke.DefaultMiter,
-					)
-				},
-	) {
-		if (codeText.isEmpty()) {
-			Text(
-				text = LAUNCH_CODE_DEFAULT,
-				textAlign = TextAlign.Center,
-				color = LocalContentColor.current.copy(alpha = 0.3f),
-				fontWeight = FontWeight.SemiBold,
-				fontSize = 16.sp,
-			)
-		}
-		innerTextField()
 	}
 }
 

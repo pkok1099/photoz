@@ -85,76 +85,67 @@ class SetupViewModel
 
 		fun onSetupClicked() =
 			viewModelScope.launch {
-				if (!validateBothPasswords()) return@launch
+				if (validateBothPasswords()) {
+					setupState.value = SetupState.LOADING
 
-				setupState.value = SetupState.LOADING
-
-				// ANTI-DATA-LOSS: If pendingPasswordSetup is true, the VMK was
-				// recovered from a recovery-phrase restore (PHRASE_ONLY login flow).
-				// We must NOT generate a new VMK — wrap the EXISTING VMK with the
-				// user's password so canUnlock() returns true on next app open.
-				if (config.pendingPasswordSetup) {
-					handlePendingPasswordSetup()
-					return@launch
-				}
-
-				// Normal flow: create new VMK + new vault
-				vaultService.create(CreateRequest.Password(password))
-				vaultService
-					.unlock(UnlockRequest.Password(password))
-					.onSuccess { session ->
-						sessionRepository.set(session)
-						completeSetupWithSession(session, password)
-					}.onFailure {
-						setupState.value = SetupState.SETUP
+					// ANTI-DATA-LOSS: If pendingPasswordSetup is true, the VMK was
+					// recovered from a recovery-phrase restore (PHRASE_ONLY login flow).
+					// We must NOT generate a new VMK — wrap the EXISTING VMK with the
+					// user's password so canUnlock() returns true on next app open.
+					if (config.pendingPasswordSetup) {
+						val session = sessionRepository.get()
+						if (session == null) {
+							// Should not happen — phrase restore sets session before
+							// navigating here. But if it does, fall back to full setup.
+							// ANTI-DATA-LOSS: session is null means process death happened.
+							// Do NOT create a new VMK — redirect to RepoSetup for re-login.
+							Timber.e("pendingPasswordSetup=true but session is null — process death. Redirecting to re-login.")
+							config.pendingPasswordSetup = false
+							config.systemFirstStart = true
+							setupState.value = SetupState.SETUP
+							return@launch
+						}
+						// Wrap existing VMK with the user's new password
+						vaultService.createPasswordProtectionFromSession(password, session)
+						config.pendingPasswordSetup = false
+						// Skip recovery phrase creation — it already exists from the
+						// original setup. Just upload escrows if repo is confirmed.
+						if (config.repoConfirmed) {
+							// F-HOTFIX-004: BLOCKING upload — do NOT proceed to recovery phrase
+							// screen until escrow is confirmed on the remote. Previously fire-and-
+							// forget, which meant user could uninstall before upload completed.
+							// NonCancellable only prevented coroutine cancellation, NOT process death.
+							try {
+								val result = repoManager.uploadAllEscrows(password, session)
+								if (result.isFailure) {
+									Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED")
+									setupState.value = SetupState.SETUP
+									return@launch
+								}
+								Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK")
+							} catch (e: Exception) {
+								Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw")
+								setupState.value = SetupState.SETUP
+								return@launch
+							}
+						}
+						config.justFinishedSetup = true
+						setupState.value = SetupState.SHOW_RECOVERY_PHRASE
+						return@launch
 					}
-			}
 
-		/**
-		 * Handles the `pendingPasswordSetup` branch of [onSetupClicked]: wraps
-		 * the existing VMK with the new password and uploads escrows blocking.
-		 * Extracted to reduce the cognitive complexity of [onSetupClicked].
-		 */
-		private suspend fun handlePendingPasswordSetup() {
-			val session = sessionRepository.get()
-			if (session == null) {
-				// Should not happen — phrase restore sets session before
-				// navigating here. But if it does, fall back to full setup.
-				// ANTI-DATA-LOSS: session is null means process death happened.
-				// Do NOT create a new VMK — redirect to RepoSetup for re-login.
-				Timber.e("pendingPasswordSetup=true but session is null — process death. Redirecting to re-login.")
-				config.pendingPasswordSetup = false
-				config.systemFirstStart = true
-				setupState.value = SetupState.SETUP
-				return
-			}
-			// Wrap existing VMK with the user's new password
-			vaultService.createPasswordProtectionFromSession(password, session)
-			config.pendingPasswordSetup = false
-			// Skip recovery phrase creation — it already exists from the
-			// original setup. Just upload escrows if repo is confirmed.
-			if (config.repoConfirmed) {
-				// F-HOTFIX-004: BLOCKING upload — do NOT proceed to recovery phrase
-				// screen until escrow is confirmed on the remote. Previously fire-and-
-				// forget, which meant user could uninstall before upload completed.
-				// NonCancellable only prevented coroutine cancellation, NOT process death.
-				try {
-					val result = repoManager.uploadAllEscrows(password, session)
-					if (result.isFailure) {
-						Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED")
-						setupState.value = SetupState.SETUP
-						return
-					}
-					Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK")
-				} catch (e: Exception) {
-					Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw")
-					setupState.value = SetupState.SETUP
-					return
+					// Normal flow: create new VMK + new vault
+					vaultService.create(CreateRequest.Password(password))
+					vaultService
+						.unlock(UnlockRequest.Password(password))
+						.onSuccess { session ->
+							sessionRepository.set(session)
+							completeSetupWithSession(session, password)
+						}.onFailure {
+							setupState.value = SetupState.SETUP
+						}
 				}
 			}
-			config.justFinishedSetup = true
-			setupState.value = SetupState.SHOW_RECOVERY_PHRASE
-		}
 
 		private suspend fun completeSetupWithSession(
 			session: onlasdan.gallery.encryption.domain.models.VaultSession,

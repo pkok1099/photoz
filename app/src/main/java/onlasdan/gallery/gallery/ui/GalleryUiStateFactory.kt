@@ -31,7 +31,7 @@ class GalleryUiStateFactory
 			sort: Sort,
 			filter: GalleryFilter = GalleryFilter.ALL,
 			searchQuery: String = "",
-		): GalleryUiState {
+		): GalleryUiState =
 			if (photos.isEmpty()) {
 				// ─── Bug 1 fix: Empty state carries filter + searchQuery ──────────
 				// The gallery header (search bar + filter chip row) is now rendered
@@ -41,104 +41,102 @@ class GalleryUiStateFactory
 				// the user can switch back from a filter with no matches (e.g.
 				// "Videos" with no videos imported) — without this the gallery
 				// would be a dead-end.
-				return GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
-			}
-
-			// @since file-upload feature — split photos vs files for the
-			// gallery filter chip. "Photos" = image types only; "Videos" =
-			// video types; "Files" = DOCUMENT / ARCHIVE / AUDIO; "All" = no
-			// type filter. The split uses PhotoType's isVideo / isFile flags
-			// so adding a new photo/video/file type automatically shows up
-			// under the right chip without touching this factory.
-			//
-			// @since search-filter feature — extended with ALL + VIDEOS chips
-			//   and the searchQuery filename filter (case-insensitive
-			//   contains on Photo.fileName).
-			val typeFiltered =
-				when (filter) {
-					GalleryFilter.ALL -> photos
-					GalleryFilter.PHOTOS -> photos.filter { !it.type.isVideo && !it.type.isFile }
-					GalleryFilter.VIDEOS -> photos.filter { it.type.isVideo }
-					GalleryFilter.FILES -> photos.filter { it.type.isFile }
-					// @since v12 Sprint 4 / M2 — Favorites filter: only photos
-					// marked as favorite in the current vault. Crosses type
-					// boundaries (a favorited video shows up here too).
-					GalleryFilter.FAVORITES -> photos.filter { it.isFavorite }
-				}
-
-			// @since search-filter feature — filename contains, case-insensitive.
-			// @since v13 Sprint 6 / M4 — EXIF-prefixed queries (date:, camera:,
-			//   location:) now go through the SearchQueryParser. Plain text
-			//   without prefixes still does filename-contains (backwards compat).
-			val filteredPhotos =
-				if (searchQuery.isBlank()) {
-					typeFiltered
-				} else {
-					val parsed = parseSearchQuery(searchQuery)
-					if (parsed.isEmpty) {
-						// Parser returned empty (e.g. all tokens were unknown prefixes
-						// with empty values) — fall back to the old behavior of
-						// filename-contains the whole raw query.
-						val needle = searchQuery.trim().lowercase()
-						typeFiltered.filter { it.fileName.lowercase().contains(needle) }
-					} else {
-						typeFiltered.filterBySearchQuery(parsed)
+				GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
+			} else {
+				// @since file-upload feature — split photos vs files for the
+				// gallery filter chip. "Photos" = image types only; "Videos" =
+				// video types; "Files" = DOCUMENT / ARCHIVE / AUDIO; "All" = no
+				// type filter. The split uses PhotoType's isVideo / isFile flags
+				// so adding a new photo/video/file type automatically shows up
+				// under the right chip without touching this factory.
+				//
+				// @since search-filter feature — extended with ALL + VIDEOS chips
+				//   and the searchQuery filename filter (case-insensitive
+				//   contains on Photo.fileName).
+				val typeFiltered =
+					when (filter) {
+						GalleryFilter.ALL -> photos
+						GalleryFilter.PHOTOS -> photos.filter { !it.type.isVideo && !it.type.isFile }
+						GalleryFilter.VIDEOS -> photos.filter { it.type.isVideo }
+						GalleryFilter.FILES -> photos.filter { it.type.isFile }
+						// @since v12 Sprint 4 / M2 — Favorites filter: only photos
+						// marked as favorite in the current vault. Crosses type
+						// boundaries (a favorited video shows up here too).
+						GalleryFilter.FAVORITES -> photos.filter { it.isFavorite }
 					}
-				}
 
-			// ─── Item 3 fix: count LOCAL_ONLY + UPLOAD_PENDING as "pending sync" ──
-			// Previously this counted only UPLOAD_PENDING. That caused the
-			// indicator to flicker/stick: a freshly-imported photo sits in
-			// LOCAL_ONLY until the worker picks it up and flips it to
-			// UPLOAD_PENDING (line ~307 in PhotoSyncWorker), then to
-			// UPLOADED or UPLOAD_FAILED on completion. During WorkManager's
-			// scheduling delay and during retry-backoff the photo is in
-			// UPLOAD_PENDING but no upload is actively running, so the
-			// indicator would show "Syncing…" indefinitely.
-			//
-			// The new semantics: anything that isn't UPLOADED or
-			// UPLOAD_FAILED is "pending sync". The indicator now appears
-			// at import time (LOCAL_ONLY) and clears only when every photo
-			// has reached a terminal state. The gallery top-bar text was
-			// updated accordingly (see GalleryScreen.kt) to read
-			// "N photos to sync" instead of "Syncing N…" — accurate for
-			// both the LOCAL_ONLY and UPLOAD_PENDING cases.
-			val filteredPending =
-				filteredPhotos.count {
-					it.syncState == SyncState.UPLOAD_PENDING ||
-						it.syncState == SyncState.LOCAL_ONLY
-				}
+				// @since search-filter feature — filename contains, case-insensitive.
+				// @since v13 Sprint 6 / M4 — EXIF-prefixed queries (date:, camera:,
+				//   location:) now go through the SearchQueryParser. Plain text
+				//   without prefixes still does filename-contains (backwards compat).
+				val filteredPhotos =
+					if (searchQuery.isBlank()) {
+						typeFiltered
+					} else {
+						val parsed = parseSearchQuery(searchQuery)
+						if (parsed.isEmpty) {
+							// Parser returned empty (e.g. all tokens were unknown prefixes
+							// with empty values) — fall back to the old behavior of
+							// filename-contains the whole raw query.
+							val needle = searchQuery.trim().lowercase()
+							typeFiltered.filter { it.fileName.lowercase().contains(needle) }
+						} else {
+							typeFiltered.filterBySearchQuery(parsed)
+						}
+					}
+				// ─── Item 3 fix: count LOCAL_ONLY + UPLOAD_PENDING as "pending sync" ──
+				// Previously this counted only UPLOAD_PENDING. That caused the
+				// indicator to flicker/stick: a freshly-imported photo sits in
+				// LOCAL_ONLY until the worker picks it up and flips it to
+				// UPLOAD_PENDING (line ~307 in PhotoSyncWorker), then to
+				// UPLOADED or UPLOAD_FAILED on completion. During WorkManager's
+				// scheduling delay and during retry-backoff the photo is in
+				// UPLOAD_PENDING but no upload is actively running, so the
+				// indicator would show "Syncing…" indefinitely.
+				//
+				// The new semantics: anything that isn't UPLOADED or
+				// UPLOAD_FAILED is "pending sync". The indicator now appears
+				// at import time (LOCAL_ONLY) and clears only when every photo
+				// has reached a terminal state. The gallery top-bar text was
+				// updated accordingly (see GalleryScreen.kt) to read
+				// "N photos to sync" instead of "Syncing N…" — accurate for
+				// both the LOCAL_ONLY and UPLOAD_PENDING cases.
+				val filteredPending =
+					filteredPhotos.count {
+						it.syncState == SyncState.UPLOAD_PENDING ||
+							it.syncState == SyncState.LOCAL_ONLY
+					}
 
-			// If the selected filter + search yield zero matches, show Empty
-			// so the gallery placeholder appears (e.g. user has only photos,
-			// picks the "Files" filter — show the empty state with the FAB).
-			//
-			// ─── Bug 1 fix: pass filter + searchQuery to Empty ──────────────
-			// Same reason as above: the gallery header needs to keep showing
-			// the chips so the user can switch back to "All" or clear the
-			// search query when the filtered list is empty.
-			if (filteredPhotos.isEmpty()) {
-				return GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
+				// If the selected filter + search yield zero matches, show Empty
+				// so the gallery placeholder appears (e.g. user has only photos,
+				// picks the "Files" filter — show the empty state with the FAB).
+				//
+				// ─── Bug 1 fix: pass filter + searchQuery to Empty ──────────────
+				// Same reason as above: the gallery header needs to keep showing
+				// the chips so the user can switch back to "All" or clear the
+				// search query when the filtered list is empty.
+				if (filteredPhotos.isEmpty()) {
+					GalleryUiState.Empty(filter = filter, searchQuery = searchQuery)
+				} else {
+					GalleryUiState.Content(
+						photos =
+							filteredPhotos.map {
+								PhotoTile(
+									fileName = it.fileName,
+									type = it.type,
+									uuid = it.uuid,
+									// @since PR2 sync — surface per-photo sync state in the gallery tile
+									syncState = it.syncState,
+									// @since v12 Sprint 4 / M2 — surface favorite flag for heart badge
+									isFavorite = it.isFavorite,
+								)
+							},
+						showAlbumSelectionDialog = showAlbumSelectionDialog,
+						sort = sort,
+						pendingSyncCount = filteredPending,
+						filter = filter,
+						searchQuery = searchQuery,
+					)
+				}
 			}
-
-			return GalleryUiState.Content(
-				photos =
-					filteredPhotos.map {
-						PhotoTile(
-							fileName = it.fileName,
-							type = it.type,
-							uuid = it.uuid,
-							// @since PR2 sync — surface per-photo sync state in the gallery tile
-							syncState = it.syncState,
-							// @since v12 Sprint 4 / M2 — surface favorite flag for heart badge
-							isFavorite = it.isFavorite,
-						)
-					},
-				showAlbumSelectionDialog = showAlbumSelectionDialog,
-				sort = sort,
-				pendingSyncCount = filteredPending,
-				filter = filter,
-				searchQuery = searchQuery,
-			)
-		}
 	}

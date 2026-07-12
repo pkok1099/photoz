@@ -227,61 +227,6 @@ class HashRegistry
 		}
 
 		/**
-		 * Resolve the user's chosen remote from SharedPreferences.
-		 * Returns null if no remote is configured.
-		 */
-		private fun getChosenRemote(): String? =
-			try {
-				val config =
-					app.getSharedPreferences(
-						Config.FILE_NAME,
-						android.content.Context.MODE_PRIVATE,
-					)
-				config.getString(PREF_CHOSEN_REMOTE, null)
-			} catch (e: Exception) {
-				null
-			}
-
-		/**
-		 * Decrypt encrypted registry bytes and parse into entries.
-		 * Dispatches between per-entry (0x03), GZIP (0x02), and legacy (0x01) formats.
-		 * Preserves exact diag messages from [downloadAndCache].
-		 */
-		private fun decryptRegistryFromBytes(
-			encryptedData: ByteArray,
-			vmkBytes: ByteArray,
-		): List<HashRegistryEntry> {
-			val versionByte = encryptedData[0]
-			if (versionByte == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
-				diag("downloadAndCache: per-entry encrypted format (0x03) — trying each entry")
-				return parsePerEntryEncrypted(encryptedData, vmkBytes)
-			}
-			val json =
-				if (versionByte == REGISTRY_FORMAT_VERSION_GZIP) {
-					val nonce = encryptedData.copyOfRange(1, 1 + GCM_NONCE_SIZE)
-					val ciphertext = encryptedData.copyOfRange(1 + GCM_NONCE_SIZE, encryptedData.size)
-					val key = SecretKeySpec(vmkBytes, "AES")
-					val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
-					cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
-					val plaintextCompressed = cipher.doFinal(ciphertext)
-					try {
-						gzipDecompressToString(plaintextCompressed)
-					} catch (gzipEx: Exception) {
-						diag(
-							"downloadAndCache: version byte was 0x02 but GZIP decompress failed — " +
-								"likely a legacy file whose nonce happened to start with 0x02. " +
-								"Re-attempting as legacy format. gzipError=${gzipEx.message}",
-						)
-						decryptLegacyRegistryJson(encryptedData, vmkBytes)
-					}
-				} else {
-					decryptLegacyRegistryJson(encryptedData, vmkBytes)
-				}
-			diag("downloadAndCache: decrypted registry (${json.length} chars)")
-			return parseRegistryJson(json)
-		}
-
-		/**
 		 * Check if a content hash already exists in the local registry cache.
 		 * Returns the existing entry if found, null if not (new file).
 		 *
@@ -351,11 +296,20 @@ class HashRegistry
 		 */
 		suspend fun downloadAndCache(vmkBytes: ByteArray): Int =
 			withContext(Dispatchers.IO) {
-				val remote = getChosenRemote()
-				if (remote == null) {
-					diag("downloadAndCache: no remote chosen")
-					return@withContext 0
-				}
+				val remote =
+					try {
+						val config =
+							app.getSharedPreferences(
+								Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+						config.getString(PREF_CHOSEN_REMOTE, null)
+					} catch (e: Exception) {
+						null
+					} ?: run {
+						diag("downloadAndCache: no remote chosen")
+						return@withContext 0
+					}
 
 				val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
 				diag("downloadAndCache: downloading $remotePath")
@@ -380,7 +334,45 @@ class HashRegistry
 					// (no version byte — the first byte is the start of the GCM
 					// nonce). See [REGISTRY_FORMAT_VERSION_GZIP] for the full
 					// format spec.
-					val entries = decryptRegistryFromBytes(encryptedData, vmkBytes)
+					val versionByte = encryptedData[0]
+
+					// Sprint 10+ / M7 v2 — per-entry encrypted format (version 0x03).
+					// Each entry is independently GCM-encrypted. Try-decrypt each
+					// with current VMK — entries from other vaults fail silently.
+					val entries =
+						if (versionByte == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
+							diag("downloadAndCache: per-entry encrypted format (0x03) — trying each entry")
+							parsePerEntryEncrypted(encryptedData, vmkBytes)
+						} else {
+							// Legacy or GZIP format — single-blob GCM decrypt.
+							val json =
+								if (versionByte == REGISTRY_FORMAT_VERSION_GZIP) {
+									val nonce = encryptedData.copyOfRange(1, 1 + GCM_NONCE_SIZE)
+									val ciphertext =
+										encryptedData.copyOfRange(1 + GCM_NONCE_SIZE, encryptedData.size)
+
+									val key = SecretKeySpec(vmkBytes, "AES")
+									val cipher = Cipher.getInstance(Algorithm.AesGcmNoPadding.value)
+									cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_SIZE, nonce))
+									val plaintextCompressed = cipher.doFinal(ciphertext)
+
+									try {
+										gzipDecompressToString(plaintextCompressed)
+									} catch (gzipEx: Exception) {
+										diag(
+											"downloadAndCache: version byte was 0x02 but GZIP decompress failed — " +
+												"likely a legacy file whose nonce happened to start with 0x02. " +
+												"Re-attempting as legacy format. gzipError=${gzipEx.message}",
+										)
+										decryptLegacyRegistryJson(encryptedData, vmkBytes)
+									}
+								} else {
+									decryptLegacyRegistryJson(encryptedData, vmkBytes)
+								}
+
+							diag("downloadAndCache: decrypted registry (${json.length} chars)")
+							parseRegistryJson(json)
+						}
 
 					diag("downloadAndCache: parsed ${entries.size} entries for current vault")
 
@@ -395,61 +387,6 @@ class HashRegistry
 				}
 			}
 
-		private suspend fun mergeOtherVaultPreservedBlobs(
-			remote: String,
-			vmkBytes: ByteArray,
-		): List<ByteArray> {
-			var preservedBlobs: List<ByteArray> = emptyList()
-			try {
-				val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
-				val downloadTempFile =
-					File(app.cacheDir, "registry-download-merge-${System.currentTimeMillis()}.crypt")
-				val downloadResult = rcloneController.downloadFile(remotePath, downloadTempFile.absolutePath)
-				if (downloadResult.isSuccess && downloadTempFile.exists()) {
-					val existingData = downloadTempFile.readBytes()
-					downloadTempFile.delete()
-					if (existingData.isNotEmpty() && existingData[0] == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
-						val allBlobs = extractRawBlobs(existingData)
-						// Keep only blobs that CAN'T be decrypted by current VMK (other vaults)
-						preservedBlobs = allBlobs.filterNot { canDecryptBlob(it, vmkBytes) }
-						diag("uploadToRemote: M7 v2 merge — preserved ${preservedBlobs.size} entries from other vaults (total existing: ${allBlobs.size})")
-					}
-				}
-			} catch (e: Exception) {
-				diag("uploadToRemote: M7 v2 merge — download failed (non-fatal, will upload fresh): ${e.message}")
-			}
-			return preservedBlobs
-		}
-
-		private suspend fun recheckConcurrentWrite(
-			remote: String,
-			vmkBytes: ByteArray,
-			currentPreserved: List<ByteArray>,
-			entries: List<HashRegistryEntry>,
-			tempFile: File,
-		) {
-			val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
-			try {
-				val recheckTemp = File(app.cacheDir, "registry-recheck-" + System.currentTimeMillis() + ".crypt")
-				val recheckResult = rcloneController.downloadFile(remotePath, recheckTemp.absolutePath)
-				if (recheckResult.isSuccess && recheckTemp.exists()) {
-					val recheckData = recheckTemp.readBytes()
-					recheckTemp.delete()
-					if (recheckData.isNotEmpty() && recheckData[0] == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
-						val recheckBlobs = extractRawBlobs(recheckData)
-						val recheckPreserved = recheckBlobs.filterNot { canDecryptBlob(it, vmkBytes) }
-						if (recheckPreserved.size != currentPreserved.size) {
-							diag("uploadToRemote: F-SYNC-014 detected concurrent write — re-merging with " + recheckPreserved.size + " preserved (was " + currentPreserved.size + ")")
-							val remergedData = serializeMergedEncrypted(entries, recheckPreserved, vmkBytes)
-							tempFile.writeBytes(remergedData)
-						}
-					}
-				}
-			} catch (e: Exception) {
-				diag("uploadToRemote: F-SYNC-014 recheck failed (non-fatal): " + e.message)
-			}
-		}
-
 		/**
 		 * Upload the current local registry cache to the remote, encrypted with VMK.
 		 * Called after a batch of uploads completes.
@@ -458,11 +395,20 @@ class HashRegistry
 		 */
 		suspend fun uploadToRemote(vmkBytes: ByteArray) =
 			withContext(Dispatchers.IO) {
-				val remote = getChosenRemote()
-				if (remote == null) {
-					diag("uploadToRemote: no remote chosen — skipping")
-					return@withContext
-				}
+				val remote =
+					try {
+						val config =
+							app.getSharedPreferences(
+								Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+						config.getString(PREF_CHOSEN_REMOTE, null)
+					} catch (e: Exception) {
+						null
+					} ?: run {
+						diag("uploadToRemote: no remote chosen — skipping")
+						return@withContext
+					}
 
 				val vaultId = runCatching { sessionRepository.require().vaultId }.getOrNull()
 				val entries =
@@ -488,7 +434,25 @@ class HashRegistry
 				// 5. Upload merged result
 				//
 				// @since Sprint 8 — M7 v2 multi-vault registry merge
-				val preservedBlobs = mergeOtherVaultPreservedBlobs(remote, vmkBytes)
+				var preservedBlobs: List<ByteArray> = emptyList()
+				try {
+					val remotePath = "$remote:$REGISTRY_REMOTE_PATH"
+					val downloadTempFile =
+						File(app.cacheDir, "registry-download-merge-${System.currentTimeMillis()}.crypt")
+					val downloadResult = rcloneController.downloadFile(remotePath, downloadTempFile.absolutePath)
+					if (downloadResult.isSuccess && downloadTempFile.exists()) {
+						val existingData = downloadTempFile.readBytes()
+						downloadTempFile.delete()
+						if (existingData.isNotEmpty() && existingData[0] == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
+							val allBlobs = extractRawBlobs(existingData)
+							// Keep only blobs that CAN'T be decrypted by current VMK (other vaults)
+							preservedBlobs = allBlobs.filterNot { canDecryptBlob(it, vmkBytes) }
+							diag("uploadToRemote: M7 v2 merge — preserved ${preservedBlobs.size} entries from other vaults (total existing: ${allBlobs.size})")
+						}
+					}
+				} catch (e: Exception) {
+					diag("uploadToRemote: M7 v2 merge — download failed (non-fatal, will upload fresh): ${e.message}")
+				}
 
 				// Serialize: our fresh entries + preserved other-vault blobs
 				val encryptedData = serializeMergedEncrypted(entries, preservedBlobs, vmkBytes)
@@ -500,7 +464,25 @@ class HashRegistry
 					diag("uploadToRemote: uploading ${encryptedData.size} bytes (${entries.size} ours + ${preservedBlobs.size} preserved) → $remotePath")
 					// F-SYNC-014: Optimistic concurrency — re-download the remote registry
 					// RIGHT BEFORE uploading to catch concurrent writes from other devices.
-					recheckConcurrentWrite(remote, vmkBytes, preservedBlobs, entries, tempFile)
+					try {
+						val recheckTemp = File(app.cacheDir, "registry-recheck-" + System.currentTimeMillis() + ".crypt")
+						val recheckResult = rcloneController.downloadFile(remotePath, recheckTemp.absolutePath)
+						if (recheckResult.isSuccess && recheckTemp.exists()) {
+							val recheckData = recheckTemp.readBytes()
+							recheckTemp.delete()
+							if (recheckData.isNotEmpty() && recheckData[0] == REGISTRY_FORMAT_VERSION_PER_ENTRY) {
+								val recheckBlobs = extractRawBlobs(recheckData)
+								val recheckPreserved = recheckBlobs.filterNot { canDecryptBlob(it, vmkBytes) }
+								if (recheckPreserved.size != preservedBlobs.size) {
+									diag("uploadToRemote: F-SYNC-014 detected concurrent write — re-merging with " + recheckPreserved.size + " preserved (was " + preservedBlobs.size + ")")
+									val remergedData = serializeMergedEncrypted(entries, recheckPreserved, vmkBytes)
+									tempFile.writeBytes(remergedData)
+								}
+							}
+						}
+					} catch (e: Exception) {
+						diag("uploadToRemote: F-SYNC-014 recheck failed (non-fatal): " + e.message)
+					}
 
 					rcloneController.uploadFile(tempFile.absolutePath, remotePath).getOrThrow()
 					diag("uploadToRemote: OK")
@@ -611,37 +593,22 @@ class HashRegistry
 		 *
 		 * @since v9 followup — packed thumbnails (Bug 4)
 		 */
-		private data class PendingThumb(
-			val entry: HashRegistryEntry,
-			val bytes: ByteArray,
-		)
-
-		private fun resolvePendingThumbnails(pendingEntries: List<HashRegistryEntry>): List<PendingThumb> {
-			val result = mutableListOf<PendingThumb>()
-			for (entry in pendingEntries) {
-				val thumbFile = File(app.filesDir, "${entry.uuid}.$PHOTOK_FILE_EXTENSION.tn")
-				if (!thumbFile.exists() || thumbFile.length() == 0L) {
-					diag("flushPendingThumbnailPacks: skipping ${entry.uuid} — local thumbnail missing (${thumbFile.absolutePath})")
-					continue
-				}
-				try {
-					val bytes = thumbFile.readBytes()
-					result.add(PendingThumb(entry, bytes))
-				} catch (e: Exception) {
-					diag("flushPendingThumbnailPacks: FAILED to read thumbnail for ${entry.uuid}: ${e.message}"
-						, e)
-				}
-			}
-			return result
-		}
-
 		suspend fun flushPendingThumbnailPacks() =
 			withContext(Dispatchers.IO) {
-				val remote = getChosenRemote()
-				if (remote == null) {
-					diag("flushPendingThumbnailPacks: no remote chosen — skipping")
-					return@withContext
-				}
+				val remote =
+					try {
+						val config =
+							app.getSharedPreferences(
+								Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+						config.getString(PREF_CHOSEN_REMOTE, null)
+					} catch (e: Exception) {
+						null
+					} ?: run {
+						diag("flushPendingThumbnailPacks: no remote chosen — skipping")
+						return@withContext
+					}
 
 				// Read all entries with thumbnail_pack = null. These are the "pending
 				// pack" entries — added by PhotoSyncWorker.performUpload after a
@@ -653,7 +620,28 @@ class HashRegistry
 				}
 				diag("flushPendingThumbnailPacks: ${pendingEntries.size} pending entries to pack")
 
-				val pendingThumbs = resolvePendingThumbnails(pendingEntries)
+				// Resolve each entry to (entry, thumbnailBytes). Skip entries whose
+				// local thumbnail file doesn't exist (e.g. imported before v9, or the
+				// thumbnail file was deleted out-of-band).
+				data class PendingThumb(
+					val entry: HashRegistryEntry,
+					val bytes: ByteArray,
+				)
+				val pendingThumbs = mutableListOf<PendingThumb>()
+				for (entry in pendingEntries) {
+					val thumbFile = File(app.filesDir, "${entry.uuid}.$PHOTOK_FILE_EXTENSION.tn")
+					if (!thumbFile.exists() || thumbFile.length() == 0L) {
+						diag("flushPendingThumbnailPacks: skipping ${entry.uuid} — local thumbnail missing (${thumbFile.absolutePath})")
+						continue
+					}
+					try {
+						val bytes = thumbFile.readBytes()
+						pendingThumbs.add(PendingThumb(entry, bytes))
+					} catch (e: Exception) {
+						diag("flushPendingThumbnailPacks: FAILED to read thumbnail for ${entry.uuid}: ${e.message}"
+							, e)
+					}
+				}
 				if (pendingThumbs.isEmpty()) {
 					diag("flushPendingThumbnailPacks: no readable local thumbnails — nothing to pack")
 					return@withContext
@@ -683,12 +671,30 @@ class HashRegistry
 							"flushPendingThumbnailPacks: uploading pack $packName (${currentPackStream.size()} bytes, ${currentPackEntries.size} thumbnails) → $remotePath",)
 						rcloneController.uploadFile(packFile.absolutePath, remotePath).getOrThrow()
 						diag("flushPendingThumbnailPacks: pack $packName upload OK")
-						updatePackEntriesInDb(packName, currentPackEntries)
+
+						// Update each entry in this pack with pack name + offset + length.
+						var offset = 0L
+						for (pt in currentPackEntries) {
+							val updated =
+								pt.entry.copy(
+									thumbnailPack = packName,
+									thumbnailOffset = offset,
+									thumbnailLength = pt.bytes.size.toLong(),)
+							try {
+								dao.upsert(updated)
+							} catch (e: Exception) {
+								diag("flushPendingThumbnailPacks: FAILED to update entry for ${pt.entry.uuid}: ${e.message}"
+									, e)
+							}
+							offset += pt.bytes.size
+						}
 					} catch (e: Exception) {
 						diag(
 							"flushPendingThumbnailPacks: pack $packName upload FAILED (non-fatal — entries keep thumbnail_pack=null, will retry next batch): ${e.message}",
 							e,
 						)
+						// Don't rethrow — leave entries with thumbnail_pack=null so the
+						// next batch's flushPendingThumbnailPacks retries them.
 					} finally {
 						packFile.delete()
 					}
@@ -699,44 +705,27 @@ class HashRegistry
 
 				val maxSize = SyncConfig.THUMBNAIL_PACK_SIZE_BYTES
 				for (pt in pendingThumbs) {
+					// If adding this thumbnail would exceed the max pack size AND the
+					// current pack is non-empty, flush the current pack first.
 					if (currentPackStream.size() > 0 &&
 						(currentPackStream.size() + pt.bytes.size) > maxSize) {
 						uploadCurrentPack()
 					}
+					// Append this thumbnail to the current pack.
 					currentPackStream.write(pt.bytes)
 					currentPackEntries.add(pt)
 
+					// Edge case: if a SINGLE thumbnail exceeds the max pack size, flush
+					// it as its own (oversized) pack. This is rare (thumbnails are
+					// typically a few KB) but handles the case gracefully.
 					if (currentPackStream.size() >= maxSize) {
 						uploadCurrentPack()
 					}
 				}
+				// Flush the final partial pack.
 				uploadCurrentPack()
 				diag("flushPendingThumbnailPacks: DONE — packed ${pendingThumbs.size} thumbnails into $packIndex pack(s)")
 			}
-
-		private suspend fun updatePackEntriesInDb(
-			packName: String,
-			entries: List<PendingThumb>,
-		) {
-			var offset = 0L
-			for (pt in entries) {
-				val updated =
-					pt.entry.copy(
-						thumbnailPack = packName,
-						thumbnailOffset = offset,
-						thumbnailLength = pt.bytes.size.toLong(),
-					)
-				try {
-					dao.upsert(updated)
-				} catch (e: Exception) {
-					diag(
-						"flushPendingThumbnailPacks: FAILED to update entry for ${pt.entry.uuid}: ${e.message}",
-						e,
-					)
-				}
-				offset += pt.bytes.size
-			}
-		}
 
 		// ─── Registry garbage collection (registry-gc feature) ───────────────────
 		// The dedup registry is monotonic — entries are tombstoned (`deleted=true`)
@@ -848,206 +837,6 @@ class HashRegistry
 				}
 			}
 
-		private data class LiveThumb(
-			val entry: HashRegistryEntry,
-			val bytes: ByteArray,
-		)
-
-		private suspend fun deleteDeadThumbnailPack(
-			remote: String,
-			packName: String,
-			dead: List<HashRegistryEntry>,
-		): Boolean {
-			val packRemotePath =
-				"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-			diag("gcThumbnailPacks: pack $packName 100% dead — deleting pack file, no repack")
-			try {
-				rcloneController.deleteFile(packRemotePath).getOrThrow()
-				diag("gcThumbnailPacks: deleted pack $packName from remote")
-			} catch (e: Exception) {
-				diag("gcThumbnailPacks: delete pack $packName FAILED (non-fatal): ${e.message}", e)
-			}
-			for (d in dead) {
-				try {
-					dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
-				} catch (e: Exception) {
-					diag(
-						"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after pack delete FAILED (non-fatal): ${e.message}",
-						e,
-					)
-				}
-			}
-			return true
-		}
-
-		private suspend fun downloadPack(
-			packName: String,
-			packRemotePath: String,
-			packLocalFile: File,
-		): Boolean {
-			return try {
-				rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath).getOrThrow()
-				true
-			} catch (e: Exception) {
-				diag("gcThumbnailPacks: download pack $packName FAILED (non-fatal — skipping): ${e.message}"
-					, e)
-				false
-			}
-		}
-
-		private fun extractLiveThumbs(
-			live: List<HashRegistryEntry>,
-			packBytes: ByteArray,
-			packName: String,
-		): List<LiveThumb> {
-			val result = mutableListOf<LiveThumb>()
-			for (e in live.sortedBy { it.thumbnailOffset }) {
-				val off = e.thumbnailOffset.toInt()
-				val len = e.thumbnailLength.toInt()
-				if (off < 0 || len <= 0 || off + len > packBytes.size) {
-					diag(
-						"gcThumbnailPacks: entry ${e.uuid} has invalid offset/length (off=$off len=$len packSize=${packBytes.size}) — skipping entry",
-					)
-					continue
-				}
-				result.add(LiveThumb(e, packBytes.copyOfRange(off, off + len)))
-			}
-			return result
-		}
-
-		private suspend fun deleteEmptyPackThenClearDead(
-			remote: String,
-			packName: String,
-			dead: List<HashRegistryEntry>,
-		) {
-			val packRemotePath =
-				"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-			try {
-				rcloneController.deleteFile(packRemotePath).getOrThrow()
-			} catch (e: Exception) {
-				diag(
-					"gcThumbnailPacks: delete empty pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}",
-					e,
-				)
-			}
-			for (d in dead) {
-				try {
-					dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
-				} catch (e: Exception) {
-					diag(
-						"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} (empty-pack fallback) FAILED (non-fatal): ${e.message}",
-						e,
-					)
-				}
-			}
-		}
-
-		private suspend fun uploadRepackedThumbnails(
-			remote: String,
-			packName: String,
-			packRemotePath: String,
-			packLocalFile: File,
-			packBytes: ByteArray,
-			live: List<HashRegistryEntry>,
-			dead: List<HashRegistryEntry>,
-			entries: List<HashRegistryEntry>,
-		): Boolean {
-			val liveThumbs = extractLiveThumbs(live, packBytes, packName)
-			if (liveThumbs.isEmpty()) {
-				diag(
-					"gcThumbnailPacks: no extractable live thumbnails in $packName — falling back to delete-pack + clear-field",
-				)
-				packLocalFile.delete()
-				deleteEmptyPackThenClearDead(remote, packName, dead)
-				return true
-			}
-
-			val newPackBytes =
-				ByteArrayOutputStream(liveThumbs.sumOf { it.bytes.size }).use { baos ->
-					for (lt in liveThumbs) baos.write(lt.bytes)
-					baos.toByteArray()
-				}
-			val newPackName =
-				"pack-${System.currentTimeMillis()}-${(0..9999).random().toString().padStart(4, '0')}"
-			val newPackFile =
-				File(app.cacheDir, "gc-newpack-$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
-			newPackFile.writeBytes(newPackBytes)
-
-			val newPackRemotePath =
-				"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-			try {
-				rcloneController.uploadFile(newPackFile.absolutePath, newPackRemotePath).getOrThrow()
-				diag(
-					"gcThumbnailPacks: uploaded new pack $newPackName (${newPackBytes.size} bytes, ${liveThumbs.size} thumbnails)",
-				)
-			} catch (e: Exception) {
-				diag("gcThumbnailPacks: upload new pack $newPackName FAILED (non-fatal): ${e.message}", e)
-				packLocalFile.delete()
-				newPackFile.delete()
-				return false
-			}
-
-			// Update each live entry's pack name + offset + length.
-			var offset = 0L
-			for (lt in liveThumbs) {
-				try {
-					dao.upsert(
-						lt.entry.copy(
-							thumbnailPack = newPackName,
-							thumbnailOffset = offset,
-							thumbnailLength = lt.bytes.size.toLong(),
-						),
-					)
-				} catch (e: Exception) {
-					diag("gcThumbnailPacks: update entry ${lt.entry.uuid} FAILED (non-fatal): ${e.message}", e)
-				}
-				offset += lt.bytes.size
-			}
-
-			for (d in dead) {
-				try {
-					dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
-				} catch (e: Exception) {
-					diag(
-						"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after repack FAILED (non-fatal): ${e.message}",
-						e,
-					)
-				}
-			}
-
-			try {
-				rcloneController.deleteFile(packRemotePath).getOrThrow()
-				diag("gcThumbnailPacks: deleted old pack $packName from remote")
-			} catch (e: Exception) {
-				diag(
-					"gcThumbnailPacks: delete old pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}",
-					e,
-				)
-			}
-
-			packLocalFile.delete()
-			newPackFile.delete()
-			diag(
-				"gcThumbnailPacks: repacked $packName → $newPackName (was ${entries.size} entries, now ${liveThumbs.size} live)",
-			)
-			return true
-		}
-
-		private suspend fun tryFlushRegistryAfterGc(repacked: Int) {
-			if (repacked <= 0) return
-			try {
-				val session = sessionRepository.get()
-				if (session != null) {
-					uploadToRemote(session.vmk.encoded)
-					diag("gcThumbnailPacks: flushed updated registry to remote")
-				} else {
-					diag("gcThumbnailPacks: vault session unavailable — registry stays local, will flush on next batch")
-				}
-			} catch (e: Exception) {
-				diag("gcThumbnailPacks: remote flush FAILED (non-fatal): ${e.message}", e)
-			}
-		}
-
 		/**
 		 * Reclaim space from thumbnail packs that are >30% tombstoned.
 		 *
@@ -1072,11 +861,20 @@ class HashRegistry
 		 */
 		suspend fun gcThumbnailPacks(): Int =
 			withContext(Dispatchers.IO) {
-				val remote = getChosenRemote()
-				if (remote == null) {
-					diag("gcThumbnailPacks: no remote chosen — skipping")
-					return@withContext 0
-				}
+				val remote =
+					try {
+						val config =
+							app.getSharedPreferences(
+								Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+						config.getString(PREF_CHOSEN_REMOTE, null)
+					} catch (e: Exception) {
+						null
+					} ?: run {
+						diag("gcThumbnailPacks: no remote chosen — skipping")
+						return@withContext 0
+					}
 
 				val allEntries =
 					try {
@@ -1090,6 +888,8 @@ class HashRegistry
 					return@withContext 0
 				}
 
+				// Group by thumbnail_pack (skip entries with no pack — those are
+				// individual-file uploads that aren't part of any pack).
 				val byPack: Map<String, List<HashRegistryEntry>> =
 					allEntries
 						.filter { !it.thumbnailPack.isNullOrBlank() }
@@ -1107,34 +907,198 @@ class HashRegistry
 					val deadPct = if (entries.isEmpty()) 0 else (dead.size * 100) / entries.size
 					diag("gcThumbnailPacks: pack $packName — ${live.size} live, ${dead.size} dead ($deadPct% dead)")
 
-					if (dead.isEmpty()) continue
+					if (dead.isEmpty()) {
+						// No tombstones in this pack — nothing to reclaim.
+						continue
+					}
 					if (deadPct <= GC_DEAD_SPACE_THRESHOLD_PCT) {
+						// Below threshold — keep the pack as-is.
 						diag("gcThumbnailPacks: pack $packName below $GC_DEAD_SPACE_THRESHOLD_PCT% threshold — skipping")
 						continue
 					}
 					if (live.isEmpty()) {
-						if (deleteDeadThumbnailPack(remote, packName, dead)) repacked++
+						// Entire pack is dead — just delete the pack file. No repack
+						// needed (no live entries to migrate). The tombstoned entries'
+						// thumbnail_pack field is cleared so a future GC run doesn't
+						// try to download a non-existent pack.
+						diag("gcThumbnailPacks: pack $packName 100% dead — deleting pack file, no repack")
+						val packRemotePath =
+							"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+						try {
+							rcloneController.deleteFile(packRemotePath).getOrThrow()
+							diag("gcThumbnailPacks: deleted pack $packName from remote")
+						} catch (e: Exception) {
+							diag("gcThumbnailPacks: delete pack $packName FAILED (non-fatal): ${e.message}", e)
+						}
+						for (d in dead) {
+							try {
+								dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
+							} catch (e: Exception) {
+								diag(
+									"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after pack delete FAILED (non-fatal): ${e.message}",
+									e,
+								)
+							}
+						}
+						repacked++
 						continue
 					}
 
-					val packRemotePath =
-						"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
-					val packLocalFile =
-						File(app.cacheDir, "gc-pack-$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
-					if (!downloadPack(packName, packRemotePath, packLocalFile)) continue
-
+					// Download the pack, extract live entries, upload as a new pack,
+					// update live entries' offset/length, delete the old pack.
 					try {
+						val packRemotePath =
+							"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+						val packLocalFile =
+							File(app.cacheDir, "gc-pack-$packName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+						try {
+							rcloneController.downloadFile(packRemotePath, packLocalFile.absolutePath).getOrThrow()
+						} catch (e: Exception) {
+							diag("gcThumbnailPacks: download pack $packName FAILED (non-fatal — skipping): ${e.message}"
+								, e)
+							continue
+						}
 						val packBytes = packLocalFile.readBytes()
 						diag("gcThumbnailPacks: downloaded pack $packName (${packBytes.size} bytes)")
-						if (uploadRepackedThumbnails(remote, packName, packRemotePath, packLocalFile, packBytes, live, dead, entries)) {
-							repacked++
+
+						// Extract live thumbnails IN ORDER (sorted by current offset
+						// so we preserve the original ordering within the pack).
+						data class LiveThumb(
+							val entry: HashRegistryEntry,
+							val bytes: ByteArray,
+						)
+						val liveThumbs = mutableListOf<LiveThumb>()
+						for (e in live.sortedBy { it.thumbnailOffset }) {
+							val off = e.thumbnailOffset.toInt()
+							val len = e.thumbnailLength.toInt()
+							if (off < 0 || len <= 0 || off + len > packBytes.size) {
+								diag(
+									"gcThumbnailPacks: entry ${e.uuid} has invalid offset/length (off=$off len=$len packSize=${packBytes.size}) — skipping entry",
+								)
+								continue
+							}
+							liveThumbs.add(LiveThumb(e, packBytes.copyOfRange(off, off + len)))
 						}
+						if (liveThumbs.isEmpty()) {
+							diag(
+								"gcThumbnailPacks: no extractable live thumbnails in $packName — falling back to delete-pack + clear-field",
+							)
+							packLocalFile.delete()
+							try {
+								rcloneController.deleteFile(packRemotePath).getOrThrow()
+							} catch (e: Exception) {
+								diag(
+									"gcThumbnailPacks: delete empty pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}",
+									e,
+								)
+							}
+							for (d in dead) {
+								try {
+									dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
+								} catch (
+									e: Exception,
+								) {
+									diag(
+										"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} (empty-pack fallback) FAILED (non-fatal): ${e.message}",
+										e,
+									)
+								}
+							}
+							repacked++
+							continue
+						}
+
+						// Concatenate live thumbnails into a new pack.
+						val newPackBytes =
+							ByteArrayOutputStream(liveThumbs.sumOf { it.bytes.size }).use { baos ->
+								for (lt in liveThumbs) baos.write(lt.bytes)
+								baos.toByteArray()
+							}
+						val newPackName =
+							"pack-${System.currentTimeMillis()}-${(0..9999).random().toString().padStart(4, '0')}"
+						val newPackFile =
+							File(app.cacheDir, "gc-newpack-$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}")
+						newPackFile.writeBytes(newPackBytes)
+
+						val newPackRemotePath =
+							"$remote:${SyncConfig.THUMBNAIL_PACK_DIR}/$newPackName${SyncConfig.THUMBNAIL_PACK_SUFFIX}"
+						try {
+							rcloneController.uploadFile(newPackFile.absolutePath, newPackRemotePath).getOrThrow()
+							diag(
+								"gcThumbnailPacks: uploaded new pack $newPackName (${newPackBytes.size} bytes, ${liveThumbs.size} thumbnails)",
+							)
+						} catch (e: Exception) {
+							diag("gcThumbnailPacks: upload new pack $newPackName FAILED (non-fatal): ${e.message}"
+								, e)
+							packLocalFile.delete()
+							newPackFile.delete()
+							continue
+						}
+
+						// Update each live entry's pack name + offset + length.
+						var offset = 0L
+						for (lt in liveThumbs) {
+							try {
+								dao.upsert(
+									lt.entry.copy(
+										thumbnailPack = newPackName,
+										thumbnailOffset = offset,
+										thumbnailLength = lt.bytes.size.toLong(),),
+								)
+							} catch (e: Exception) {
+								diag("gcThumbnailPacks: update entry ${lt.entry.uuid} FAILED (non-fatal): ${e.message}"
+									, e)
+							}
+							offset += lt.bytes.size
+						}
+
+						// Clear tombstoned entries' pack fields so a future GC run
+						// doesn't try to download the now-deleted pack for them.
+						for (d in dead) {
+							try {
+								dao.upsert(d.copy(thumbnailPack = null, thumbnailOffset = 0L, thumbnailLength = 0L))
+							} catch (e: Exception) {
+								diag(
+									"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} after repack FAILED (non-fatal): ${e.message}",
+									e,
+								)
+							}
+						}
+
+						// Delete the OLD pack from the remote.
+						try {
+							rcloneController.deleteFile(packRemotePath).getOrThrow()
+							diag("gcThumbnailPacks: deleted old pack $packName from remote")
+						} catch (e: Exception) {
+							diag("gcThumbnailPacks: delete old pack $packName FAILED (non-fatal — orphaned pack file): ${e.message}"
+								, e)
+						}
+
+						packLocalFile.delete()
+						newPackFile.delete()
+						repacked++
+						diag(
+							"gcThumbnailPacks: repacked $packName → $newPackName (was ${entries.size} entries, now ${liveThumbs.size} live)",
+						)
 					} catch (e: Exception) {
 						diag("gcThumbnailPacks: repack $packName FAILED (non-fatal): ${e.message}", e)
 					}
 				}
 
-				tryFlushRegistryAfterGc(repacked)
+				// Flush the updated registry (new pack names / offsets) to the remote.
+				if (repacked > 0) {
+					try {
+						val session = sessionRepository.get()
+						if (session != null) {
+							uploadToRemote(session.vmk.encoded)
+							diag("gcThumbnailPacks: flushed updated registry to remote")
+						} else {
+							diag("gcThumbnailPacks: vault session unavailable — registry stays local, will flush on next batch")
+						}
+					} catch (e: Exception) {
+						diag("gcThumbnailPacks: remote flush FAILED (non-fatal): ${e.message}", e)
+					}
+				}
 
 				diag("gcThumbnailPacks: DONE — repacked $repacked pack(s)")
 				repacked
@@ -1162,85 +1126,22 @@ class HashRegistry
 		 * @return count of originals deleted
 		 * @since registry-gc feature
 		 */
-		private suspend fun gcOneOriginal(
-			remote: String,
-			entry: HashRegistryEntry,
-		): Boolean {
-			// Anti-dedup: double-check no live Photo row still references this hash.
-			// The softDelete check should have prevented the tombstone, but a race
-			// could occur (photo restored from trash after tombstone but before GC).
-			try {
-				val liveCount = photoDao.countLiveByContentHash(entry.contentHash)
-				if (liveCount > 0) {
-					diag("gcOriginals: ${entry.contentHash} still has $liveCount live photo(s) — un-tombstoning (anti-dedup safety)")
-					dao.upsert(entry.copy(deleted = false))
-					return false
-				}
-			} catch (e: Exception) {
-				diag("gcOriginals: countLiveByContentHash FAILED for ${entry.contentHash} — skipping GC (safety): ${e.message}")
-				return false
-			}
-			val origRemotePath =
-				"$remote:${SyncConfig.remoteOriginalsDir}/${entry.uuid}${SyncConfig.ORIGINAL_FILE_SUFFIX}"
-			try {
-				rcloneController.deleteFile(origRemotePath).getOrNull()
-				// deleteFile returns Result.failure if the file doesn't exist
-				// (already GC'd, or never uploaded). Either way, the original
-				// is gone — safe to drop the registry row.
-				diag("gcOriginals: deleted original for ${entry.uuid} (hash=${entry.contentHash})")
-			} catch (e: Exception) {
-				diag(
-					"gcOriginals: delete original for ${entry.uuid} FAILED (non-fatal — leaving tombstone for retry): ${e.message}",
-					e,
-				)
-				return false
-			}
-			// Also best-effort delete the (legacy) individual-thumbnail file
-			// at `<remote>:thumbnails/<uuid>.crypt.tn` — pre-pack thumbnails
-			// live there and are orphaned once the entry is tombstoned.
-			try {
-				val thumbRemotePath =
-					"$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}${SyncConfig.THUMBNAIL_FILE_SUFFIX}"
-				rcloneController.deleteFile(thumbRemotePath).getOrNull()
-			} catch (e: Exception) {
-				diag(
-					"gcOriginals: delete legacy thumbnail for ${entry.uuid} FAILED (non-fatal — may have been packed already, or may not exist on this backend): ${e.message}",
-					e,
-				)
-			}
-			// Physically remove the registry row. The original is gone, so
-			// there's nothing left to reference. Tombstone → no row.
-			try {
-				dao.deleteByHash(entry.contentHash)
-			} catch (e: Exception) {
-				diag("gcOriginals: delete registry row for ${entry.uuid} FAILED (non-fatal): ${e.message}"
-					, e)
-			}
-			return true
-		}
-
-		private suspend fun tryFlushOriginalsRegistry(deleted: Int) {
-			if (deleted <= 0) return
-			try {
-				val session = sessionRepository.get()
-				if (session != null) {
-					uploadToRemote(session.vmk.encoded)
-					diag("gcOriginals: flushed compacted registry to remote")
-				} else {
-					diag("gcOriginals: vault session unavailable — registry stays local, will flush on next batch")
-				}
-			} catch (e: Exception) {
-				diag("gcOriginals: remote flush FAILED (non-fatal): ${e.message}", e)
-			}
-		}
-
 		suspend fun gcOriginals(): Int =
 			withContext(Dispatchers.IO) {
-				val remote = getChosenRemote()
-				if (remote == null) {
-					diag("gcOriginals: no remote chosen — skipping")
-					return@withContext 0
-				}
+				val remote =
+					try {
+						val config =
+							app.getSharedPreferences(
+								Config.FILE_NAME,
+								android.content.Context.MODE_PRIVATE,
+							)
+						config.getString(PREF_CHOSEN_REMOTE, null)
+					} catch (e: Exception) {
+						null
+					} ?: run {
+						diag("gcOriginals: no remote chosen — skipping")
+						return@withContext 0
+					}
 
 				val tombstoned =
 					try {
@@ -1257,10 +1158,74 @@ class HashRegistry
 
 				var deleted = 0
 				for (entry in tombstoned) {
-					if (gcOneOriginal(remote, entry)) deleted++
+					// Anti-dedup: double-check no live Photo row still references this hash.
+					// The softDelete check should have prevented the tombstone, but a race
+					// could occur (photo restored from trash after tombstone but before GC).
+					try {
+						val liveCount = photoDao.countLiveByContentHash(entry.contentHash)
+						if (liveCount > 0) {
+							diag("gcOriginals: ${entry.contentHash} still has $liveCount live photo(s) — un-tombstoning (anti-dedup safety)")
+							dao.upsert(entry.copy(deleted = false))
+							continue
+						}
+					} catch (e: Exception) {
+						diag("gcOriginals: countLiveByContentHash FAILED for ${entry.contentHash} — skipping GC (safety): ${e.message}")
+						continue
+					}
+					val origRemotePath =
+						"$remote:${SyncConfig.remoteOriginalsDir}/${entry.uuid}${SyncConfig.ORIGINAL_FILE_SUFFIX}"
+					try {
+						rcloneController.deleteFile(origRemotePath).getOrNull()
+						// deleteFile returns Result.failure if the file doesn't exist
+						// (already GC'd, or never uploaded). Either way, the original
+						// is gone — safe to drop the registry row.
+						deleted++
+						diag("gcOriginals: deleted original for ${entry.uuid} (hash=${entry.contentHash})")
+					} catch (e: Exception) {
+						diag(
+							"gcOriginals: delete original for ${entry.uuid} FAILED (non-fatal — leaving tombstone for retry): ${e.message}",
+							e,
+						)
+						continue
+					}
+					// Also best-effort delete the (legacy) individual-thumbnail file
+					// at `<remote>:thumbnails/<uuid>.crypt.tn` — pre-pack thumbnails
+					// live there and are orphaned once the entry is tombstoned.
+					try {
+						val thumbRemotePath =
+							"$remote:${SyncConfig.remoteThumbnailsDir}/${entry.uuid}${SyncConfig.THUMBNAIL_FILE_SUFFIX}"
+						rcloneController.deleteFile(thumbRemotePath).getOrNull()
+					} catch (e: Exception) {
+						diag(
+							"gcOriginals: delete legacy thumbnail for ${entry.uuid} FAILED (non-fatal — may have been packed already, or may not exist on this backend): ${e.message}",
+							e,
+						)
+					}
+					// Physically remove the registry row. The original is gone, so
+					// there's nothing left to reference. Tombstone → no row.
+					try {
+						dao.deleteByHash(entry.contentHash)
+					} catch (e: Exception) {
+						diag("gcOriginals: delete registry row for ${entry.uuid} FAILED (non-fatal): ${e.message}"
+							, e)
+					}
 				}
 
-				tryFlushOriginalsRegistry(deleted)
+				// Flush the smaller registry to the remote so other devices see the
+				// rows removed on their next login.
+				if (deleted > 0) {
+					try {
+						val session = sessionRepository.get()
+						if (session != null) {
+							uploadToRemote(session.vmk.encoded)
+							diag("gcOriginals: flushed compacted registry to remote")
+						} else {
+							diag("gcOriginals: vault session unavailable — registry stays local, will flush on next batch")
+						}
+					} catch (e: Exception) {
+						diag("gcOriginals: remote flush FAILED (non-fatal): ${e.message}", e)
+					}
+				}
 
 				diag("gcOriginals: DONE — deleted $deleted original(s)")
 				deleted

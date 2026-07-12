@@ -400,10 +400,18 @@ class SettingsViewModel
 					var count = 0
 					var bytesFreed = 0L
 					for (photo in photos) {
-						val (freed, deleted) = tryDeleteCachedOriginal(photo)
-						bytesFreed += freed
-						if (deleted) {
-							count++
+						// SAFETY: never delete the local original for photos that
+						// haven't been verified on the remote. `UPLOADED` is the only
+						// safe state — the encrypted original has been verified at the
+						// remote by content-hash check and can be re-downloaded on
+						// demand.
+						if (photo.syncState != SyncState.UPLOADED) continue
+						val origFile = File(app.filesDir, photo.internalFileName)
+						if (origFile.exists()) {
+							bytesFreed += origFile.length()
+							if (origFile.delete()) {
+								count++
+							}
 						}
 					}
 					when {
@@ -434,25 +442,6 @@ class SettingsViewModel
 					0 to 0L
 				}
 			}
-
-		/**
-		 * Deletes the local encrypted `.crypt` original for [photo] if its
-		 * `syncState` is `UPLOADED`. Returns the freed byte count and whether
-		 * the file was actually deleted. Extracted from
-		 * [cleanCachedOriginals] to reduce its cognitive complexity.
-		 */
-		private fun tryDeleteCachedOriginal(photo: onlasdan.gallery.model.database.entity.Photo): Pair<Long, Boolean> {
-			// SAFETY: never delete the local original for photos that
-			// haven't been verified on the remote. `UPLOADED` is the only
-			// safe state — the encrypted original has been verified at the
-			// remote by content-hash check and can be re-downloaded on
-			// demand.
-			if (photo.syncState != SyncState.UPLOADED) return 0L to false
-			val origFile = File(app.filesDir, photo.internalFileName)
-			if (!origFile.exists()) return 0L to false
-			val bytes = origFile.length()
-			return bytes to origFile.delete()
-		}
 
 		/**
 		 * Export every live (non-trashed) photo to a plain ZIP archive at [uri].

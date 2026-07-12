@@ -104,7 +104,17 @@ fun SetupScreen(
 	val passwordsMatch by remember { derivedStateOf { password == confirmPassword && password.isNotEmpty() } }
 	val canSubmit by remember { derivedStateOf { passwordsMatch && !loading } }
 
-	val (strengthLabel, strengthColor) = strengthLabelAndColor(strength, weakLabel, moderateLabel, strongLabel)
+	val (strengthLabel, strengthColor) =
+		when (strength) {
+			PasswordStrength.EMPTY,
+			PasswordStrength.TOO_SHORT,
+			PasswordStrength.PIN_REJECTED,
+			PasswordStrength.COMMON,
+			PasswordStrength.WEAK,
+			-> weakLabel to MaterialTheme.colorScheme.error
+			PasswordStrength.MODERATE -> moderateLabel to MaterialTheme.colorScheme.tertiary
+			PasswordStrength.STRONG -> strongLabel to MaterialTheme.colorScheme.primary
+		}
 
 	Box(modifier = Modifier.fillMaxSize().imePadding()) {
 		Column(
@@ -238,28 +248,6 @@ fun SetupScreen(
 		}
 	}
 }
-
-/**
- * Maps a [PasswordStrength] to its label string + color. Extracted from
- * [SetupScreen] to reduce its cognitive complexity.
- */
-@Composable
-private fun strengthLabelAndColor(
-	strength: PasswordStrength,
-	weakLabel: String,
-	moderateLabel: String,
-	strongLabel: String,
-): Pair<String, androidx.compose.ui.graphics.Color> =
-	when (strength) {
-		PasswordStrength.EMPTY,
-		PasswordStrength.TOO_SHORT,
-		PasswordStrength.PIN_REJECTED,
-		PasswordStrength.COMMON,
-		PasswordStrength.WEAK,
-		-> weakLabel to MaterialTheme.colorScheme.error
-		PasswordStrength.MODERATE -> moderateLabel to MaterialTheme.colorScheme.tertiary
-		PasswordStrength.STRONG -> strongLabel to MaterialTheme.colorScheme.primary
-	}
 
 @Preview(showBackground = true)
 @Composable

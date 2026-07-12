@@ -121,14 +121,46 @@ fun UnlockScreen(
 			)
 
 			// Password field + wrong password warning
-			PasswordEntryField(
-				password = password,
-				onPasswordChange = { password = it },
-				keyboard = keyboard,
-				isLoading = isLoading,
-				showWrongPassword = showWrongPassword,
-				onUnlock = onUnlock,
-			)
+			Column(
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 20.dp, vertical = 30.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+			) {
+				OutlinedTextField(
+					value = password,
+					onValueChange = { password = it },
+					label = { Text(stringResource(R.string.unlock_enter_password)) },
+					singleLine = true,
+					visualTransformation = PasswordVisualTransformation(),
+					keyboardOptions =
+						androidx.compose.foundation.text.KeyboardOptions(
+							keyboardType = KeyboardType.Password,
+							imeAction = ImeAction.Done,
+						),
+					keyboardActions =
+						androidx.compose.foundation.text.KeyboardActions(
+							onDone = {
+								keyboard?.hide()
+								if (password.isNotEmpty() && !isLoading) {
+									onUnlock(password)
+								}
+							},
+						),
+					enabled = !isLoading,
+					isError = showWrongPassword,
+					supportingText = {
+						if (showWrongPassword) {
+							Text(
+								text = stringResource(R.string.unlock_wrong_password),
+								color = MaterialTheme.colorScheme.error,
+							)
+						}
+					},
+					modifier = Modifier.fillMaxWidth(),
+				)
+			}
 
 			// Unlock button
 			Button(
@@ -179,62 +211,6 @@ fun UnlockScreen(
 				}
 			}
 		}
-	}
-}
-
-/**
- * The password [OutlinedTextField] (with wrong-password warning) shown on the
- * unlock screen. Extracted from [UnlockScreen] to reduce its cognitive
- * complexity.
- */
-@Composable
-private fun PasswordEntryField(
-	password: String,
-	onPasswordChange: (String) -> Unit,
-	keyboard: androidx.compose.ui.platform.SoftwareKeyboardController?,
-	isLoading: Boolean,
-	showWrongPassword: Boolean,
-	onUnlock: (String) -> Unit,
-) {
-	Column(
-		modifier =
-			Modifier
-				.fillMaxWidth()
-				.padding(horizontal = 20.dp, vertical = 30.dp),
-		horizontalAlignment = Alignment.CenterHorizontally,
-	) {
-		OutlinedTextField(
-			value = password,
-			onValueChange = onPasswordChange,
-			label = { Text(stringResource(R.string.unlock_enter_password)) },
-			singleLine = true,
-			visualTransformation = PasswordVisualTransformation(),
-			keyboardOptions =
-				androidx.compose.foundation.text.KeyboardOptions(
-					keyboardType = KeyboardType.Password,
-					imeAction = ImeAction.Done,
-				),
-			keyboardActions =
-				androidx.compose.foundation.text.KeyboardActions(
-					onDone = {
-						keyboard?.hide()
-						if (password.isNotEmpty() && !isLoading) {
-							onUnlock(password)
-						}
-					},
-				),
-			enabled = !isLoading,
-			isError = showWrongPassword,
-			supportingText = {
-				if (showWrongPassword) {
-					Text(
-						text = stringResource(R.string.unlock_wrong_password),
-						color = MaterialTheme.colorScheme.error,
-					)
-				}
-			},
-			modifier = Modifier.fillMaxWidth(),
-		)
 	}
 }
 

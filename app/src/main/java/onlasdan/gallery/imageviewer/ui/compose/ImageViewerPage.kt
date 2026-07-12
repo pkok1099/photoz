@@ -206,10 +206,70 @@ fun BoxScope.ImageViewerVideoPage(
 				//       with the error message — no spinner.
 				//     (c) null / Idle / Done → fall back to the original
 				//       CircularProgressIndicator (ExoPlayer is buffering).
-				VideoDownloadStateIndicator(
-					downloadState = downloadState,
-				)
-
+				when (downloadState) {
+					is VideoDownloadState.Downloading -> {
+						Column(
+							horizontalAlignment = Alignment.CenterHorizontally,
+							verticalArrangement = Arrangement.spacedBy(12.dp),
+							modifier =
+								Modifier
+									.padding(24.dp)
+									.background(Color.Black.copy(alpha = 0.6f)),
+						) {
+							Text(
+								text = stringResource(R.string.video_downloading),
+								color = Color.White,
+							)
+							// width clamps the progress bar to a sensible size
+							// instead of stretching across the full screen.
+							val pct = downloadState.progress.toInt().coerceIn(0, 100)
+							if (pct <= 0) {
+								LinearProgressIndicator(
+									modifier = Modifier.width(180.dp),
+									color = Color.White,
+								)
+							} else {
+								LinearProgressIndicator(
+									progress = { downloadState.progress / 100f },
+									modifier = Modifier.width(180.dp),
+									color = Color.White,
+								)
+							}
+							Text(
+								text = "$pct%",
+								color = Color.White,
+								style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+							)
+						}
+					}
+					is VideoDownloadState.Failed -> {
+						Column(
+							horizontalAlignment = Alignment.CenterHorizontally,
+							verticalArrangement = Arrangement.spacedBy(8.dp),
+							modifier =
+								Modifier
+									.padding(24.dp)
+									.background(Color.Black.copy(alpha = 0.6f)),
+						) {
+							Text(
+								text = stringResource(R.string.video_download_failed),
+								color = Color.White,
+							)
+							Text(
+								text = downloadState.message,
+								color = Color.White.copy(alpha = 0.7f),
+								style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+							)
+						}
+					}
+					else -> {
+						// null, Idle, or Done — ExoPlayer is buffering the
+						// local file. Show the original spinner.
+						CircularProgressIndicator(
+							color = LocalContentColor.current,
+						)
+					}
+				}
 			}
 		},
 		modifier =
@@ -263,19 +323,162 @@ fun BoxScope.ImageViewerVideoPage(
 		Column(
 			verticalArrangement = Arrangement.spacedBy(12.dp),
 		) {
-			VideoPlayerControlsRow(
-				exoPlayerState = exoPlayerState,
-				player = player,
-				isCurrentItem = isCurrentItem,
-				uiState = uiState,
-				handleUiEvent = handleUiEvent,
-			)
+			Row(
+				horizontalArrangement = Arrangement.SpaceBetween,
+				verticalAlignment = Alignment.CenterVertically,
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 8.dp),
+			) {
+				AnimatedContent(
+					targetState = exoPlayerState.isPlaying,
+					transitionSpec = {
+						fadeIn() togetherWith fadeOut()
+					},
+				) { isPlaying ->
+					val icon =
+						if (isPlaying) {
+							R.drawable.media3_icon_pause
+						} else {
+							R.drawable.media3_icon_play
+						}
+					IconButton(
+						onClick = {
+							if (isPlaying) {
+								player.pause()
+							} else {
+								if (exoPlayerState.playbackState == Player.STATE_ENDED) {
+									player.seekTo(0L)
+								}
+								player.play()
+							}
+						},
+						enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_PLAY_PAUSE),
+					) {
+						Icon(
+							painter = painterResource(icon),
+							contentDescription =
+								stringResource(
+									if (isPlaying) R.string.video_player_pause else R.string.video_player_play,
+								),
+						)
+					}
+				}
 
+				val formattedPosition =
+					remember(exoPlayerState.position, isCurrentItem) {
+						if (isCurrentItem) {
+							exoPlayerState.position.toVideoTime()
+						} else {
+							"00:00"
+						}
+					}
+				val formattedDuration =
+					remember(exoPlayerState.duration, isCurrentItem) {
+						if (isCurrentItem) {
+							exoPlayerState.duration.toVideoTime()
+						} else {
+							"00:00"
+						}
+					}
 
-			VideoPlayerSeekBar(
-				exoPlayerState = exoPlayerState,
-				player = player,
-				isCurrentItem = isCurrentItem,
+				Text(
+					text = "$formattedPosition / $formattedDuration",
+					fontFamily = FontFamily.Monospace,
+					fontSize = 14.sp,
+					textAlign = TextAlign.Center,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+					modifier = Modifier.weight(1f),
+				)
+
+				AnimatedContent(
+					targetState = uiState.muteVideoPlayer,
+					transitionSpec = {
+						fadeIn() togetherWith fadeOut()
+					},
+				) { isMute ->
+					val icon =
+						if (isMute) {
+							R.drawable.media3_icon_volume_off
+						} else {
+							R.drawable.media3_icon_volume_up
+						}
+					IconButton(
+						onClick = {
+							handleUiEvent(ImageViewerUiEvent.ToggleMuteVideoPlayer)
+						},
+						enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_VOLUME),
+					) {
+						Icon(
+							painter = painterResource(icon),
+							contentDescription =
+								stringResource(
+									if (isMute) R.string.video_player_unmute else R.string.video_player_mute,
+								),
+						)
+					}
+				}
+			}
+
+			val sliderColors =
+				SliderDefaults.colors(
+					thumbColor = Color.White,
+					activeTrackColor = Color.White,
+					inactiveTrackColor = Color.White.copy(alpha = 0.4f),
+				)
+
+			val safePosition by remember(isCurrentItem) {
+				derivedStateOf {
+					if (isCurrentItem) {
+						exoPlayerState.position.coerceAtMost(exoPlayerState.duration)
+					} else {
+						0L
+					}
+				}
+			}
+
+			val safeDuration by remember(isCurrentItem) {
+				derivedStateOf {
+					if (isCurrentItem) {
+						exoPlayerState.duration.coerceAtLeast(minimumValue = 0L)
+					} else {
+						1L
+					}
+				}
+			}
+
+			var wasPlayingWhenStartedScrubbing by remember { mutableStateOf(false) }
+
+			Slider(
+				value = safePosition.toFloat(),
+				onValueChange = {
+					if (!exoPlayerState.isScrubbing) {
+						wasPlayingWhenStartedScrubbing = exoPlayerState.isPlaying
+					}
+
+					player.pause()
+					exoPlayerState.isScrubbing = true
+					exoPlayerState.position = it.toLong()
+				},
+				onValueChangeFinished = {
+					player.seekTo(exoPlayerState.position)
+
+					if (wasPlayingWhenStartedScrubbing) {
+						player.play()
+						wasPlayingWhenStartedScrubbing = false
+					}
+
+					exoPlayerState.isScrubbing = false
+				},
+				valueRange = 0f..safeDuration.toFloat(),
+				colors = sliderColors,
+				enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+				modifier =
+					Modifier
+						.fillMaxWidth()
+						.padding(horizontal = 20.dp),
 			)
 		}
 	}
@@ -388,250 +591,6 @@ private fun BoxScope.BottomVideoGradient(visible: Boolean) {
 					.background(brush),
 		)
 	}
-}
-
-
-
-@Composable
-private fun VideoDownloadStateIndicator(
-	downloadState: VideoDownloadState?,
-) {
-	when (downloadState) {
-		is VideoDownloadState.Downloading -> {
-			Column(
-				horizontalAlignment = Alignment.CenterHorizontally,
-				verticalArrangement = Arrangement.spacedBy(12.dp),
-				modifier =
-					Modifier
-						.padding(24.dp)
-						.background(Color.Black.copy(alpha = 0.6f)),
-			) {
-				Text(
-					text = stringResource(R.string.video_downloading),
-					color = Color.White,
-				)
-				// width clamps the progress bar to a sensible size
-				// instead of stretching across the full screen.
-				val pct = downloadState.progress.toInt().coerceIn(0, 100)
-				if (pct <= 0) {
-					LinearProgressIndicator(
-						modifier = Modifier.width(180.dp),
-						color = Color.White,
-					)
-				} else {
-					LinearProgressIndicator(
-						progress = { downloadState.progress / 100f },
-						modifier = Modifier.width(180.dp),
-						color = Color.White,
-					)
-				}
-				Text(
-					text = "$pct%",
-					color = Color.White,
-					style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-				)
-			}
-		}
-		is VideoDownloadState.Failed -> {
-			Column(
-				horizontalAlignment = Alignment.CenterHorizontally,
-				verticalArrangement = Arrangement.spacedBy(8.dp),
-				modifier =
-					Modifier
-						.padding(24.dp)
-						.background(Color.Black.copy(alpha = 0.6f)),
-			) {
-				Text(
-					text = stringResource(R.string.video_download_failed),
-					color = Color.White,
-				)
-				Text(
-					text = downloadState.message,
-					color = Color.White.copy(alpha = 0.7f),
-					style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-				)
-			}
-		}
-		else -> {
-			CircularProgressIndicator(
-				color = LocalContentColor.current,
-			)
-		}
-	}
-}
-
-@Composable
-private fun VideoPlayerControlsRow(
-	exoPlayerState: ExoPlayerState,
-	player: Player,
-	isCurrentItem: Boolean,
-	uiState: ImageViewerUiState,
-	handleUiEvent: (ImageViewerUiEvent) -> Unit,
-) {
-	Row(
-		horizontalArrangement = Arrangement.SpaceBetween,
-		verticalAlignment = Alignment.CenterVertically,
-		modifier =
-			Modifier
-				.fillMaxWidth()
-				.padding(horizontal = 8.dp),
-	) {
-		AnimatedContent(
-			targetState = exoPlayerState.isPlaying,
-			transitionSpec = {
-				fadeIn() togetherWith fadeOut()
-			},
-		) { isPlaying ->
-			val icon =
-				if (isPlaying) {
-					R.drawable.media3_icon_pause
-				} else {
-					R.drawable.media3_icon_play
-				}
-			IconButton(
-				onClick = {
-					if (isPlaying) {
-						player.pause()
-					} else {
-						if (exoPlayerState.playbackState == Player.STATE_ENDED) {
-							player.seekTo(0L)
-						}
-						player.play()
-					}
-				},
-				enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_PLAY_PAUSE),
-			) {
-				Icon(
-					painter = painterResource(icon),
-					contentDescription =
-						stringResource(
-							if (isPlaying) R.string.video_player_pause else R.string.video_player_play,
-						),
-				)
-			}
-		}
-
-		val formattedPosition =
-			remember(exoPlayerState.position, isCurrentItem) {
-				if (isCurrentItem) {
-					exoPlayerState.position.toVideoTime()
-				} else {
-					"00:00"
-				}
-			}
-		val formattedDuration =
-			remember(exoPlayerState.duration, isCurrentItem) {
-				if (isCurrentItem) {
-					exoPlayerState.duration.toVideoTime()
-				} else {
-					"00:00"
-				}
-			}
-
-		Text(
-			text = "$formattedPosition / $formattedDuration",
-			fontFamily = FontFamily.Monospace,
-			fontSize = 14.sp,
-			textAlign = TextAlign.Center,
-			maxLines = 1,
-			overflow = TextOverflow.Ellipsis,
-			modifier = Modifier.weight(1f),
-		)
-
-		AnimatedContent(
-			targetState = uiState.muteVideoPlayer,
-			transitionSpec = {
-				fadeIn() togetherWith fadeOut()
-			},
-		) { isMute ->
-			val icon =
-				if (isMute) {
-					R.drawable.media3_icon_volume_off
-				} else {
-					R.drawable.media3_icon_volume_up
-				}
-			IconButton(
-				onClick = {
-					handleUiEvent(ImageViewerUiEvent.ToggleMuteVideoPlayer)
-				},
-				enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_VOLUME),
-			) {
-				Icon(
-					painter = painterResource(icon),
-					contentDescription =
-						stringResource(
-							if (isMute) R.string.video_player_unmute else R.string.video_player_mute,
-						),
-				)
-			}
-		}
-	}
-}
-
-@Composable
-private fun VideoPlayerSeekBar(
-	exoPlayerState: ExoPlayerState,
-	player: Player,
-	isCurrentItem: Boolean,
-) {
-	val sliderColors =
-		SliderDefaults.colors(
-			thumbColor = Color.White,
-			activeTrackColor = Color.White,
-			inactiveTrackColor = Color.White.copy(alpha = 0.4f),
-		)
-
-	val safePosition by remember(isCurrentItem) {
-			derivedStateOf {
-				if (isCurrentItem) {
-					exoPlayerState.position.coerceAtMost(exoPlayerState.duration)
-				} else {
-					0L
-				}
-			}
-		}
-
-	val safeDuration by remember(isCurrentItem) {
-			derivedStateOf {
-				if (isCurrentItem) {
-					exoPlayerState.duration.coerceAtLeast(minimumValue = 0L)
-				} else {
-					1L
-				}
-			}
-		}
-
-	var wasPlayingWhenStartedScrubbing by remember { mutableStateOf(false) }
-
-	Slider(
-		value = safePosition.toFloat(),
-		onValueChange = {
-			if (!exoPlayerState.isScrubbing) {
-				wasPlayingWhenStartedScrubbing = exoPlayerState.isPlaying
-			}
-
-			player.pause()
-			exoPlayerState.isScrubbing = true
-			exoPlayerState.position = it.toLong()
-		},
-		onValueChangeFinished = {
-			player.seekTo(exoPlayerState.position)
-
-			if (wasPlayingWhenStartedScrubbing) {
-				player.play()
-				wasPlayingWhenStartedScrubbing = false
-			}
-
-			exoPlayerState.isScrubbing = false
-		},
-		valueRange = 0f..safeDuration.toFloat(),
-		colors = sliderColors,
-		enabled = exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
-		modifier =
-			Modifier
-				.fillMaxWidth()
-				.padding(horizontal = 20.dp),
-	)
 }
 
 fun Long.toVideoTime(): String {

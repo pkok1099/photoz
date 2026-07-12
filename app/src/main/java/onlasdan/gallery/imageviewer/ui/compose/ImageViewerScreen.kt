@@ -95,7 +95,18 @@ fun ImageViewerScreen(
 				ExoPlayerState()
 			}
 
-		PlayerRepeatModeEffect(player, uiState, exoPlayerState)
+		LaunchedEffect(player, uiState.loopVideos, exoPlayerState.availableCommands) {
+			if (!exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_REPEAT_MODE)) {
+				return@LaunchedEffect
+			}
+
+			player.repeatMode =
+				if (uiState.loopVideos) {
+					ExoPlayer.REPEAT_MODE_ONE
+				} else {
+					ExoPlayer.REPEAT_MODE_OFF
+				}
+		}
 
 		val pagerState = rememberPagerState { uiState.items.size }
 		var anchoredPhotoUuid by rememberSaveable(photoUuid) { mutableStateOf(photoUuid) }
@@ -149,18 +160,84 @@ fun ImageViewerScreen(
 				anchoredPhotoUuid = it
 			}
 		}
-		PlayerListenerEffect(player, exoPlayerState, handleUiEvent)
+
+		DisposableEffect(player) {
+			val listener =
+				object : Player.Listener {
+					override fun onIsPlayingChanged(isPlaying: Boolean) {
+						exoPlayerState.isPlaying = isPlaying
+					}
+
+					override fun onPlaybackStateChanged(playbackState: Int) {
+						exoPlayerState.duration = player.duration.coerceAtLeast(0L)
+						exoPlayerState.playbackState = playbackState
+
+						if (playbackState == Player.STATE_ENDED) {
+							handleUiEvent(ImageViewerUiEvent.UpdateShowControls(true))
+						}
+					}
+
+					override fun onEvents(
+						player: Player,
+						events: Player.Events,
+					) {
+						if (!exoPlayerState.isScrubbing) {
+							exoPlayerState.position = player.currentPosition
+						}
+					}
+
+					override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+						super.onAvailableCommandsChanged(availableCommands)
+						exoPlayerState.availableCommands = availableCommands
+					}
+				}
+
+			player.addListener(listener)
+
+			onDispose {
+				player.removeListener(listener)
+				player.release()
+			}
+		}
 
 		// Update state.position while playing
-		PlayerPositionSyncEffect(player, exoPlayerState)
+		LaunchedEffect(player, exoPlayerState.isScrubbing, exoPlayerState.isPlaying) {
+			val delay = 1000L / 60 // 60 FPS controls update
+
+			while (isActive && !exoPlayerState.isScrubbing && exoPlayerState.isPlaying) {
+				exoPlayerState.position = player.currentPosition
+				delay(delay)
+			}
+		}
 
 		// Apply mute state to player
-		PlayerMuteEffect(player, uiState)
+		LaunchedEffect(player, uiState.muteVideoPlayer) {
+			if (uiState.muteVideoPlayer) {
+				player.mute()
+			} else {
+				player.unmute()
+			}
+		}
 
-		PlayerPlaybackSpeedEffect(player, uiState, exoPlayerState)
+		LaunchedEffect(player, uiState.videoPlaybackSpeed, exoPlayerState.availableCommands) {
+			if (!exoPlayerState.availableCommands.contains(COMMAND_SET_SPEED_AND_PITCH)) {
+				return@LaunchedEffect
+			}
+
+			if (uiState.videoPlaybackSpeed > 0f) {
+				player.setPlaybackSpeed(uiState.videoPlaybackSpeed)
+			}
+		}
 
 		// Auto hide controls after 5 seconds of playing
-		AutoHideControlsEffect(exoPlayerState, uiState, handleUiEvent)
+		LaunchedEffect(exoPlayerState.isPlaying, uiState.inputs) {
+			if (exoPlayerState.isPlaying && uiState.inputs.showControls && uiState.inputs.currentDialog == null) {
+				delay(5000)
+				if (isActive) {
+					handleUiEvent(ImageViewerUiEvent.UpdateShowControls(false))
+				}
+			}
+		}
 
 		// ─── Item 3 — slideshow auto-advance ───────────────────────────────
 		// When the user toggles the slideshow ON, this LaunchedEffect fires
@@ -168,10 +245,35 @@ fun ImageViewerScreen(
 		// next photo. Re-launches whenever the current page changes (so
 		// each photo gets its own 5s window) or the slideshow flag flips.
 		// Stops cleanly at the last photo (no looping — keep it minimal).
-		SlideshowAdvanceEffect(uiState, pagerState, handleUiEvent)
+		LaunchedEffect(uiState.isSlideshowActive, pagerState.settledPage, uiState.items.size) {
+			if (!uiState.isSlideshowActive) return@LaunchedEffect
+			if (uiState.items.isEmpty()) return@LaunchedEffect
+
+			delay(ImageViewerViewModel.SLIDESHOW_INTERVAL_MS)
+			if (!isActive) return@LaunchedEffect
+
+			val nextIndex = pagerState.settledPage + 1
+			if (nextIndex < uiState.items.size) {
+				pagerState.animateScrollToPage(nextIndex)
+			} else {
+				// Reached the last photo — stop the slideshow and bring
+				// the controls back so the user can navigate away.
+				handleUiEvent(ImageViewerUiEvent.StopSlideshow)
+			}
+		}
 
 		// Keep screen on while playing
-		KeepScreenOnEffect(window, exoPlayerState)
+		DisposableEffect(exoPlayerState.isPlaying) {
+			if (exoPlayerState.isPlaying) {
+				window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			} else {
+				window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			}
+
+			onDispose {
+				window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+			}
+		}
 
 		HorizontalPager(
 			state = pagerState,
@@ -219,186 +321,6 @@ fun ImageViewerScreen(
 	}
 }
 
-
-@Composable
-private fun PlayerRepeatModeEffect(
-	player: Player,
-	uiState: ImageViewerUiState,
-	exoPlayerState: ExoPlayerState,
-) {
-	LaunchedEffect(player, uiState.loopVideos, exoPlayerState.availableCommands) {
-		if (!exoPlayerState.availableCommands.contains(ExoPlayer.COMMAND_SET_REPEAT_MODE)) {
-			return@LaunchedEffect
-		}
-
-		player.repeatMode =
-			if (uiState.loopVideos) {
-				ExoPlayer.REPEAT_MODE_ONE
-			} else {
-				ExoPlayer.REPEAT_MODE_OFF
-			}
-	}
-}
-
-@Composable
-private fun PlayerListenerEffect(
-	player: Player,
-	exoPlayerState: ExoPlayerState,
-	handleUiEvent: (ImageViewerUiEvent) -> Unit,
-) {
-	DisposableEffect(player) {
-		val listener =
-			object : Player.Listener {
-				override fun onIsPlayingChanged(isPlaying: Boolean) {
-					exoPlayerState.isPlaying = isPlaying
-				}
-
-				override fun onPlaybackStateChanged(playbackState: Int) {
-					exoPlayerState.duration = player.duration.coerceAtLeast(0L)
-					exoPlayerState.playbackState = playbackState
-
-					if (playbackState == Player.STATE_ENDED) {
-						handleUiEvent(ImageViewerUiEvent.UpdateShowControls(true))
-					}
-				}
-
-				override fun onEvents(
-					player: Player,
-					events: Player.Events,
-				) {
-					if (!exoPlayerState.isScrubbing) {
-						exoPlayerState.position = player.currentPosition
-					}
-				}
-
-				override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
-					super.onAvailableCommandsChanged(availableCommands)
-					exoPlayerState.availableCommands = availableCommands
-				}
-			}
-
-		player.addListener(listener)
-
-		onDispose {
-			player.removeListener(listener)
-			player.release()
-		}
-	}
-}
-
-@Composable
-private fun PlayerPositionSyncEffect(
-	player: Player,
-	exoPlayerState: ExoPlayerState,
-) {
-	// Update state.position while playing
-	LaunchedEffect(player, exoPlayerState.isScrubbing, exoPlayerState.isPlaying) {
-		val delay = 1000L / 60 // 60 FPS controls update
-
-		while (isActive && !exoPlayerState.isScrubbing && exoPlayerState.isPlaying) {
-			exoPlayerState.position = player.currentPosition
-			delay(delay)
-		}
-	}
-}
-
-@Composable
-private fun PlayerMuteEffect(
-	player: Player,
-	uiState: ImageViewerUiState,
-) {
-	// Apply mute state to player
-	LaunchedEffect(player, uiState.muteVideoPlayer) {
-		if (uiState.muteVideoPlayer) {
-			player.mute()
-		} else {
-			player.unmute()
-		}
-	}
-}
-
-@Composable
-private fun PlayerPlaybackSpeedEffect(
-	player: Player,
-	uiState: ImageViewerUiState,
-	exoPlayerState: ExoPlayerState,
-) {
-	LaunchedEffect(player, uiState.videoPlaybackSpeed, exoPlayerState.availableCommands) {
-		if (!exoPlayerState.availableCommands.contains(COMMAND_SET_SPEED_AND_PITCH)) {
-			return@LaunchedEffect
-		}
-
-		if (uiState.videoPlaybackSpeed > 0f) {
-			player.setPlaybackSpeed(uiState.videoPlaybackSpeed)
-		}
-	}
-}
-
-@Composable
-private fun AutoHideControlsEffect(
-	exoPlayerState: ExoPlayerState,
-	uiState: ImageViewerUiState,
-	handleUiEvent: (ImageViewerUiEvent) -> Unit,
-) {
-	// Auto hide controls after 5 seconds of playing
-	LaunchedEffect(exoPlayerState.isPlaying, uiState.inputs) {
-		if (exoPlayerState.isPlaying && uiState.inputs.showControls && uiState.inputs.currentDialog == null) {
-			delay(5000)
-			if (isActive) {
-				handleUiEvent(ImageViewerUiEvent.UpdateShowControls(false))
-			}
-		}
-	}
-}
-
-@Composable
-private fun SlideshowAdvanceEffect(
-	uiState: ImageViewerUiState,
-	pagerState: androidx.compose.foundation.pager.PagerState,
-	handleUiEvent: (ImageViewerUiEvent) -> Unit,
-) {
-	// ─── Item 3 — slideshow auto-advance ───────────────────────────────
-	// When the user toggles the slideshow ON, this LaunchedEffect fires
-	// and waits SLIDESHOW_INTERVAL_MS (5s) before advancing to the
-	// next photo. Re-launches whenever the current page changes (so
-	// each photo gets its own 5s window) or the slideshow flag flips.
-	// Stops cleanly at the last photo (no looping — keep it minimal).
-	LaunchedEffect(uiState.isSlideshowActive, pagerState.settledPage, uiState.items.size) {
-		if (!uiState.isSlideshowActive) return@LaunchedEffect
-		if (uiState.items.isEmpty()) return@LaunchedEffect
-
-		delay(ImageViewerViewModel.SLIDESHOW_INTERVAL_MS)
-		if (!isActive) return@LaunchedEffect
-
-		val nextIndex = pagerState.settledPage + 1
-		if (nextIndex < uiState.items.size) {
-			pagerState.animateScrollToPage(nextIndex)
-		} else {
-			// Reached the last photo — stop the slideshow and bring
-			// the controls back so the user can navigate away.
-			handleUiEvent(ImageViewerUiEvent.StopSlideshow)
-		}
-	}
-}
-
-@Composable
-private fun KeepScreenOnEffect(
-	window: android.view.Window?,
-	exoPlayerState: ExoPlayerState,
-) {
-	// Keep screen on while playing
-	DisposableEffect(exoPlayerState.isPlaying) {
-		if (exoPlayerState.isPlaying) {
-			window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-		} else {
-			window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-		}
-
-		onDispose {
-			window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-		}
-	}
-}
 @PreviewLightDark
 @Composable
 private fun ControlsPreview() {

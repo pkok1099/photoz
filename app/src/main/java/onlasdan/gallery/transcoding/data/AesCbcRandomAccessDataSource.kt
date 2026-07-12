@@ -368,107 +368,57 @@ class AesCbcRandomAccessDataSource(
 				// No limit — fully-available file, just delegate.
 				if (avail < 0) return source.read(b, off, len)
 
-				// Read up to the available window if data is present now.
-				val immediate = readAvailable(b, off, len, avail)
-				if (immediate != null) return immediate
+				val pos = channel.position()
+				if (pos < avail) {
+					// We have data available. Cap the read to the available
+					// window so the underlying channel never returns -1
+					// prematurely (which would make CipherInputStream finalize
+					// the cipher).
+					val maxToRead = minOf(len.toLong(), avail - pos).toInt().coerceAtLeast(1)
+					val n = source.read(b, off, maxToRead)
+					if (n > 0) return n
+					// n <= 0 — unexpected (we knew data was available). Fall
+					// through to the wait/recheck logic below.
+				}
 
 				// pos >= avail — at end of available data.
-				val eof = readOnDownloadComplete(b, off, len)
-				if (eof != null) return eof
+				if (downloadComplete()) {
+					// Download is done. Re-check once more in case the
+					// available-bytes watermark advanced between the check
+					// above and now (race with the writer).
+					val finalAvail = availableBytes()
+					val finalPos = channel.position()
+					if (finalPos < finalAvail) {
+						val maxToRead = minOf(len.toLong(), finalAvail - finalPos).toInt().coerceAtLeast(1)
+						val n = source.read(b, off, maxToRead)
+						if (n > 0) return n
+					}
+					return -1 // real EOF
+				}
 
 				// Download still in flight — wait for more data.
-				lastLog = waitForMoreData(deadline, lastLog, avail)
+				if (System.currentTimeMillis() > deadline) {
+					throw IOException(
+						"Timeout waiting for download: stuck at pos $pos, " +
+							"available $avail, after ${WAIT_TIMEOUT_MS}ms",
+					)
+				}
+				// Log every 2 seconds so the user can see progress via logcat
+				val now = System.currentTimeMillis()
+				if (now - lastLog > 2000L) {
+					lastLog = now
+					android.util.Log.i(
+						"RcloneDiag",
+						"[VideoStream] BlockingInputStream: waiting at pos=$pos available=$avail (download in progress)",
+					)
+				}
+				try {
+					Thread.sleep(WAIT_POLL_INTERVAL_MS)
+				} catch (e: InterruptedException) {
+					Thread.currentThread().interrupt()
+					throw IOException("Interrupted while waiting for download", e)
+				}
 			}
-		}
-
-		/**
-		 * Try to read a capped slice when data is available at the current
-		 * channel position. Returns the byte count read (>0), or `-1` for real
-		 * EOF after the download finished (handled by the caller), or `null`
-		 * when no data is available yet (caller should wait).
-		 */
-		private fun readAvailable(
-			b: ByteArray,
-			off: Int,
-			len: Int,
-			avail: Long,
-		): Int? {
-			val pos = channel.position()
-			if (pos >= avail) return null
-
-			// We have data available. Cap the read to the available
-			// window so the underlying channel never returns -1
-			// prematurely (which would make CipherInputStream finalize
-			// the cipher).
-			val maxToRead = minOf(len.toLong(), avail - pos).toInt().coerceAtLeast(1)
-			val n = source.read(b, off, maxToRead)
-			if (n > 0) return n
-			// n <= 0 — unexpected (we knew data was available). Fall
-			// through to the wait/recheck logic in the caller.
-			return null
-		}
-
-		/**
-		 * If the download is finished, re-check the watermark (race with the
-		 * writer) once more and read any newly-available bytes, otherwise
-		 * return `-1` to signal real EOF. Returns `null` while still streaming.
-		 */
-		private fun readOnDownloadComplete(
-			b: ByteArray,
-			off: Int,
-			len: Int,
-		): Int? {
-			if (!downloadComplete()) return null
-
-			// Download is done. Re-check once more in case the
-			// available-bytes watermark advanced between the check
-			// above and now (race with the writer).
-			val finalAvail = availableBytes()
-			val finalPos = channel.position()
-			if (finalPos < finalAvail) {
-				val maxToRead = minOf(len.toLong(), finalAvail - finalPos).toInt().coerceAtLeast(1)
-				val n = source.read(b, off, maxToRead)
-				if (n > 0) return n
-			}
-			return -1 // real EOF
-		}
-
-		/**
-		 * Block until more download data arrives (or the deadline passes).
-		 * Returns the (possibly updated) timestamp of the last progress log, so
-		 * callers can throttle logging to once per 2s. Throws on timeout or
-		 * interruption.
-		 */
-		@Throws(IOException::class)
-		private fun waitForMoreData(
-			deadline: Long,
-			lastLog: Long,
-			avail: Long,
-		): Long {
-			val pos = channel.position()
-			if (System.currentTimeMillis() > deadline) {
-				throw IOException(
-					"Timeout waiting for download: stuck at pos $pos, " +
-						"available $avail, after ${WAIT_TIMEOUT_MS}ms",
-				)
-			}
-			// Log every 2 seconds so the user can see progress via logcat
-			var newLastLog = lastLog
-			val now = System.currentTimeMillis()
-			if (now - lastLog > 2000L) {
-				newLastLog = now
-				android.util.Log.i(
-					"RcloneDiag",
-					"[VideoStream] BlockingInputStream: waiting at pos=$pos available=$avail (download in progress)",
-				)
-			}
-			try {
-				Thread.sleep(WAIT_POLL_INTERVAL_MS)
-			} catch (e: InterruptedException) {
-				Thread.currentThread().interrupt()
-				throw IOException("Interrupted while waiting for download", e)
-			}
-			return newLastLog
 		}
 	}
 

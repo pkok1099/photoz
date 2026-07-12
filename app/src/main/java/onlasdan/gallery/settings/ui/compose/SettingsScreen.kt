@@ -238,14 +238,25 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 		}
 
 		// Cloud Sync row → context-dependent action. @since PR1 sync addendum (Settings UI)
-		registerCloudSyncCallback(
-			viewModel = viewModel,
-			settingsScope = settingsScope,
-			syncConfigStatus = syncConfigStatus,
-			onLaunchRcloneConfig = { rcloneConfigLauncher.launch(arrayOf("*/*")) },
-			onAwaitRemotes = { pickerRemotes = it },
-			onShowRemotePicker = { showRemotePicker = true },
-		)
+		viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
+			when (syncConfigStatus) {
+				is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
+					settingsScope.launch {
+						val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
+						if (remotes.isNotEmpty()) {
+							pickerRemotes = remotes
+							showRemotePicker = true
+						} else {
+							rcloneConfigLauncher.launch(arrayOf("*/*"))
+						}
+					}
+				}
+				else -> {
+					rcloneConfigLauncher.launch(arrayOf("*/*"))
+				}
+			}
+			false
+		}
 
 		// @since registry-gc feature — "Clean up backup" row. Triggers
 		// HashRegistry.gcThumbnailPacks() + gcOriginals() in the ViewModel.
@@ -428,39 +439,6 @@ fun SettingsCallbacks(viewModel: SettingsViewModel) {
 }
 
 /**
- * Wire the Cloud Sync row's preference callback. Extracted from
- * [SettingsCallbacks] to reduce its cognitive complexity.
- */
-private fun registerCloudSyncCallback(
-	viewModel: SettingsViewModel,
-	settingsScope: kotlinx.coroutines.CoroutineScope,
-	syncConfigStatus: SyncConfigStatus,
-	onLaunchRcloneConfig: () -> Unit,
-	onAwaitRemotes: (List<RcloneConfigManager.RemoteInfo>) -> Unit,
-	onShowRemotePicker: () -> Unit,
-) {
-	viewModel.registerPreferenceCallback(SettingsFragment.KEY_ACTION_CLOUD_SYNC) {
-		when (syncConfigStatus) {
-			is SyncConfigStatus.Configured, is SyncConfigStatus.AwaitingRemoteChoice -> {
-				settingsScope.launch {
-					val remotes = viewModel.rcloneConfigManagerAvailableRemotes()
-					if (remotes.isNotEmpty()) {
-						onAwaitRemotes(remotes)
-						onShowRemotePicker()
-					} else {
-						onLaunchRcloneConfig()
-					}
-				}
-			}
-			else -> {
-				onLaunchRcloneConfig()
-			}
-		}
-		false
-	}
-}
-
-/**
  * Dialog that lists all remotes parsed from the imported rclone.conf and lets the user pick
  * one. Uses LazyColumn with heightIn(max = 400.dp) so the list scrolls when there are many
  * remotes (Bug 1 fix).
@@ -605,16 +583,95 @@ fun SettingsContent(
 					section = section,
 				) {
 					for (preference in section.preferences) {
-						PreferenceRowView(
-							preference = preference,
-							isFirst = preference == section.preferences.first(),
-							isLast = preference == section.preferences.last(),
-							fragment = fragment,
-							handleUiEvent = handleUiEvent,
-							syncConfigStatus = syncConfigStatus,
-							trashCount = trashCount,
-							infoSummaries = infoSummaries,
-						)
+						val isFirst = preference == section.preferences.first()
+						val isLast = preference == section.preferences.last()
+
+						val shape =
+							when {
+								section.preferences.size == 1 -> RoundedCornerShape(18.dp)
+								isFirst -> RoundedCornerShape(18.dp, 18.dp, 6.dp, 6.dp)
+								isLast -> RoundedCornerShape(6.dp, 6.dp, 18.dp, 18.dp)
+								else -> RoundedCornerShape(6.dp)
+							}
+
+						Surface(
+							shape = shape,
+							color = MaterialTheme.colorScheme.surfaceContainerLow,
+							modifier = Modifier.padding(bottom = 2.dp),
+						) {
+							when (preference) {
+								is Preference.Simple -> {
+									PreferenceView(
+										icon = painterResource(preference.icon),
+										title = stringResource(preference.title),
+										summary = stringResource(preference.summary),
+										onClick = {
+											fragment ?: return@PreferenceView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													null,
+												),
+											)
+										},
+									)
+								}
+
+								is Preference.Switch -> {
+									PreferenceSwitchView(
+										preference = preference,
+										onSwitchChange = { value ->
+											fragment ?: return@PreferenceSwitchView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													value,
+												),
+											)
+										},
+									)
+								}
+
+								is Preference.Enum<*> -> {
+									PreferenceEnumView(
+										preference = preference,
+										onItemSelected = { value ->
+											fragment ?: return@PreferenceEnumView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													value,
+												),
+											)
+										},
+									)
+								}
+
+								is Preference.DynamicSummary -> {
+									PreferenceDynamicSummaryView(
+										preference = preference,
+										status = syncConfigStatus,
+										trashCount = trashCount,
+										onClick = {
+											fragment ?: return@PreferenceDynamicSummaryView
+											handleUiEvent(
+												SettingsUiEvent.OnPreferenceClick(
+													preference,
+													null,
+												),
+											)
+										},
+									)
+								}
+
+								is Preference.Info -> {
+									PreferenceInfoView(
+										preference = preference,
+										summary = infoSummaries[preference.key],
+									)
+								}
+							}
+						}
 					}
 				}
 			}
@@ -628,88 +685,6 @@ fun SettingsContent(
 					config.semanticSearchEnabled = enabled
 				},
 			)
-		}
-	}
-}
-
-/**
- * Renders a single [Preference] row inside a section, wrapped in its shape.
- * Extracted from [SettingsContent] to reduce its cognitive complexity.
- */
-@Composable
-private fun PreferenceRowView(
-	preference: Preference,
-	isFirst: Boolean,
-	isLast: Boolean,
-	fragment: androidx.fragment.app.Fragment?,
-	handleUiEvent: (SettingsUiEvent) -> Unit,
-	syncConfigStatus: SyncConfigStatus,
-	trashCount: Int?,
-	infoSummaries: Map<String, String>,
-) {
-	val shape =
-		when {
-			isFirst && isLast -> RoundedCornerShape(18.dp)
-			isFirst -> RoundedCornerShape(18.dp, 18.dp, 6.dp, 6.dp)
-			isLast -> RoundedCornerShape(6.dp, 6.dp, 18.dp, 18.dp)
-			else -> RoundedCornerShape(6.dp)
-		}
-
-	Surface(
-		shape = shape,
-		color = MaterialTheme.colorScheme.surfaceContainerLow,
-		modifier = Modifier.padding(bottom = 2.dp),
-	) {
-		when (preference) {
-			is Preference.Simple -> {
-				PreferenceView(
-					icon = painterResource(preference.icon),
-					title = stringResource(preference.title),
-					summary = stringResource(preference.summary),
-					onClick = {
-						handleUiEvent(SettingsUiEvent.OnPreferenceClick(preference, null))
-					},
-				)
-			}
-
-			is Preference.Switch -> {
-				PreferenceSwitchView(
-					preference = preference,
-					onSwitchChange = { value ->
-						fragment ?: return@PreferenceSwitchView
-						handleUiEvent(SettingsUiEvent.OnPreferenceClick(preference, value))
-					},
-				)
-			}
-
-			is Preference.Enum<*> -> {
-				PreferenceEnumView(
-					preference = preference,
-					onItemSelected = { value ->
-						fragment ?: return@PreferenceEnumView
-						handleUiEvent(SettingsUiEvent.OnPreferenceClick(preference, value))
-					},
-				)
-			}
-
-			is Preference.DynamicSummary -> {
-				PreferenceDynamicSummaryView(
-					preference = preference,
-					status = syncConfigStatus,
-					trashCount = trashCount,
-					onClick = {
-						fragment ?: return@PreferenceDynamicSummaryView
-						handleUiEvent(SettingsUiEvent.OnPreferenceClick(preference, null))
-					},
-				)
-			}
-
-			is Preference.Info -> {
-				PreferenceInfoView(
-					preference = preference,
-					summary = infoSummaries[preference.key],
-				)
-			}
 		}
 	}
 }
