@@ -30,6 +30,6 @@ jobs:
           fetch-depth: 0 # SonarCloud needs the full history for PR decoration + new-code detection
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
