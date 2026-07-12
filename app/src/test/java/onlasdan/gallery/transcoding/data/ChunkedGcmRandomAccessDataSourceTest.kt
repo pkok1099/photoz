@@ -59,7 +59,7 @@ class ChunkedGcmRandomAccessDataSourceTest {
 	private fun makeDataSource(sessionRepo: SessionRepository): ChunkedGcmRandomAccessDataSource =
 		ChunkedGcmRandomAccessDataSource(
 			sessionRepository = sessionRepo,
-			availableBytesProvider = { _ -> -1L },   // always "fully available"
+			availableBytesProvider = { _ -> -1L }, // always "fully available"
 			downloadCompleteProvider = { _ -> true },
 		)
 
@@ -119,7 +119,7 @@ class ChunkedGcmRandomAccessDataSourceTest {
 		// Provider that always reports "still downloading" so waitForBytesAvailable enters the poll loop
 		val ds = ChunkedGcmRandomAccessDataSource(
 			sessionRepository = repo,
-			availableBytesProvider = { _ -> 0L },  // 0 bytes available — forces polling
+			availableBytesProvider = { _ -> 0L }, // 0 bytes available — forces polling
 			downloadCompleteProvider = { _ -> false },
 		)
 
@@ -147,7 +147,7 @@ class ChunkedGcmRandomAccessDataSourceTest {
 		// F-010: read()'s generic catch (e: Exception) { return -1 } swallows
 		// IOException("truncated nonce") / IOException("chunk too small") from
 		// loadChunk as clean EOF. Corruption must surface as IOException.
-		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() }  // 2 chunks
+		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() } // 2 chunks
 		val file = makeVaultFile(plaintext)
 		val repo = makeSessionRepository(VaultSession(vmk))
 

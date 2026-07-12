@@ -209,7 +209,9 @@ class ChunkedGcmStreamTest {
 				throw java.io.IOException("simulated flush failure (disk full)")
 			}
 
-			override fun close() { closed = true }
+			override fun close() {
+				closed = true
+			}
 		}
 		val out = ChunkedGcmOutputStream(failingStream, vmk)
 		out.write("test data".toByteArray())
@@ -227,11 +229,11 @@ class ChunkedGcmStreamTest {
 	fun `F-003 loadNextChunk throws IOException on truncated mid-chunk, not silent EOF`() {
 		// F-003: generic catch (e: Exception) { return false } swallows IOException
 		// from truncated reads as clean EOF. Corruption must surface as IOException.
-		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() }  // 2 chunks
+		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() } // 2 chunks
 		val ciphertext = encrypt(plaintext)
 
 		// Truncate the ciphertext mid-second-chunk (keep header + first chunk + 6 bytes of second nonce)
-		val truncateAt = 1 + 4 + 8 + (GCM_IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE) + 6  // header(13) + chunk0 + 6 bytes
+		val truncateAt = 1 + 4 + 8 + (GCM_IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE) + 6 // header(13) + chunk0 + 6 bytes
 		val truncated = ciphertext.copyOf(truncateAt)
 
 		var caught: java.io.IOException? = null
