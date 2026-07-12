@@ -114,7 +114,14 @@ class ChunkedGcmInputStream(
 			// Read nonce (12 bytes)
 			val nonce = ByteArray(GCM_IV_SIZE)
 			val nonceRead = input.read(nonce)
-			if (nonceRead < GCM_IV_SIZE) return false // EOF
+			if (nonceRead < GCM_IV_SIZE) {
+				// F-003 fix: distinguish genuine EOF (nonceRead == -1 or 0 at chunk boundary)
+				// from truncated chunk (nonceRead > 0 but < GCM_IV_SIZE).
+				if (nonceRead <= 0) {
+					return false // Genuine EOF — clean end of stream at chunk boundary
+				}
+				throw IOException("ChunkedGcmInputStream: truncated nonce (read=$nonceRead, expected=$GCM_IV_SIZE)")
+			}
 
 			// Read ciphertext + tag. We don't know the exact size of this chunk
 			// (last chunk may be smaller). Read available bytes.
@@ -164,9 +171,13 @@ class ChunkedGcmInputStream(
 				"ChunkedGcmInputStream: GCM auth tag verification failed at chunk (bytesRead=$bytesRead) — file corrupted or tampered",
 				e,
 			)
+		} catch (e: java.io.IOException) {
+			// F-003 fix: rethrow IOException (truncated chunk, etc.) — do NOT convert to false (silent EOF)
+			throw e
 		} catch (e: Exception) {
+			// F-003 fix: log and rethrow — do not swallow as silent EOF
 			Timber.e(e, "ChunkedGcmInputStream: loadNextChunk failed")
-			false
+			throw java.io.IOException("ChunkedGcmInputStream: loadNextChunk failed at bytesRead=$bytesRead", e)
 		}
 	}
 

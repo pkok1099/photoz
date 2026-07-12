@@ -219,4 +219,36 @@ class ChunkedGcmStreamTest {
 		assertNotNull("close() must propagate IOException from flush(), not swallow it", caught)
 		assertEquals("simulated flush failure (disk full)", caught?.message)
 	}
+
+	@Test
+	fun `F-003 loadNextChunk throws IOException on truncated mid-chunk, not silent EOF`() {
+		// F-003: generic catch (e: Exception) { return false } swallows IOException
+		// from truncated reads as clean EOF. Corruption must surface as IOException.
+		val plaintext = ByteArray(CHUNK_SIZE + 100) { it.toByte() }  // 2 chunks
+		val ciphertext = encrypt(plaintext)
+
+		// Truncate the ciphertext mid-second-chunk (keep header + first chunk + 6 bytes of second nonce)
+		val truncateAt = 1 + 4 + 8 + (GCM_IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE) + 6  // header(13) + chunk0 + 6 bytes
+		val truncated = ciphertext.copyOf(truncateAt)
+
+		var caught: java.io.IOException? = null
+		try {
+			val input = java.io.ByteArrayInputStream(truncated, 1, truncated.size - 1)
+			val cin = ChunkedGcmInputStream(input, vmk)
+			val buf = ByteArray(CHUNK_SIZE + 200)
+			var total = 0
+			while (total < CHUNK_SIZE + 200) {
+				val n = cin.read(buf, total, buf.size - total)
+				if (n <= 0) break
+				total += n
+			}
+			cin.close()
+			// If we got here without throwing, total should be < CHUNK_SIZE+100 (truncation hit)
+			// F-003 bug: read() returned -1 silently at the truncation
+			assertTrue("Should have detected truncation, but read $total bytes silently", total >= CHUNK_SIZE + 100)
+		} catch (e: java.io.IOException) {
+			caught = e
+		}
+		assertNotNull("loadNextChunk must throw IOException on truncated chunk, not silent EOF", caught)
+	}
 }
