@@ -106,16 +106,14 @@ class CacheRotationUseCase
 				for (photo in uploadedPhotos) {
 					val tnFile = File(app.filesDir, internalThumbnailFileName(photo.uuid))
 					if (!tnFile.exists()) continue
-					if (tnFile.lastModified() < cutoff) {
-						if (tnFile.delete()) {
-							deleted++
-							Timber.d(
-								"CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
-								tnFile.name,
-								tnFile.lastModified(),
-								cutoff,
-							)
-						}
+					if (tnFile.lastModified() < cutoff && tnFile.delete()) {
+						deleted++
+						Timber.d(
+							"CacheRotation (age): deleted %s (lastModified=%d, cutoff=%d)",
+							tnFile.name,
+							tnFile.lastModified(),
+							cutoff,
+						)
 					}
 				}
 			}

@@ -93,11 +93,9 @@ class ChunkedGcmInputStream(
 		}
 
 		// Ensure we have decrypted data available
-		if (currentChunk == null || currentChunkPos >= currentChunk!!.size) {
-			if (!loadNextChunk()) {
-				eof = true
-				return -1
-			}
+		if ((currentChunk == null || currentChunkPos >= currentChunk!!.size) && !loadNextChunk()) {
+			eof = true
+			return -1
 		}
 
 		val chunk = currentChunk!!

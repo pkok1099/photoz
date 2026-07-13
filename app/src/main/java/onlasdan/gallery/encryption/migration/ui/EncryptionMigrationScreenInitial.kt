@@ -84,10 +84,8 @@ fun EncryptionMigrationScreenInitial(
 	val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
 
 	LaunchedEffect(lifecycleState) {
-		if (lifecycleState == Lifecycle.State.RESUMED) {
-			if (context.areNotificationsEnabled() && uiState.stage == InitialSubStage.PERMISSION) {
-				handleUiEvent(SwitchStage(InitialSubStage.READY))
-			}
+		if (lifecycleState == Lifecycle.State.RESUMED && context.areNotificationsEnabled() && uiState.stage == InitialSubStage.PERMISSION) {
+			handleUiEvent(SwitchStage(InitialSubStage.READY))
 		}
 	}
 
