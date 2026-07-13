@@ -1501,8 +1501,8 @@ class HashRegistry
 				.replace("\"", "\\\"")
 				.replace("\n", "\\n")
 				.replace("\r", "\\r")
-
 				.replace("\t", "\\t")
+
 		/**
 		 * M7 v2 — Extract raw encrypted blobs from a v0x03 registry file
 		 * WITHOUT decrypting. Each blob is [nonce(12)][ct_len(4)][ciphertext].
