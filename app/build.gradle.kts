@@ -477,8 +477,12 @@ tasks.register<JacocoReport>("jacocoTestReport") {
 		xml.outputLocation.set(file("${layout.buildDirectory.get()}/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"))
 	}
 
-	val debugTree = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/fossDebug")
-	classDirectories.setFrom(debugTree)
+	// AGP 9+ — Kotlin classes are in tmp/kotlin-classes/<variant>/, Java classes
+	// in intermediates/javac/<variant>/classes/. Include both for full coverage.
+	val kotlinClasses = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/fossDebug")
+	val javaClasses = fileTree("${layout.buildDirectory.get()}/intermediates/javac/fossDebug/classes")
+	classDirectories.setFrom(kotlinClasses, javaClasses)
+
 	sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
 	executionData.setFrom(fileTree("${layout.buildDirectory.get()}/jacoco").include("*.exec"))
 }
