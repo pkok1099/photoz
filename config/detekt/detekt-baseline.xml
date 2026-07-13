@@ -4,20 +4,25 @@
   <CurrentIssues>
     <ID>ComplexCondition:RepoManager.kt$RepoManager$id.isEmpty() || typeStr.isEmpty() || wrappedVmkB64.isEmpty() || iv.isEmpty() || algorithmStr.isEmpty() || keySize == null</ID>
     <ID>ComplexCondition:TelemetryOptInQuestionSheet.kt$!TELEMETRY_ENABLED_BY_DEFAULT &amp;&amp; !config.telemetryAskedForOptIn &amp;&amp; !config.justFinishedSetup &amp;&amp; config.lastUsedUnlockMethod != VaultProtectionType.RecoveryPhrase</ID>
+    <ID>CyclomaticComplexMethod:CacheRotationUseCase.kt$CacheRotationUseCase$suspend fun run(): Int</ID>
     <ID>CyclomaticComplexMethod:EncryptionMigrationScreenInitial.kt$@Composable fun EncryptionMigrationScreenInitial( uiState: LegacyEncryptionMigrationUiState.Initial, handleUiEvent: (LegacyEncryptionMigrationUiEvent) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:HashRegistry.kt$HashRegistry$private suspend fun gcRepackPack( remote: String, packName: String, live: List&lt;HashRegistryEntry&gt;, dead: List&lt;HashRegistryEntry&gt;, entries: List&lt;HashRegistryEntry&gt;, ): Boolean</ID>
     <ID>CyclomaticComplexMethod:HashRegistry.kt$HashRegistry$suspend fun flushPendingThumbnailPacks()</ID>
-    <ID>CyclomaticComplexMethod:HashRegistry.kt$HashRegistry$suspend fun gcThumbnailPacks(): Int</ID>
-    <ID>CyclomaticComplexMethod:ImageViewerPage.kt$@androidx.annotation.OptIn(UnstableApi::class) @Composable fun BoxScope.ImageViewerVideoPage( item: ImageViewerItem.Video, isCurrentItem: Boolean, exoPlayerState: ExoPlayerState, player: Player, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, modifier: Modifier = Modifier, /** * State of the on-demand download for this video, if it was remote-only * when the user opened it. `null` means "no download needed" (the local * file was already present). * * @since video-loading-indicator feature — on-demand video download with * visible progress */ downloadState: VideoDownloadState? = null, )</ID>
+    <ID>CyclomaticComplexMethod:ImageViewerControls.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun ImageViewerControls( showControls: Boolean, currentItem: ImageViewerItem?, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, navController: NavController, modifier: Modifier = Modifier, )</ID>
     <ID>CyclomaticComplexMethod:ImageViewerScreen.kt$@OptIn(UnstableApi::class) @Composable fun ImageViewerScreen( navController: NavController, photoUuid: String, albumUuid: String?, )</ID>
+    <ID>CyclomaticComplexMethod:PhotoGallery.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun GalleryPhotoTile( modifier: Modifier = Modifier, photoTile: PhotoTile, multiSelectionActive: Boolean, selected: Boolean, onClicked: () -&gt; Unit, onLongPress: () -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:PhotoRepository.kt$PhotoRepository$suspend fun importFromZip(sourceUri: Uri): Int</ID>
     <ID>CyclomaticComplexMethod:PhotoRepository.kt$PhotoRepository$suspend fun safeImportPhoto( sourceUri: Uri, importSource: ImportSource, overrideAlbumPath: String? = null, ): String</ID>
-    <ID>CyclomaticComplexMethod:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun performUpload( photo: Photo, batchState: SyncBatchTracker.BatchState, )</ID>
-    <ID>CyclomaticComplexMethod:RepoManager.kt$RepoManager$private suspend fun downloadVaultProtectionEscrow(vmkBytes: ByteArray? = null): Result&lt;VaultProtection?&gt;</ID>
-    <ID>CyclomaticComplexMethod:RepoManager.kt$RepoManager$suspend fun downloadWrappedPhraseEscrow(vmkBytes: ByteArray? = null): Result&lt;PhraseEscrowWrapper.WrappedPhrase?&gt;</ID>
-    <ID>CyclomaticComplexMethod:RepoManager.kt$RepoManager$suspend fun restoreThumbnailsFromPacks(): Int</ID>
+    <ID>CyclomaticComplexMethod:PhotoType.kt$PhotoType.Companion$fun fromMimeType(mimeType: String?): PhotoType</ID>
+    <ID>CyclomaticComplexMethod:RecoveryPhraseRestoreScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RecoveryPhraseRestoreContent( uiState: RecoveryPhraseRestoreUiState, handleUiEvent: (RecoveryPhraseRestoreUiEvent) -&gt; Unit, onBack: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:RecoveryPhraseRestoreViewModel.kt$RecoveryPhraseRestoreViewModel$fun handleUiEvent(event: RecoveryPhraseRestoreUiEvent)</ID>
+    <ID>CyclomaticComplexMethod:RepoSetupFragment.kt$@Composable private fun RepoSetupScreen( viewModel: RepoSetupViewModel, onCompleted: () -&gt; Unit, onUnlocked: () -&gt; Unit, onBack: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SearchQueryParser.kt$fun List&lt;Photo&gt;.filterBySearchQuery(query: SearchQuery): List&lt;Photo&gt;</ID>
+    <ID>CyclomaticComplexMethod:SearchQueryParser.kt$fun parseSearchQuery(raw: String): SearchQuery</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt$@Composable fun SettingsCallbacks(viewModel: SettingsViewModel)</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsContent( screenConfig: PreferenceScreenConfig, handleUiEvent: (SettingsUiEvent) -&gt; Unit, syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured, infoSummaries: Map&lt;String, String&gt; = emptyMap(), trashCount: Int? = null, keystoreFallbackActive: Boolean = false, )</ID>
     <ID>CyclomaticComplexMethod:StrongPasswordPolicy.kt$StrongPasswordPolicy$fun strength(password: String): PasswordStrength</ID>
-    <ID>ForbiddenComment:Photo.kt$Photo$// TODO: Add a domain model for photos</ID>
-    <ID>ForbiddenComment:RepoManager.kt$RepoManager$// TODO: for now, just check that a remote is chosen. A full reachability check</ID>
+    <ID>CyclomaticComplexMethod:VersionDispatchDataSourceFactory.kt$VersionDispatchDataSource$override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long</ID>
     <ID>ImplicitDefaultLocale:PhotoSyncWorker.kt$PhotoSyncWorker$String.format("%.1f KB", kb)</ID>
     <ID>ImplicitDefaultLocale:PhotoSyncWorker.kt$PhotoSyncWorker$String.format("%.1f MB", mb)</ID>
     <ID>LargeClass:HashRegistry.kt$HashRegistry</ID>
@@ -25,26 +30,41 @@
     <ID>LargeClass:PhotoSyncWorker.kt$PhotoSyncWorker : CoroutineWorker</ID>
     <ID>LargeClass:RepoManager.kt$RepoManager</ID>
     <ID>LongMethod:AboutScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AboutScreen(handleUiEvent: (AboutUiEvent) -&gt; Unit)</ID>
+    <ID>LongMethod:AesCbcRandomAccessDataSource.kt$AesCbcRandomAccessDataSource$override fun open(dataSpec: DataSpec): Long</ID>
+    <ID>LongMethod:AlbumDetailContent.kt$@Composable fun AlbumDetailContent( uiState: AlbumDetailUiState, handleUiEvent: (AlbumDetailUiEvent) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:AlbumDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AlbumDetailScreen( viewModel: AlbumDetailViewModel, navController: NavController, )</ID>
+    <ID>LongMethod:CreateVaultSheet.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun SheetContent( uiState: CreateVaultUiState, strengthLabelRes: Int, canSubmit: Boolean, handleUiEvent: (CreateVaultUiEvent) -&gt; Unit, onDismissRequest: () -&gt; Unit, )</ID>
+    <ID>LongMethod:EncryptionMigrationScreenError.kt$@Composable fun EncryptionMigrationScreenError( uiState: LegacyEncryptionMigrationUiState.Error, handleUiEvent: (LegacyEncryptionMigrationUiEvent) -&gt; Unit, )</ID>
     <ID>LongMethod:EncryptionMigrationScreenInitial.kt$@Composable fun EncryptionMigrationScreenInitial( uiState: LegacyEncryptionMigrationUiState.Initial, handleUiEvent: (LegacyEncryptionMigrationUiEvent) -&gt; Unit, )</ID>
+    <ID>LongMethod:GalleryContent.kt$@Composable fun GalleryContent( uiState: GalleryUiState.Content, handleUiEvent: (GalleryUiEvent) -&gt; Unit, multiSelectionState: MultiSelectionState, modifier: Modifier = Modifier, )</ID>
     <ID>LongMethod:GalleryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun GalleryScreen(viewModel: GalleryViewModel)</ID>
-    <ID>LongMethod:HashRegistry.kt$HashRegistry$suspend fun gcThumbnailPacks(): Int</ID>
+    <ID>LongMethod:HashRegistry.kt$HashRegistry$private suspend fun gcRepackPack( remote: String, packName: String, live: List&lt;HashRegistryEntry&gt;, dead: List&lt;HashRegistryEntry&gt;, entries: List&lt;HashRegistryEntry&gt;, ): Boolean</ID>
+    <ID>LongMethod:ImageDetailsSheet.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ImageDetailsSheet( visible: Boolean, onDismissRequest: () -&gt; Unit, photo: Photo, )</ID>
     <ID>LongMethod:ImageViewerControls.kt$@Composable private fun MoreMenu( visible: Boolean, onDismissRequest: () -&gt; Unit, currentItem: ImageViewerItem?, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
     <ID>LongMethod:ImageViewerControls.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun ImageViewerControls( showControls: Boolean, currentItem: ImageViewerItem?, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, navController: NavController, modifier: Modifier = Modifier, )</ID>
-    <ID>LongMethod:ImageViewerPage.kt$@androidx.annotation.OptIn(UnstableApi::class) @Composable fun BoxScope.ImageViewerVideoPage( item: ImageViewerItem.Video, isCurrentItem: Boolean, exoPlayerState: ExoPlayerState, player: Player, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, modifier: Modifier = Modifier, /** * State of the on-demand download for this video, if it was remote-only * when the user opened it. `null` means "no download needed" (the local * file was already present). * * @since video-loading-indicator feature — on-demand video download with * visible progress */ downloadState: VideoDownloadState? = null, )</ID>
     <ID>LongMethod:ImageViewerScreen.kt$@OptIn(UnstableApi::class) @Composable fun ImageViewerScreen( navController: NavController, photoUuid: String, albumUuid: String?, )</ID>
-    <ID>LongMethod:PhotoGallery.kt$@Composable fun PhotoGallery( photos: List&lt;PhotoTile&gt;, albumName: String?, multiSelectionState: MultiSelectionState, onOpenPhoto: (PhotoTile) -&gt; Unit, onExport: (Uri?) -&gt; Unit, onDelete: () -&gt; Unit, onImportChoice: (ImportChoice) -&gt; Unit, additionalMultiSelectionActions: @Composable (ColumnScope.() -&gt; Unit), /** * Called when the user taps the "Add to album" icon on the multi-selection * bar. The caller (typically GalleryContent) opens the album picker dialog * with the currently-selected UUIDs. * * @since batch-operations feature — surfaced Add-to-album as a one-tap * icon on the selection bar (was previously only in the More dropdown). */ onAddToAlbum: () -&gt; Unit = {}, /** * Sprint 5 / M2 finish — Called when the user taps the heart icon on the * multi-selection bar to mark all selected photos as favorite. * * The caller (GalleryContent → GalleryViewModel.onToggleFavorite) iterates * the selected UUIDs and calls PhotoRepository.toggleFavorite for each. * After the toggle, the gallery's Flow observer re-emits with updated * heart badges. * * @since v12 — Sprint 5 / M2 favorites finish */ onMarkFavorite: () -&gt; Unit = {}, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:ImportMenuBottomSheet.kt$@Composable private fun ImportMenuDialogContent( onDismissRequest: () -&gt; Unit, onImportChoice: (ImportChoice) -&gt; Unit, albumName: String?, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:NewFeaturesSheet.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun NewFeaturesSheet( overrideShow: Boolean = false, onDismissOverride: () -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:OnBoardingScreen.kt$@Composable fun OnBoardingScreen(onFinish: () -&gt; Unit)</ID>
+    <ID>LongMethod:PathMakerDialog.kt$@Composable fun PathMakerDialog( photoCount: Int, existingAlbums: List&lt;String&gt;, onConfirm: (String) -&gt; Unit, onDismiss: () -&gt; Unit, )</ID>
     <ID>LongMethod:PhotoGallery.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun GalleryPhotoTile( modifier: Modifier = Modifier, photoTile: PhotoTile, multiSelectionActive: Boolean, selected: Boolean, onClicked: () -&gt; Unit, onLongPress: () -&gt; Unit, )</ID>
     <ID>LongMethod:PhotoRepository.kt$PhotoRepository$suspend fun importFromZip(sourceUri: Uri): Int</ID>
-    <ID>LongMethod:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun doWorkInternal(): Result</ID>
-    <ID>LongMethod:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun performUpload( photo: Photo, batchState: SyncBatchTracker.BatchState, )</ID>
+    <ID>LongMethod:PhotoRepository.kt$PhotoRepository$suspend fun permanentlyDeletePhoto(photo: Photo)</ID>
+    <ID>LongMethod:PhotoRepository.kt$PhotoRepository$suspend fun safeImportPhoto( sourceUri: Uri, importSource: ImportSource, overrideAlbumPath: String? = null, ): String</ID>
+    <ID>LongMethod:PhotoSyncWorker.kt$PhotoSyncWorker.Companion$fun enqueue( context: Context, photo: Photo, )</ID>
     <ID>LongMethod:RecoveryPhraseRestoreScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RecoveryPhraseRestoreContent( uiState: RecoveryPhraseRestoreUiState, handleUiEvent: (RecoveryPhraseRestoreUiEvent) -&gt; Unit, onBack: () -&gt; Unit, )</ID>
     <ID>LongMethod:RecoveryPhraseRestoreViewModel.kt$RecoveryPhraseRestoreViewModel$fun handleUiEvent(event: RecoveryPhraseRestoreUiEvent)</ID>
     <ID>LongMethod:RecoveryPhraseSetupScreen.kt$@Composable private fun Content( uiState: RecoveryPhraseUiState, handleUiEvent: (RecoveryPhraseUiEvent) -&gt; Unit, onContinue: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
     <ID>LongMethod:RecoveryPhraseSheet.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun RecoveryPhraseSheet( onDismissRequest: () -&gt; Unit, onNavigateToSetup: () -&gt; Unit, )</ID>
+    <ID>LongMethod:RecoveryPhraseViewModel.kt$RecoveryPhraseViewModel$fun handleUiEvent(event: RecoveryPhraseUiEvent)</ID>
+    <ID>LongMethod:RepoManager.kt$RepoManager$private suspend fun uploadWrappedPhraseEscrow( phrase: onlasdan.gallery.encryption.domain.models.RecoveryPhrase, password: String, vmkBytes: ByteArray, ): Result&lt;Unit&gt;</ID>
     <ID>LongMethod:SecretLaunchCodeDialog.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SecretLaunchCodeDialog( show: Boolean, onDismissRequest: () -&gt; Unit, )</ID>
+    <ID>LongMethod:SemanticSearchSettings.kt$@Composable fun SemanticSearchSettings( config: Config, onToggleChanged: (Boolean) -&gt; Unit, )</ID>
     <ID>LongMethod:SettingsScreen.kt$@Composable fun SettingsCallbacks(viewModel: SettingsViewModel)</ID>
     <ID>LongMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsContent( screenConfig: PreferenceScreenConfig, handleUiEvent: (SettingsUiEvent) -&gt; Unit, syncConfigStatus: SyncConfigStatus = SyncConfigStatus.NotConfigured, infoSummaries: Map&lt;String, String&gt; = emptyMap(), trashCount: Int? = null, keystoreFallbackActive: Boolean = false, )</ID>
     <ID>LongMethod:SetupScreen.kt$@Composable fun SetupScreen( loading: Boolean, onSetup: (String) -&gt; Unit, )</ID>
+    <ID>LongMethod:SortingMenu.kt$@Composable fun SortingMenu( config: SortConfig, expanded: Boolean, onDismissRequest: () -&gt; Unit, sort: Sort, onSortChanged: (Sort) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:TrashScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun TrashScreen( onBack: () -&gt; Unit, viewModel: TrashViewModel )</ID>
     <ID>LongMethod:UnlockScreen.kt$@Composable fun UnlockScreen( unlockState: UnlockState, showBiometricButton: Boolean, showForgotPassword: Boolean, onUnlock: (String) -&gt; Unit, onBiometricClick: () -&gt; Unit, onForgotPassword: () -&gt; Unit, )</ID>
     <ID>LongParameterList:ImageViewerPage.kt$( item: ImageViewerItem.Video, isCurrentItem: Boolean, exoPlayerState: ExoPlayerState, player: Player, uiState: ImageViewerUiState, handleUiEvent: (ImageViewerUiEvent) -&gt; Unit, modifier: Modifier = Modifier, /** * State of the on-demand download for this video, if it was remote-only * when the user opened it. `null` means "no download needed" (the local * file was already present). * * @since video-loading-indicator feature — on-demand video download with * visible progress */ downloadState: VideoDownloadState? = null, )</ID>
     <ID>LongParameterList:PhotoGallery.kt$( photos: List&lt;PhotoTile&gt;, albumName: String?, multiSelectionState: MultiSelectionState, onOpenPhoto: (PhotoTile) -&gt; Unit, onExport: (Uri?) -&gt; Unit, onDelete: () -&gt; Unit, onImportChoice: (ImportChoice) -&gt; Unit, additionalMultiSelectionActions: @Composable (ColumnScope.() -&gt; Unit), /** * Called when the user taps the "Add to album" icon on the multi-selection * bar. The caller (typically GalleryContent) opens the album picker dialog * with the currently-selected UUIDs. * * @since batch-operations feature — surfaced Add-to-album as a one-tap * icon on the selection bar (was previously only in the More dropdown). */ onAddToAlbum: () -&gt; Unit = {}, /** * Sprint 5 / M2 finish — Called when the user taps the heart icon on the * multi-selection bar to mark all selected photos as favorite. * * The caller (GalleryContent → GalleryViewModel.onToggleFavorite) iterates * the selected UUIDs and calls PhotoRepository.toggleFavorite for each. * After the toggle, the gallery's Flow observer re-emits with updated * heart badges. * * @since v12 — Sprint 5 / M2 favorites finish */ onMarkFavorite: () -&gt; Unit = {}, modifier: Modifier = Modifier, )</ID>
@@ -61,28 +81,110 @@
     <ID>LoopWithTooManyJumpStatements:RestoreBackupV4.kt$RestoreBackupV4$while</ID>
     <ID>LoopWithTooManyJumpStatements:RestoreBackupV5.kt$RestoreBackupV5$while</ID>
     <ID>LoopWithTooManyJumpStatements:SearchQueryParser.kt$for</ID>
-    <ID>LoopWithTooManyJumpStatements:SyncRestorer.kt$SyncRestorer$for</ID>
     <ID>MatchingDeclarationName:AboutScreen.kt$AboutUiEvent</ID>
     <ID>MatchingDeclarationName:ExifExtractor.kt$ExifMetadata</ID>
     <ID>MatchingDeclarationName:ImportMenuBottomSheet.kt$ImportChoice</ID>
     <ID>MatchingDeclarationName:NewFeaturesSheet.kt$NewFeature</ID>
     <ID>MatchingDeclarationName:SearchQueryParser.kt$SearchQuery</ID>
     <ID>MatchingDeclarationName:Utils.kt$FileMetaData</ID>
+    <ID>MaxLineLength:AlbumDao.kt$AlbumDao$@Query("INSERT OR IGNORE INTO album_photos_cross_ref (album_uuid, photo_uuid, linked_at) VALUES (:albumId, :photoId, :linkedAt)")</ID>
+    <ID>MaxLineLength:AlbumDao.kt$AlbumDao$@Query("UPDATE album_photos_cross_ref SET pinned = :pinned WHERE album_uuid = :albumUUID AND photo_uuid IN (:photoUUIDs)")</ID>
+    <ID>MaxLineLength:AlbumDetailViewModel.kt$AlbumDetailViewModel$@Suppress("kotlin:S1871")</ID>
+    <ID>MaxLineLength:Algorithm.kt$EncryptionVersionByte.Companion$fun fromValue(value: Byte): EncryptionVersionByte</ID>
+    <ID>MaxLineLength:BackupMappers.kt$syncState = syncState?.let { runCatching { SyncState.fromStorageKey(it) }.getOrDefault(SyncState.LOCAL_ONLY) } ?: SyncState.LOCAL_ONLY</ID>
+    <ID>MaxLineLength:BackupMetaData.kt$BackupMetaData.V1$@Expose val albumPhotoRefs: List&lt;AlbumPhotoRefBackup&gt;</ID>
+    <ID>MaxLineLength:BaseApplication.kt$BaseApplication$* Reset the [EncryptionManager], set [applicationState] to [ApplicationState.LOCKED] and start [MainActivity] with NEW_TESK.</ID>
+    <ID>MaxLineLength:ChangePasswordViewModel.kt$ChangePasswordViewModel$"Skipping escrow re-upload after password change: session=${session != null} repoConfirmed=${config.repoConfirmed}"</ID>
+    <ID>MaxLineLength:ChunkedGcmInputStream.kt$ChunkedGcmInputStream$"ChunkedGcmInputStream: GCM auth tag verification failed at chunk (bytesRead=$bytesRead) — file corrupted or tampered"</ID>
+    <ID>MaxLineLength:ChunkedGcmRandomAccessDataSourceTest.kt$ChunkedGcmRandomAccessDataSourceTest$// Deviation from plan: the plan's `file.inputStream().use { input -&gt; truncated.outputStream().use { ... input.copyTo(output) ... } }`</ID>
+    <ID>MaxLineLength:CryptoMigrationV2CompatibilityTest.kt$CryptoMigrationV2CompatibilityTest$val v2Decrypted = cbcEngine.createDecryptStream(ByteArrayInputStream(v2Output.toByteArray()), vaultSession)!!.readBytes()</ID>
+    <ID>MaxLineLength:EncryptionMigrationScreenError.kt$"Causing exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj "</ID>
     <ID>MaxLineLength:EncryptionMigrationScreenError.kt$"Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj Some error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkjSome error message from exception skdjgsjdgijsdgjskdjgiosdjigvjskjvskdjfgsdlkgvmskdgkskdgklskgljasöflkvmlkasgvsajgkljsafkgjlsöakvlkösjakvmasdklgjfsaklmgdlkj"</ID>
+    <ID>MaxLineLength:EncryptionMigrationScreenInitial.kt$if</ID>
+    <ID>MaxLineLength:EncryptionModule.kt$EncryptionBindingModule$fun</ID>
+    <ID>MaxLineLength:FragmentExtensions.kt$* Create a view model with assisted injection. This is a workaround for the missing support of assisted injection in Hilt.</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"flushPendingThumbnailPacks: pack $packName upload FAILED (non-fatal — entries keep thumbnail_pack=null, will retry next batch): ${e.message}"</ID>
     <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"flushPendingThumbnailPacks: uploading pack $packName (${currentPackStream.size()} bytes, ${currentPackEntries.size} thumbnails) → $remotePath"</ID>
     <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"gcOriginals: delete legacy thumbnail for ${entry.uuid} FAILED (non-fatal — may have been packed already, or may not exist on this backend): ${e.message}"</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"gcThumbnailPacks: clear pack field on dead entry ${d.uuid} (empty-pack fallback) FAILED (non-fatal): ${e.message}"</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$"gcThumbnailPacks: entry ${e.uuid} has invalid offset/length (off=$off len=$len packSize=${packBytes.size}) — skipping entry"</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$diag("flushPendingThumbnailPacks: DONE — packed ${pendingThumbs.size} thumbnails into ${packIndexHolder[0]} pack(s)")</ID>
     <ID>MaxLineLength:HashRegistry.kt$HashRegistry$diag("uploadToRemote: F-SYNC-014 detected concurrent write — re-merging with " + recheckPreserved.size + " preserved (was " + preservedBlobs.size + ")")</ID>
-    <ID>NestedBlockDepth:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun performUpload( photo: Photo, batchState: SyncBatchTracker.BatchState, )</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$diag("uploadToRemote: M7 v2 merge — preserved ${preserved.size} entries from other vaults (total existing: ${allBlobs.size})")</ID>
+    <ID>MaxLineLength:HashRegistry.kt$HashRegistry$diag("uploadToRemote: uploading ${encryptedData.size} bytes (${entries.size} ours + ${preservedBlobs.size} preserved) → $remotePath")</ID>
+    <ID>MaxLineLength:HashRegistryTest.kt$HashRegistryTest$HashRegistry(app, rcloneController, dao, sessionRepository, mockk&lt;onlasdan.gallery.model.database.dao.PhotoDao&gt;(relaxed = true))</ID>
+    <ID>MaxLineLength:ImageViewerPage.kt$@Suppress("kotlin:S107", "LongMethod", "CyclomaticComplexMethod")</ID>
+    <ID>MaxLineLength:ImageViewerViewModel.kt$ImageViewerViewModel$private fun createPinnedPhotoIdsFlow(): Flow&lt;Set&lt;String&gt;&gt;</ID>
+    <ID>MaxLineLength:LegacyEncryptionMigrationViewModel.kt$LegacyEncryptionMigrationViewModel$val text = "PhotoZ error migration report.\n\nPlease don't change the content below.\n\n ${event.error.stackTraceToString()}"</ID>
+    <ID>MaxLineLength:MainActivity.kt$val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.settingsFragment, R.id.albumDetailFragment)</ID>
+    <ID>MaxLineLength:ObservableViewModel.kt$ObservableViewModel$fun</ID>
+    <ID>MaxLineLength:PasswordEditText.kt$PasswordEditText.BindingAdapters$*</ID>
+    <ID>MaxLineLength:PermissionUtils.kt$fun Activity.requestInSettings(permission: String): Boolean</ID>
+    <ID>MaxLineLength:PhotoActionsNavigator.kt$PhotoActionsNavigator$val direction = ImageViewerFragmentDirections.actionGlobalImageViewerFragment(photoUuid = photoUUID, albumUuid = albumUUID)</ID>
+    <ID>MaxLineLength:PhotoDao.kt$PhotoDao$"SELECT * FROM photo WHERE content_hash = :hash AND photo_uuid != :excludeUuid AND deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL) LIMIT 1"</ID>
+    <ID>MaxLineLength:PhotoDao.kt$PhotoDao$"SELECT * FROM photo WHERE deleted_at = 0 AND (vault_id = ? OR vault_id IS NULL) ORDER BY ${sort.field.columnName} ${sort.order.sql}"</ID>
+    <ID>MaxLineLength:PhotoDao.kt$PhotoDao$@Query("SELECT * FROM photo WHERE deleted_at = 0 AND (vault_id = :vaultId OR vault_id IS NULL) ORDER BY importedAt DESC")</ID>
+    <ID>MaxLineLength:PhotoDao.kt$PhotoDao$@Query("SELECT * FROM photo WHERE deleted_at &gt; 0 AND (vault_id = :vaultId OR vault_id IS NULL) ORDER BY deleted_at DESC")</ID>
+    <ID>MaxLineLength:PhotoDao.kt$PhotoDao$@Query("SELECT COUNT(*) FROM photo WHERE deleted_at = 0 AND is_favorite = 1 AND (vault_id = :vaultId OR vault_id IS NULL)")</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$"flushRegistryToRemote: FAILED (non-fatal — local cache stays correct, will retry on next batch): ${e.javaClass.name}: ${e.message}"</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$"flushRegistryToRemote: no vault session (vault locked) — skipping registry flush; local cache stays correct, will flush on next batch"</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$"onBatchCompleteIfDone: flushPendingThumbnailPacks FAILED (non-fatal — will retry next batch): ${e.javaClass.name}: ${e.message}"</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$@Suppress("ThrowsCount", "NestedBlockDepth")</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$diag("performUpload: DEDUP — explicit UPLOADED mark FAILED (non-fatal, doWorkInternal will retry): ${e.message}", e)</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$diag("performUpload: syncVerifyHash is ON but photo has no contentHash (pre-v9 import) — skipping full verification")</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$diag("performUpload: thumbnail exists locally (${thumbPath.length()} bytes) — deferring to batch-end pack upload (Bug 4)")</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$diag("setForeground: OK — foreground notification posted (id=$NOTIFICATION_ID, type=FOREGROUND_SERVICE_TYPE_DATA_SYNC)")</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$rcloneController.createDir("$remote:${SyncConfig.remoteOriginalsDir}").onFailure { Timber.w(it, "createDir originals failed (non-fatal)") }</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker$rcloneController.createDir("$remote:${SyncConfig.remoteVideosDir}").onFailure { Timber.w(it, "createDir videos failed (non-fatal)") }</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker.Companion$"[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}\n"</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker.Companion$"[UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo found for $uniqueWorkName — work was never enqueued or was pruned"</ID>
+    <ID>MaxLineLength:PhotoSyncWorker.kt$PhotoSyncWorker.Companion$"[UploadWorker] enqueue: SKIPPED — syncAutoUpload=false (user disabled auto-upload in Settings). uuid=${photo.uuid}"</ID>
+    <ID>MaxLineLength:RcloneController.kt$RcloneController$val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote","_async":true}"""</ID>
+    <ID>MaxLineLength:RcloneController.kt$RcloneController$val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""</ID>
+    <ID>MaxLineLength:RecoveryPhraseRestoreScreen.kt$uiState.phrase.words.isNotEmpty() &amp;&amp; uiState.selectedRestoreMethod != RecoveryPhraseRestoreUiState.RestoreMethod.TypeByHand</ID>
+    <ID>MaxLineLength:RecoveryPhraseSetupFragment.kt$RecoveryPhraseSetupFragment$"POST_NOTIFICATIONS: already granted or not needed (SDK &lt; 33) — navigating to gallery (register branch, onContinue)"</ID>
+    <ID>MaxLineLength:RepoManager.kt$RepoManager$"applyRegistryMetadataToPhotos: no registry entry for uuid=${photo.uuid} — leaving placeholder (will be corrected on-demand via SyncRestorer)"</ID>
+    <ID>MaxLineLength:RepoManager.kt$RepoManager$"ensurePhotoRowForRestoredEntry: created Photo row for ${entry.uuid} (filename=${photo.fileName}, size=${photo.size}, type=${photo.type})"</ID>
+    <ID>MaxLineLength:RepoManager.kt$RepoManager$"restoreThumbnailsAfterLogin: ${packedUuids.size} entries are packed — skipping their individual thumbnails (will be restored via packs)"</ID>
+    <ID>MaxLineLength:RepoManager.kt$RepoManager$"restoreThumbnailsFromPacks: downloading pack $packRemotePath (${missing.size} of ${packMembers.size} thumbnails missing) → ${packLocalFile.absolutePath}"</ID>
+    <ID>MaxLineLength:RepoManager.kt$RepoManager$"restoreThumbnailsFromPacks: skipping ${entry.uuid} — invalid offset/length (offset=$offset length=$length packSize=${packBytes.size})"</ID>
+    <ID>MaxLineLength:RepoSetupViewModel.kt$RepoSetupViewModel$"submitPassword: restoreThumbnailsFromPacks restored $packRestored thumbnails from packs (and/or legacy individual)"</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$fun createBackupFilename(): String</ID>
+    <ID>MaxLineLength:SettingsViewModel.kt$SettingsViewModel$suspend fun rcloneConfigManagerAvailableRemotes(): List&lt;RcloneConfigManager.RemoteInfo&gt;</ID>
+    <ID>MaxLineLength:Sort.kt$Sort.Field$LinkedAt : Field</ID>
+    <ID>MaxLineLength:SqlCipherKeyProviderTest.kt$SqlCipherKeyProviderTest$val provider = SqlCipherKeyProvider(RuntimeEnvironment.getApplication(), FallbackSqlCipherKeyProvider(RuntimeEnvironment.getApplication()), Config(RuntimeEnvironment.getApplication()))</ID>
+    <ID>MaxLineLength:SqlCipherMigrationHelper.kt$SqlCipherMigrationHelper.Companion$private</ID>
+    <ID>MaxLineLength:SyncRestorer.kt$SyncRestorer$Timber.w("SyncRestorer: downloaded file for %s is %d bytes but expected ~%d — may be truncated", uuid, localFile.length(), photo.size)</ID>
+    <ID>MaxLineLength:ToggleAppVisibilityDialog.kt$ToggleAppVisibilityDialog$class</ID>
+    <ID>MaxLineLength:VaultService.kt$VaultService$Timber.i("createPasswordProtectionFromSession: created local VaultProtection(Password) wrapping existing VMK (id=${protection.id}, kdf=Argon2id)")</ID>
+    <ID>MaxLineLength:VaultService.kt$VaultService$private val recoveryPhraseProtectionHandler: VaultProtectionHandler&lt;UnlockRequest.RecoveryPhrase, CreateRequest.RecoveryPhrase&gt;</ID>
+    <ID>ReturnCount:AesCbcRandomAccessDataSource.kt$AesCbcRandomAccessDataSource$private fun waitForBytesAvailable(minBytes: Long)</ID>
     <ID>ReturnCount:AesCbcRandomAccessDataSource.kt$AesCbcRandomAccessDataSource.BlockingInputStream$@Throws(IOException::class) override fun read( b: ByteArray, off: Int, len: Int, ): Int</ID>
     <ID>ReturnCount:ChunkedGcmInputStream.kt$ChunkedGcmInputStream$override fun read( b: ByteArray, off: Int, len: Int, ): Int</ID>
     <ID>ReturnCount:ChunkedGcmRandomAccessDataSource.kt$ChunkedGcmRandomAccessDataSource$override fun read( target: ByteArray, offset: Int, length: Int, ): Int</ID>
+    <ID>ReturnCount:ChunkedGcmRandomAccessDataSource.kt$ChunkedGcmRandomAccessDataSource$private fun waitForBytesAvailable(minBytes: Long)</ID>
+    <ID>ReturnCount:HashRegistry.kt$HashRegistry$private suspend fun gcProcessPack( remote: String, packName: String, entries: List&lt;HashRegistryEntry&gt;, ): Boolean</ID>
+    <ID>ReturnCount:HashRegistry.kt$HashRegistry$private suspend fun gcRepackPack( remote: String, packName: String, live: List&lt;HashRegistryEntry&gt;, dead: List&lt;HashRegistryEntry&gt;, entries: List&lt;HashRegistryEntry&gt;, ): Boolean</ID>
+    <ID>ReturnCount:ImageViewerViewModel.kt$ImageViewerViewModel$fun maybeStartVideoDownload(photo: Photo)</ID>
+    <ID>ReturnCount:PhotoRepository.kt$PhotoRepository$fun createPhotoFile( photo: Photo, source: InputStream?, digest: MessageDigest? = null, ): Long</ID>
+    <ID>ReturnCount:PhotoRepository.kt$PhotoRepository$private suspend fun ensureAlbumForPhoto(photo: Photo)</ID>
     <ID>ReturnCount:PhotoRepository.kt$PhotoRepository$suspend fun safeImportPhoto( sourceUri: Uri, importSource: ImportSource, overrideAlbumPath: String? = null, ): String</ID>
     <ID>ReturnCount:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun doWorkInternal(): Result</ID>
     <ID>ReturnCount:PhraseEscrowWrapper.kt$PhraseEscrowWrapper.WrappedPhrase.Companion$fun fromJson(json: String): WrappedPhrase?</ID>
+    <ID>ReturnCount:RcloneController.kt$RcloneController$private fun rpc(method: String, input: String): String</ID>
+    <ID>ReturnCount:RepoManager.kt$RepoManager$private fun parseVaultProtection(json: String): VaultProtection?</ID>
+    <ID>ReturnCount:RepoManager.kt$RepoManager$private suspend fun ensureAlbumForRestoredPhoto(photo: Photo)</ID>
+    <ID>ReturnCount:RepoManager.kt$RepoManager$private suspend fun restoreLegacyThumbnail( remote: String, entry: HashRegistryEntry, ): Int</ID>
+    <ID>ReturnCount:SelfDestructWorker.kt$SelfDestructWorker$override suspend fun doWork(): Result</ID>
+    <ID>ReturnCount:SettingsViewModel.kt$SettingsViewModel$fun onBiometricUnlockChanged( value: Any?, fragment: Fragment, ): Boolean</ID>
+    <ID>ReturnCount:SqlCipherMigrationHelper.kt$SqlCipherMigrationHelper$fun migrateIfNecessary(): Boolean</ID>
+    <ID>ReturnCount:SqlCipherMigrationHelper.kt$SqlCipherMigrationHelper$private fun runMigration(dbFile: File): Boolean</ID>
     <ID>ReturnCount:StrongPasswordPolicy.kt$StrongPasswordPolicy$fun isAcceptable(password: String): Boolean</ID>
     <ID>ReturnCount:StrongPasswordPolicy.kt$StrongPasswordPolicy$fun strength(password: String): PasswordStrength</ID>
+    <ID>ReturnCount:SyncRestorer.kt$SyncRestorer$private suspend fun tryRestorePhoto(photo: Photo, remote: String): Boolean</ID>
+    <ID>ReturnCount:Utils.kt$fun normalizeExifOrientation(bytesWithExif: ByteArray?): Bitmap?</ID>
+    <ID>ReturnCount:ValidateBackupUseCase.kt$ValidateBackupUseCase$suspend operator fun invoke(uri: Uri): Result&lt;BackupValidation&gt;</ID>
     <ID>ThrowsCount:ChunkedGcmInputStream.kt$ChunkedGcmInputStream$private fun readHeader()</ID>
-    <ID>ThrowsCount:PhotoSyncWorker.kt$PhotoSyncWorker$private suspend fun performUpload( photo: Photo, batchState: SyncBatchTracker.BatchState, )</ID>
     <ID>TooManyFunctions:AlbumDao.kt$AlbumDao</ID>
     <ID>TooManyFunctions:AlbumRepository.kt$AlbumRepository</ID>
     <ID>TooManyFunctions:AlbumRepositoryImpl.kt$AlbumRepositoryImpl : AlbumRepository</ID>
@@ -96,7 +198,6 @@
     <ID>TooManyFunctions:RepoSetupFragment.kt$onlasdan.gallery.reposetup.ui.RepoSetupFragment.kt</ID>
     <ID>TooManyFunctions:SettingsScreen.kt$onlasdan.gallery.settings.ui.compose.SettingsScreen.kt</ID>
     <ID>TooManyFunctions:Utils.kt$onlasdan.gallery.other.Utils.kt</ID>
-    <ID>UnusedParameter:EncryptionMigrationScreenSuccess.kt$uiState: LegacyEncryptionMigrationUiState.Success</ID>
     <ID>UnusedParameter:SyncBatchTracker.kt$SyncBatchTracker$uuid: String</ID>
     <ID>UnusedPrivateClass:PhotoSyncWorker.kt$PhotoSyncWorker$HashMismatchException : Exception</ID>
     <ID>UnusedPrivateMember:AboutScreen.kt$@PreviewLightDark @Composable private fun Preview()</ID>
@@ -118,7 +219,6 @@
     <ID>UnusedPrivateMember:EncryptionMigrationScreenMigrating.kt$@PreviewLightDark @Composable private fun Preview()</ID>
     <ID>UnusedPrivateMember:EncryptionMigrationScreenSuccess.kt$@PreviewLightDark @Composable private fun PreviewSuccess()</ID>
     <ID>UnusedPrivateMember:GalleryPlaceholder.kt$@PreviewLightDark @Composable private fun GalleryPlaceholderPreview()</ID>
-    <ID>UnusedPrivateMember:HashRegistry.kt$HashRegistry$private fun unescapeJson(s: String): String</ID>
     <ID>UnusedPrivateMember:ImageDetailsSheet.kt$@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter") @PreviewLightDark @Composable private fun Preview()</ID>
     <ID>UnusedPrivateMember:ImageViewerScreen.kt$@PreviewLightDark @Composable private fun ControlsPreview()</ID>
     <ID>UnusedPrivateMember:ImportMenuBottomSheet.kt$@OptIn(ExperimentalMaterial3Api::class) @Preview @Composable private fun PreviewAlbum()</ID>
@@ -146,8 +246,23 @@
     <ID>UnusedPrivateMember:SetupScreen.kt$@Preview(showBackground = true) @Composable private fun SetupScreenPreview()</ID>
     <ID>UnusedPrivateMember:SortingMenu.kt$@OptIn(ExperimentalMaterial3Api::class) @PreviewLightDark @Composable private fun Preview()</ID>
     <ID>UnusedPrivateMember:UnlockScreen.kt$@Preview(showBackground = true) @Composable private fun UnlockScreenPreview()</ID>
-    <ID>UseCheckOrError:RepoManager.kt$RepoManager$throw IllegalStateException("No remote chosen")</ID>
-    <ID>UseCheckOrError:VaultService.kt$VaultService$throw IllegalStateException("No password protection found and no legacy migration available")</ID>
+    <ID>UnusedPrivateProperty:BreakInDetector.kt$BreakInDetector$private val app: Application</ID>
+    <ID>UnusedPrivateProperty:ChunkedGcmStreamTest.kt$ChunkedGcmStreamTest$private val keyGen = KeyGen()</ID>
+    <ID>UnusedPrivateProperty:HashRegistry.kt$HashRegistry.Companion$// ─── GZIP compression for registry (file-upload feature) ────────────── // The registry is hand-rolled JSON — text-heavy, with lots of repeated // field names ("content_hash", "uuid", "filename", etc.) and predictable // structure. GZIP typically achieves 70-80% size reduction on such // payloads, which directly reduces the per-batch upload size and the // remote storage footprint. // // ## On-wire format (versioned) // // The first byte of the encrypted blob is a version tag: // 0x01 = legacy: [12-byte nonce][GCM(plaintext JSON)] // (no version byte was written — the file starts with the // nonce. The download path treats "first byte != 0x02" as // legacy and parses from offset 0.) // 0x02 = current: [1-byte version=0x02][12-byte nonce][GCM(GZIP(JSON))] // // The 1/256 chance that a legacy file's nonce happens to start with // 0x02 is handled by a try/catch around the GZIP decompress in the // 0x02 branch — if decompression fails, fall back to treating the // payload as legacy plaintext JSON. This is rare (one registry in // every ~256 devices on first upload after upgrade) and recoverable // (the next batch's upload overwrites the file with a properly- // tagged 0x02 version). // // ## Why only the registry (not photos) // // Photo bodies stay on AES-CBC without GZIP because: // 1. JPEGs / MP4s / HEICs are already compressed — GZIP would // shrink them by &lt;5% while burning CPU on every import. // 2. The image viewer uses random-access CBC reads to decode // regions of large JPEGs without loading the whole file. // GZIP doesn't support random access, so adding it would // break the viewer. // 3. Changing the photo format would require migrating every // existing encrypted photo on disk — high risk, low reward. // // The registry is small, pure-metadata, and re-uploaded on every // batch — perfect candidate for compression. // // @since gzip-registry feature private const val REGISTRY_FORMAT_VERSION_LEGACY: Byte = 0x01</ID>
+    <ID>UnusedPrivateProperty:LegacyBackupStrategyImpl.kt$LegacyBackupStrategyImpl$private val config: Config</ID>
+    <ID>UnusedPrivateProperty:LegacyEncryption.kt$private const val AES_ALGORITHM = "AES/GCM/NoPadding"</ID>
+    <ID>UnusedPrivateProperty:PanicWipeUseCase.kt$PanicWipeUseCase$private val app: Application</ID>
+    <ID>UnusedPrivateProperty:RcloneController.kt$RcloneController$private val app: Application</ID>
+    <ID>UnusedPrivateProperty:RcloneController.kt$RcloneController.Companion$private const val TAG = "RcloneController"</ID>
+    <ID>UnusedPrivateProperty:RecoveryPhraseVaultProtectionHandler.kt$private const val KEK_ITERATIONS = 100_000</ID>
+    <ID>UnusedPrivateProperty:RepoManager.kt$RepoManager$private val configManager: RcloneConfigManager</ID>
+    <ID>UnusedPrivateProperty:RepoManager.kt$RepoManager.Companion$private const val ERR_DIR_NOT_FOUND = DIR_NOT_FOUND_ERR</ID>
+    <ID>UnusedPrivateProperty:RestoreBackupViewModel.kt$RestoreBackupViewModel$private val unlockBackup: UnlockBackupUseCase</ID>
+    <ID>UnusedPrivateProperty:SyncLogger.kt$SyncLogger$private const val MAX_FILE_BYTES: Long = 500L * 1024L</ID>
+    <ID>UnusedPrivateProperty:ToggleAppVisibilityViewModel.kt$ToggleAppVisibilityViewModel$a</ID>
+    <ID>UnusedPrivateProperty:VaultService.kt$private const val KEK_ITERATIONS = 100_000</ID>
     <ID>UseCheckOrError:VaultService.kt$VaultService$throw IllegalStateException("Password did not unlock any vault")</ID>
+    <ID>WildcardImport:PasswordEditText.kt$import androidx.databinding.*</ID>
+    <ID>WildcardImport:PhotoDao.kt$import androidx.room.*</ID>
   </CurrentIssues>
 </SmellBaseline>
