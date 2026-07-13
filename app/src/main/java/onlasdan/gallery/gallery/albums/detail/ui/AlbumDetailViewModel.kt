@@ -172,7 +172,12 @@ class AlbumDetailViewModel
 		private fun onImportChoice(choice: ImportChoice) {
 			val navEvent =
 				when (choice) {
-					is ImportChoice.AddNewFiles,
+					is ImportChoice.AddNewFiles ->
+						AlbumDetailNavigator.NavigationEvent.StartImport(
+							fileUris = choice.fileUris,
+							albumUuid = albumFlow.value.uuid,
+						)
+
 					// Sprint 3 / M10 — Photo Picker import from an album detail screen.
 					// The user picked a target album via Path Maker dialog (which may
 					// be THIS album or a different one). We route to StartImport with

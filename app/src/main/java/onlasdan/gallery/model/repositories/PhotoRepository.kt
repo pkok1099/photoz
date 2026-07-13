@@ -1440,7 +1440,7 @@ class PhotoRepository
 								tnBytes += len
 								tnCount++
 							}
-							f.name.endsWith(".crypt.vp"), f.name.endsWith(".crypt") -> {
+							f.name.endsWith(".crypt.vp") || f.name.endsWith(".crypt") -> {
 								// Video preview (.crypt.vp) — group with originals.
 								origBytes += len
 								origCount++
