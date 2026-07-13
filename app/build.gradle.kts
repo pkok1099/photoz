@@ -17,6 +17,13 @@ plugins {
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
+
+	// ─── Coverage (SonarCloud) — jacoco for code coverage reports ─────────
+	// Required by .github/workflows/android.yml SonarCloud job which runs
+	// `./gradlew jacocoTestReport` and passes the XML to sonar-scanner via
+	// -Dsonar.coverage.jacoco.xmlReportPaths. Generates report at
+	// app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml.
+	jacoco
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
@@ -169,6 +176,13 @@ android {
 	packaging {
 		jniLibs {
 			useLegacyPackaging = false
+		}
+	}
+
+	// ─── JaCoCo for unit tests — generates .exec files for coverage report ──
+	testOptions {
+		unitTests.all {
+			it.jacoco.includeNoLocationClasses = true
 		}
 	}
 }
@@ -451,4 +465,27 @@ ktlint {
 	// ktlint is now a BLOCKING quality gate — new style violations fail CI.
 	// @since Sprint 5 — ktlint now blocking
 	ignoreFailures.set(false)
+}
+
+// ─── JaCoCo coverage report (for SonarCloud) ────────────────────────────────
+// Generates app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+// Run via: ./gradlew jacocoTestReport
+// Depends on: testFossDebugUnitTest (runs unit tests, generates .exec files)
+tasks.register<JacocoReport>("jacocoTestReport") {
+	group = "verification"
+	description = "Generates JaCoCo coverage report for SonarCloud"
+
+	dependsOn("testFossDebugUnitTest")
+
+	reports {
+		xml.required.set(true)
+		html.required.set(false)
+		csv.required.set(false)
+		xml.outputLocation.set(file("${layout.buildDirectory.get()}/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"))
+	}
+
+	val debugTree = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/fossDebug")
+	classDirectories.setFrom(debugTree)
+	sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+	executionData.setFrom(fileTree("${layout.buildDirectory.get()}/jacoco").include("*.exec"))
 }
