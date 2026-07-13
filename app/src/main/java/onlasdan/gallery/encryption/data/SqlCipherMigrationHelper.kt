@@ -162,7 +162,7 @@ class SqlCipherMigrationHelper
 			val passphraseStr = passphrase.joinToString("") { "%02x".format(it) }
 
 			// Delete any stale .new file from a previous failed migration.
-			if (newDbFile.exists()) newDbFile.delete()
+			if (!newDbFile.delete()) Timber.w("newDbFile.delete() failed (stale .new cleanup)")
 			// Also clean up stale -wal / -shm
 			File("${newDbFile.absolutePath}-wal").takeIf { it.exists() }?.delete()
 			File("${newDbFile.absolutePath}-shm").takeIf { it.exists() }?.delete()
@@ -230,7 +230,7 @@ class SqlCipherMigrationHelper
 
 				if (!dbFile.delete()) {
 					Timber.e("SqlCipherMigration: failed to delete old plaintext DB")
-					newDbFile.delete()
+					if (!newDbFile.delete()) Timber.w("newDbFile.delete() failed (migration failure cleanup)")
 					return false
 				}
 				if (!newDbFile.renameTo(dbFile)) {

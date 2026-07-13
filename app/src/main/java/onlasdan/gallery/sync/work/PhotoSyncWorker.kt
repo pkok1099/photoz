@@ -42,8 +42,6 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.SessionRepository
@@ -118,7 +116,6 @@ class PhotoSyncWorker
 		private var lastNotificationUpdateMs: Long = 0L
 		private var lastNotificationText: String? = null
 
-		private val metadataJson = Json { ignoreUnknownKeys = true }
 
 		// ─── init block: fires when HiltWorkerFactory constructs this instance ──
 		// If this log doesn't appear, Hilt failed to construct the worker (injection
@@ -836,64 +833,6 @@ class PhotoSyncWorker
 				}
 			}
 			return remoteOrig
-		}
-
-		/**
-		 * Build and upload the per-photo metadata sidecar JSON to
-		 * `<remote>:photok-backup/metadata/<uuid>.json`.
-		 *
-		 * **DEPRECATED in v9** — replaced by the encrypted dedup registry
-		 * ([HashRegistry] / `registry.json.crypt`). The registry already records
-		 * the same fields (filename, albumPath, size, type) per content-hash, in
-		 * a single encrypted artifact instead of N per-photo plaintext sidecars.
-		 * The function is KEPT here for backwards compatibility (so older code
-		 * paths that might still call it compile), but [performUpload] no longer
-		 * invokes it. New code SHOULD NOT call this — add the photo's metadata to
-		 * the registry via [HashRegistry.addEntry] instead.
-		 *
-		 * The original sidecar captured fields the encrypted artifacts alone can't
-		 * recover:
-		 *   - `uuid` — the photo's stable UUID (matches the remote filenames)
-		 *   - `relativePath` — the photo's original local-origin provenance
-		 *   - `fileName` — the original filename as imported
-		 *   - `type` — the [onlasdan.gallery.model.database.entity.PhotoType]
-		 *   - `size` — the encrypted original's file size in bytes
-		 *
-		 * @since v8 — path-consistency metadata sidecar
-		 * @deprecated since v9 — use [HashRegistry.addEntry] instead.
-		 */
-		@Suppress("UNUSED_PARAMETER", "unused")
-		private suspend fun uploadMetadataSidecar(
-			photo: Photo,
-			remote: String,
-		) {
-			val uuid = photo.uuid
-			val sidecarJson: JsonObject =
-				buildJsonObject {
-					put("uuid", uuid)
-					put("relativePath", photo.relativePath ?: photo.fileName)
-					put("fileName", photo.fileName)
-					put("type", photo.type.name)
-					put("size", photo.size)
-				}
-			val sidecarText = metadataJson.encodeToString(JsonObject.serializer(), sidecarJson)
-
-			// v9: constants inlined — the SyncConfig.METADATA_DIR / METADATA_FILENAME_SUFFIX
-			// constants were removed when the per-photo sidecar was replaced by the
-			// registry. The literal path is kept here so this deprecated function
-			// still compiles for any legacy caller; do NOT introduce new callers.
-			val legacyMetadataDir = "metadata"
-			val legacyMetadataSuffix = ".json"
-			val tempFile = File(appContext.cacheDir, "photok-meta-$uuid$legacyMetadataSuffix")
-			try {
-				tempFile.writeText(sidecarText)
-				val remoteMeta = "$remote:${RepoManager.REPO_DIR}/$legacyMetadataDir/$uuid$legacyMetadataSuffix"
-				diag("performUpload: uploading metadata sidecar (${tempFile.length()} bytes) → $remoteMeta")
-				rcloneController.uploadFile(tempFile.absolutePath, remoteMeta).getOrThrow()
-				diag("performUpload: metadata sidecar upload OK")
-			} finally {
-				tempFile.delete()
-			}
 		}
 
 		// ─── Item 3: optional full hash verification by re-download + decrypt ──

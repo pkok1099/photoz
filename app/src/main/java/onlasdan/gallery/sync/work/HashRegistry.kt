@@ -1196,7 +1196,7 @@ class HashRegistry
 			diag(
 				"gcThumbnailPacks: no extractable live thumbnails in $packName — falling back to delete-pack + clear-field",
 			)
-			packLocalFile.delete()
+			if (!packLocalFile.delete()) Timber.w("packLocalFile.delete() failed")
 			try {
 				rcloneController.deleteFile(packRemotePath).getOrThrow()
 			} catch (e: Exception) {
@@ -1501,30 +1501,6 @@ class HashRegistry
 				.replace("\n", "\\n")
 				.replace("\r", "\\r")
 				.replace("\t", "\\t")
-
-		/**
-		 * Inverse of [escapeJson] — unescapes JSON string escapes (`\\`, `\"`,
-		 * `\n`, `\r`, `\t`) back to their literal characters. Used by
-		 * [parseRegistryJson] to restore filenames/album paths that contain
-		 * special characters.
-		 *
-		 * The order matters: `\\` must be processed FIRST so that sequences
-		 * like `\\n` (literal backslash + n) don't get misinterpreted as `\n`
-		 * (newline). We use a regex-based approach to handle this correctly —
-		 * a naive string replace would double-process escapes.
-		 */
-		private fun unescapeJson(s: String): String =
-			Regex("\\\\(.)").replace(s) { match ->
-				when (match.groupValues[1]) {
-					"\\" -> "\\"
-					"\"" -> "\""
-					"n" -> "\n"
-					"r" -> "\r"
-					"t" -> "\t"
-					else -> match.groupValues[1] // unknown escape — keep char as-is
-				}
-			}
-
 		/**
 		 * M7 v2 — Extract raw encrypted blobs from a v0x03 registry file
 		 * WITHOUT decrypting. Each blob is [nonce(12)][ct_len(4)][ciphertext].

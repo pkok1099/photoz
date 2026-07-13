@@ -141,7 +141,7 @@ object CrashLogger {
 	fun clear() =
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			File(filesDir, CRASH_LOG_FILE).delete()
+			if (!File(filesDir, CRASH_LOG_FILE).delete()) Timber.w("CrashLogger log file delete() failed")
 			Timber.i("CrashLogger: log cleared")
 		}.onFailure { }
 }

@@ -198,11 +198,11 @@ class SyncRestorer
 				rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
 				// FLOWD-001: Verify file integrity
 				if (!localFile.exists() || localFile.length() == 0L) {
-					localFile.delete()
+					if (!localFile.delete()) Timber.w("localFile.delete() failed (empty download cleanup)")
 					throw IOException("Downloaded file is empty for $uuid")
 				}
 			} catch (e: Exception) {
-				localFile.delete()
+				if (!localFile.delete()) Timber.w("localFile.delete() failed (exception cleanup)")
 				throw e
 			}
 		}
@@ -228,7 +228,7 @@ class SyncRestorer
 				// If the local file is empty or significantly smaller than expected,
 				// the download may have been truncated.
 				if (!localFile.exists() || localFile.length() == 0L) {
-					localFile.delete()
+					if (!localFile.delete()) Timber.w("localFile.delete() failed (empty download cleanup)")
 					throw IOException("Downloaded file is empty or missing for $uuid")
 				}
 				if (photo.size > 0 && localFile.length() < photo.size / 2) {
@@ -239,7 +239,7 @@ class SyncRestorer
 			} catch (e: Exception) {
 				// F-UV-015 + FLOWD-002: Delete partial download to prevent
 				// future calls from seeing a non-empty file and short-circuiting.
-				localFile.delete()
+				if (!localFile.delete()) Timber.w("localFile.delete() failed (exception cleanup)")
 				throw e
 			}
 		}

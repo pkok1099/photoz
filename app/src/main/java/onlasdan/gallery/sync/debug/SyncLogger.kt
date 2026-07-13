@@ -153,7 +153,7 @@ object SyncLogger {
 	fun clear() =
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			File(filesDir, SYNC_LOG_FILE).delete()
+			if (!File(filesDir, SYNC_LOG_FILE).delete()) Timber.w("SyncLogger log file delete() failed")
 			Timber.i("SyncLogger: log cleared")
 		}.onFailure { }
 }

@@ -161,7 +161,7 @@ class FastStartUseCase
 		 */
 		fun cleanup(tempFile: File) {
 			try {
-				if (tempFile.exists()) tempFile.delete()
+				if (!tempFile.delete()) Timber.w("tempFile.delete() failed (FastStart cleanup)")
 			} catch (e: Exception) {
 				Timber.w(e, "FastStart: cleanup failed (non-fatal)")
 			}
