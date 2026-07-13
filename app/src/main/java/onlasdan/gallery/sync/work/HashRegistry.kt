@@ -25,6 +25,7 @@ import onlasdan.gallery.model.database.entity.PHOTOK_FILE_EXTENSION
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.rclone.RcloneController
+import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.SecureRandom
@@ -1500,6 +1501,7 @@ class HashRegistry
 				.replace("\"", "\\\"")
 				.replace("\n", "\\n")
 				.replace("\r", "\\r")
+
 				.replace("\t", "\\t")
 		/**
 		 * M7 v2 — Extract raw encrypted blobs from a v0x03 registry file

@@ -41,8 +41,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.put
 import onlasdan.gallery.R
 import onlasdan.gallery.encryption.domain.SessionRepository
 import onlasdan.gallery.model.database.dao.PhotoDao
@@ -53,7 +51,6 @@ import onlasdan.gallery.sync.debug.SyncLogger
 import onlasdan.gallery.sync.domain.SyncConfig
 import onlasdan.gallery.sync.domain.SyncState
 import onlasdan.gallery.sync.rclone.RcloneController
-import onlasdan.gallery.sync.rclone.RepoManager
 import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
@@ -115,7 +112,6 @@ class PhotoSyncWorker
 		// @since v8 — stable upload notification with real progress percentage
 		private var lastNotificationUpdateMs: Long = 0L
 		private var lastNotificationText: String? = null
-
 
 		// ─── init block: fires when HiltWorkerFactory constructs this instance ──
 		// If this log doesn't appear, Hilt failed to construct the worker (injection
