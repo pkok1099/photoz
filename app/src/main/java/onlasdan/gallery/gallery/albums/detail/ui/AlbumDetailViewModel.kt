@@ -172,17 +172,7 @@ class AlbumDetailViewModel
 		private fun onImportChoice(choice: ImportChoice) {
 			val navEvent =
 				when (choice) {
-					is ImportChoice.AddNewFiles ->
-						AlbumDetailNavigator.NavigationEvent.StartImport(
-							fileUris = choice.fileUris,
-							albumUuid = albumFlow.value.uuid,
-						)
-
-					is ImportChoice.RestoreBackup ->
-						AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
-							choice.backupUri,
-						)
-
+					is ImportChoice.AddNewFiles,
 					// Sprint 3 / M10 — Photo Picker import from an album detail screen.
 					// The user picked a target album via Path Maker dialog (which may
 					// be THIS album or a different one). We route to StartImport with
@@ -192,11 +182,16 @@ class AlbumDetailViewModel
 					// different album in Path Maker, the photo's albumPath will say
 					// that album but the cross-ref will link to THIS album — that's
 					// a v1 inconsistency; v2 will respect the Path Maker choice for
-					// the cross-ref too.
+					// the cross-ref too. AddFromPhotoPicker shares the same nav as AddNewFiles.
 					is ImportChoice.AddFromPhotoPicker ->
 						AlbumDetailNavigator.NavigationEvent.StartImport(
 							fileUris = choice.fileUris,
 							albumUuid = albumFlow.value.uuid,
+						)
+
+					is ImportChoice.RestoreBackup ->
+						AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
+							choice.backupUri,
 						)
 				}
 

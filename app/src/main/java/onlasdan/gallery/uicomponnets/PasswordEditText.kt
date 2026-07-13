@@ -75,15 +75,6 @@ class PasswordEditText
 							)
 							INPUT_TYPE_TEXT
 						}
-						INPUT_TYPE_TEXT -> {
-							binding.passwordEditTextIcon.setImageDrawable(
-								AppCompatResources.getDrawable(
-									context,
-									R.drawable.ic_eye,
-								),
-							)
-							INPUT_TYPE_PASSWORD
-						}
 						else -> {
 							binding.passwordEditTextIcon.setImageDrawable(
 								AppCompatResources.getDrawable(
