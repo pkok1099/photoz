@@ -86,17 +86,16 @@ fun ImportSharedDialog() {
 	val viewModel = hiltViewModel<ImportSharedViewModel>()
 
 	val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-	val handleUiEvent = viewModel::handleUiEvent
 
 	val fragment = LocalFragment.current
 
 	ConfirmationDialog(
 		show = uiState.sharedUris.isNotEmpty(),
 		text = stringResource(R.string.import_sharted_question, uiState.sharedUris.size),
-		onDismissRequest = { handleUiEvent(ImportSharedUiEvent.ClearSharedUris) },
+		onDismissRequest = { viewModel.handleUiEvent(ImportSharedUiEvent.ClearSharedUris) },
 		onConfirm = {
 			fragment ?: return@ConfirmationDialog
-			handleUiEvent(ImportSharedUiEvent.StartImportShared(fragment.childFragmentManager))
+			viewModel.handleUiEvent(ImportSharedUiEvent.StartImportShared(fragment.childFragmentManager))
 		},
 	)
 }

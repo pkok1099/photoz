@@ -1605,8 +1605,6 @@ class PhotoSyncWorker
 			 */
 			fun dumpAllWorkInfo(context: Context) {
 				try {
-					val workInfos = WorkManager.getInstance(context).getWorkInfosByTag("")
-					// getWorkInfosByTag("") may not work; use the raw database approach
 					android.util.Log.e("RcloneDiag", "[UploadWorker] dumpAllWorkInfo: querying all work...")
 					try {
 						onlasdan.gallery.sync.debug.SyncLogRotator.append(context,

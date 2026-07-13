@@ -293,7 +293,6 @@ class AesCbcRandomAccessDataSource(
 		)
 
 		val deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS
-		var lastLog = 0L
 		while (true) {
 			val avail = availableBytesProvider(uri)
 			if (avail < 0) return // file became fully available

@@ -65,7 +65,6 @@ object SyncLogger {
 	) {
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			val file = File(filesDir, SYNC_LOG_FILE)
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 
@@ -112,7 +111,6 @@ object SyncLogger {
 	) {
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			val file = File(filesDir, SYNC_LOG_FILE)
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 

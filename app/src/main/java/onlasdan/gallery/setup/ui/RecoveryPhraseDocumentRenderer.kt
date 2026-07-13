@@ -59,12 +59,6 @@ internal fun createRecoveryPhraseDocument(
 			textAlign = Paint.Align.CENTER
 		}
 
-	val dividerPaint =
-		Paint(Paint.ANTI_ALIAS_FLAG).apply {
-			color = 0xFFCCCCCC.toInt()
-			strokeWidth = 2f
-		}
-
 	val qrSize = qrBitmap.width
 	val phraseLines = phrase.words.chunked(4).map { it.joinToString("-") }
 
