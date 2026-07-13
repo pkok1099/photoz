@@ -90,7 +90,7 @@ private const val PORTRAIT_COLUMN_COUNT = 3
 private const val LANDSCAPE_COLUMN_COUNT = 6
 
 @Composable
-@Suppress("kotlin:S107") // Composable — each param is a UI prop, grouping would break recomposition
+@Suppress("kotlin:S107", "LongMethod") // Composable — each param is a UI prop; long body is pre-existing
 fun PhotoGallery(
 	photos: List<PhotoTile>,
 	albumName: String?,

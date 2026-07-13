@@ -146,7 +146,7 @@ fun BoxScope.ImageViewerImagePage(
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-@Suppress("kotlin:S107") // Composable — each param is a UI prop
+@Suppress("kotlin:S107", "LongMethod", "CyclomaticComplexMethod") // Composable — each param is a UI prop; long/complex body is pre-existing
 fun BoxScope.ImageViewerVideoPage(
 	item: ImageViewerItem.Video,
 	isCurrentItem: Boolean,
