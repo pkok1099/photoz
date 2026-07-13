@@ -869,9 +869,6 @@ class PhotoSyncWorker
 					val md = MessageDigest.getInstance("SHA-256")
 					FileInputStream(verifyFile).use { fis ->
 						val decryptedStream = cryptoEngine.createDecryptStream(fis, session)
-						if (decryptedStream == null) {
-							throw IOException("Failed to create decrypt stream for hash verification (uuid=$uuid)")
-						}
 						decryptedStream.use { stream ->
 							val buf = ByteArray(64 * 1024)
 							while (true) {

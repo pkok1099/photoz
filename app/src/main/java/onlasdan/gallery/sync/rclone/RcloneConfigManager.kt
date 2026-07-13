@@ -160,7 +160,7 @@ class RcloneConfigManager
 		suspend fun chooseRemote(name: String): Boolean =
 			withContext(Dispatchers.IO) {
 				val parsed = cachedConfig ?: runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
-				if (parsed?.sections?.containsKey(name) != true) {
+				if (parsed == null || !parsed.sections.containsKey(name)) {
 					return@withContext false
 				}
 				config.syncChosenRemote = name

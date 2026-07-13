@@ -1479,12 +1479,10 @@ class RepoManager
 								e,
 							)
 							return@runCatching Unit
+						} ?: run {
+							diag("uploadAllEscrows: RecoveryPhraseStore has no phrase — skipping Layer 2")
+							return@runCatching Unit
 						}
-
-					if (phrase == null) {
-						diag("uploadAllEscrows: RecoveryPhraseStore has no phrase — skipping Layer 2")
-						return@runCatching Unit
-					}
 
 					val layer2 = uploadWrappedPhraseEscrow(phrase, password, vmkBytes)
 					if (layer2.isFailure) {
