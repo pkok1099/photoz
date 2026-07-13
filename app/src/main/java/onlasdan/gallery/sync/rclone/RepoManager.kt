@@ -261,6 +261,7 @@ class RepoManager
 						"\n[RcloneDiag] detectRepo: BEGIN remote=${config.syncChosenRemote} repoConfirmed=${config.repoConfirmed}\n",
 					)
 				} catch (_: Exception) {
+					// intentionally ignored: rclone RPC diagnostic log is best-effort, must not break detectRepo
 				}
 
 				val remote = config.syncChosenRemote

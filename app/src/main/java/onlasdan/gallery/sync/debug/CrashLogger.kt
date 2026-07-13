@@ -100,6 +100,7 @@ object CrashLogger {
 			try {
 				android.util.Log.e("CrashLogger", "FAILED to write crash log", e)
 			} catch (_: Throwable) {
+				// intentionally ignored: Log.e is best-effort; cannot recover from crash-logger failure
 			}
 		}
 	}

@@ -154,6 +154,7 @@ class PhotoSyncWorker
 				onlasdan.gallery.sync.debug.SyncLogRotator
 					.append(appContext, entry)
 			} catch (_: Exception) {
+				// intentionally ignored: best-effort diagnostic log; must not break caller
 			}
 		}
 
@@ -239,6 +240,7 @@ class PhotoSyncWorker
 				try {
 					photoDao.updateSyncState(uuid, SyncState.UPLOAD_FAILED)
 				} catch (_: Exception) {
+					// intentionally ignored: best-effort diagnostic log; must not break caller
 				}
 				return Result.failure()
 			}
@@ -1440,6 +1442,7 @@ class PhotoSyncWorker
 							"[RcloneDiag] [UploadWorker] enqueue: SKIPPED — syncAutoUpload=false uuid=${photo.uuid}\n",
 						)
 					} catch (_: Exception) {
+						// intentionally ignored: best-effort diagnostic log; must not break caller
 					}
 					return
 				}
@@ -1456,6 +1459,7 @@ class PhotoSyncWorker
 						"\n[RcloneDiag] [UploadWorker] enqueue: BEGIN uuid=${photo.uuid} wifiOnly=$wifiOnly\n",
 					)
 				} catch (_: Exception) {
+					// intentionally ignored: best-effort diagnostic log; must not break caller
 				}
 
 				val wm = WorkManager.getInstance(context)
@@ -1523,6 +1527,7 @@ class PhotoSyncWorker
 						"[RcloneDiag] [UploadWorker] enqueue: OK — WorkManager.enqueueUniqueWork (REPLACE) called for uuid=${photo.uuid}\n",
 					)
 				} catch (_: Exception) {
+					// intentionally ignored: best-effort diagnostic log; must not break caller
 				}
 
 				// ─── Step 1: dump WorkInfo AFTER enqueue (to see initial state) ────
@@ -1567,6 +1572,7 @@ class PhotoSyncWorker
 								"[RcloneDiag] [UploadWorker] dumpWorkInfo ($whenLabel): NO WorkInfo for $uniqueWorkName\n",
 							)
 						} catch (_: Exception) {
+							// intentionally ignored: best-effort diagnostic log; must not break caller
 						}
 						return
 					}
@@ -1581,6 +1587,7 @@ class PhotoSyncWorker
 								"[RcloneDiag] [UploadWorker] $line\n",
 							)
 						} catch (_: Exception) {
+							// intentionally ignored: best-effort diagnostic log; must not break caller
 						}
 					}
 				} catch (e: Exception) {
@@ -1606,6 +1613,7 @@ class PhotoSyncWorker
 							"\n[RcloneDiag] [UploadWorker] dumpAllWorkInfo: querying all work...\n",
 						)
 					} catch (_: Exception) {
+						// intentionally ignored: best-effort diagnostic log; must not break caller
 					}
 				} catch (e: Exception) {
 					android.util.Log.e("RcloneDiag", "[UploadWorker] dumpAllWorkInfo: FAILED: ${e.message}", e)

@@ -96,6 +96,7 @@ object SyncLogger {
 			try {
 				android.util.Log.e("SyncLogger", "FAILED to write sync log", e)
 			} catch (_: Throwable) {
+				// intentionally ignored: Log.e is best-effort; cannot recover from logging failure
 			}
 		}
 	}

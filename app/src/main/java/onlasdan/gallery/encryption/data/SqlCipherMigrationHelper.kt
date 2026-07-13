@@ -251,6 +251,7 @@ class SqlCipherMigrationHelper
 				try {
 					plaintextDb?.close()
 				} catch (_: Exception) {
+					// intentionally ignored: closing plaintext DB during cleanup must not mask the primary migration failure
 				}
 				newDbFile.takeIf { it.exists() }?.delete()
 				File("${newDbFile.absolutePath}-wal").takeIf { it.exists() }?.delete()
