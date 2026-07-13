@@ -171,7 +171,7 @@ class HybridCryptoEngine
 						CipherInputStream(input, cipher)
 					}
 					EncryptionVersionByte.Four -> {
-						// v4 (TODO #2): [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
+						// v4: [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
 						// Each chunk: [nonce(12)][ciphertext][tag(16)] — independently decryptable.
 						// The version byte has already been read; ChunkedGcmInputStream
 						// reads the rest of the header + chunks.

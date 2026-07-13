@@ -86,7 +86,7 @@ import javax.inject.Singleton
  * The key is generated on first call to [getOrCreatePassphrase] and
  * persists across app restarts (until uninstall or factory reset).
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 @Singleton
 class SqlCipherKeyProvider
@@ -226,7 +226,7 @@ class SqlCipherKeyProvider
  *
  * Production code should always use [SqlCipherKeyProvider] (Keystore-backed).
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 @Singleton
 class FallbackSqlCipherKeyProvider

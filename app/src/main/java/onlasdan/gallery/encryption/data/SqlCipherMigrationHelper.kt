@@ -64,7 +64,7 @@ import javax.inject.Singleton
  * will fail to open the DB (SQLCipher key mismatch on plaintext file) —
  * loud failure is preferred over silent fallback to plaintext.
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 @Singleton
 class SqlCipherMigrationHelper
@@ -81,7 +81,7 @@ class SqlCipherMigrationHelper
 		 * is used by [VaultService.unlock] at runtime — the rows we write
 		 * here are immediately visible to the unlock flow.
 		 *
-		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+		 * @since v16 — Sprint 3 / SQLCipher
 		 */
 		private val bootstrapDatabase: BootstrapDatabase,
 	) {
@@ -281,7 +281,7 @@ class SqlCipherMigrationHelper
 		 * If the plaintext DB has no `vault_protection` table (e.g. brand-new
 		 * install that somehow got a v15 file), this is a no-op.
 		 *
-		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+		 * @since v16 — Sprint 3 / SQLCipher
 		 */
 		private fun copyVaultProtectionToBootstrap(plaintextDb: net.zetetic.database.sqlcipher.SQLiteDatabase) {
 			// Check if vault_protection table exists in the plaintext DB.

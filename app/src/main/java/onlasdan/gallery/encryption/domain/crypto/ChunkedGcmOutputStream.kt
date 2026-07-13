@@ -49,7 +49,7 @@ import javax.crypto.spec.GCMParameterSpec
  * The decryptor ([ChunkedGcmInputStream]) handles totalPlaintextSize=0
  * by reading chunks until EOF.
  *
- * @since v15 — TODO #2 chunked streaming encryption
+ * @since v15 — chunked streaming encryption
  */
 class ChunkedGcmOutputStream(
 	private val output: OutputStream,

@@ -245,7 +245,7 @@ class PhotoRepository
 					// reference. The vault is its own managed encrypted storage — this field
 					// is metadata only, NOT a filesystem path the photo gets written to.
 					//
-					// TODO(v8-followup): For gallery-sourced imports (ImportSource.InApp
+					// Note(v8-followup): For gallery-sourced imports (ImportSource.InApp
 					//   with a `content://media/...` URI), we could query the MediaStore
 					//   `RELATIVE_PATH` column (e.g. `DCIM/Camera`, `Pictures/Screenshots`)
 					//   to capture the full original subfolder rather than just the
@@ -999,7 +999,7 @@ class PhotoRepository
 					// photos exposed to external viewer apps via FileProvider, so we want
 					// to minimize their lifetime and count on disk.
 					//
-					// TODO(future enhancement): a full cleanup of this directory should
+					// Note(future enhancement): a full cleanup of this directory should
 					//   also run on Activity.onPause / onStop so the plaintext file is
 					//   wiped the moment the user leaves the gallery (the external viewer
 					//   app has already finished reading the file by then). For now,

@@ -59,7 +59,7 @@ object AppModule {
 	 * [onlasdan.gallery.encryption.data.BootstrapDatabase] for the
 	 * chicken-and-egg explanation.
 	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+	 * @since v16 — Sprint 3 / SQLCipher
 	 */
 	@Provides
 	@Singleton
@@ -80,7 +80,7 @@ object AppModule {
 	/**
 	 * VaultProtectionDao — sourced from the plaintext [BootstrapDatabase].
 	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher (was previously sourced
+	 * @since v16 — Sprint 3 / SQLCipher (was previously sourced
 	 *   from PhotoZDatabase)
 	 */
 	@Provides
@@ -90,7 +90,7 @@ object AppModule {
 	/**
 	 * SQLCipher-encrypted main Room database — Singleton.
 	 *
-	 * ## Sprint 3 / TODO #6 SQLCipher
+	 * ## Sprint 3 / SQLCipher
 	 *
 	 * The DB is encrypted with a 32-byte passphrase backed by the Android
 	 * Keystore (see [SqlCipherKeyProvider]). The key:
@@ -116,7 +116,7 @@ object AppModule {
 	 * `Room.databaseBuilder(...).build()` so that the plaintext file is
 	 * renamed out of the way before SQLCipher tries to open it.
 	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+	 * @since v16 — Sprint 3 / SQLCipher
 	 */
 	@Provides
 	@Singleton

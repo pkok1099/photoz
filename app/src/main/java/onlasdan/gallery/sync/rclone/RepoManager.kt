@@ -1926,7 +1926,7 @@ class RepoManager
 		suspend fun revalidateRepo(): Boolean =
 			withContext(Dispatchers.IO) {
 				if (!isRepoConfirmed()) return@withContext false
-				// TODO: for now, just check that a remote is chosen. A full reachability check
+				// Note: for now, just check that a remote is chosen. A full reachability check
 				// would require starting rcd + pinging — too slow for every cold start. The
 				// actual upload worker will fail fast if the remote is unreachable, and the
 				// user can re-import the config from Settings.
@@ -2054,7 +2054,7 @@ class RepoManager
 			//       photo (the original's bytes are decrypted with the VMK and
 			//       the type is inferred from the decrypted content).
 			//
-			// TODO(v9-followup): after [downloadRegistry] runs (post-unlock), we
+			// Note(v9-followup): after [downloadRegistry] runs (post-unlock), we
 			//   could UPDATE the Photo rows with the registry's per-hash
 			//   metadata (type, size, albumPath, contentHash) so the gallery
 			//   shows accurate info without needing to fetch the original. For

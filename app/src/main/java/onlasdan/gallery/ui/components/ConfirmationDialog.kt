@@ -67,9 +67,9 @@ private fun ConfirmationDialogPreview() {
 	AppTheme {
 		ConfirmationDialog(
 			show = true,
-			onDismissRequest = { /*TODO*/ },
+			onDismissRequest = { },
 			text = "This is a simple example",
-			onConfirm = { /*TODO*/ },
+			onConfirm = { },
 		)
 	}
 }

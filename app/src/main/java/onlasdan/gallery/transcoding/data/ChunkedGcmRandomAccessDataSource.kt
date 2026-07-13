@@ -63,7 +63,7 @@ import javax.crypto.spec.GCMParameterSpec
  * 5. Decrypt with GCM
  * 6. Skip offset_in_chunk bytes, serve the rest
  *
- * @since v15 — TODO #2 chunked streaming encryption
+ * @since v15 — chunked streaming encryption
  */
 @UnstableApi
 class ChunkedGcmRandomAccessDataSource(

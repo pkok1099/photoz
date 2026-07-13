@@ -82,7 +82,7 @@ enum class EncryptionVersionByte(
 	 * - **Random access**: seek to chunk N, decrypt only that chunk (no block-chain IV)
 	 * - **Streaming**: ExoPlayer can start playback after first chunk decrypts
 	 *
-	 * @since v15 — TODO #2 chunked streaming encryption
+	 * @since v15 — chunked streaming encryption
 	 */
 	Four(0x04),
 	;

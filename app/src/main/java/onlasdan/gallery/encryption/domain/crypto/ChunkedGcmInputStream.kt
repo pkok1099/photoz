@@ -35,7 +35,7 @@ import javax.crypto.spec.GCMParameterSpec
  * For random access (video streaming), use [ChunkedGcmRandomAccessDataSource]
  * instead — it can seek to a specific chunk without decrypting prior chunks.
  *
- * @since v15 — TODO #2 chunked streaming encryption
+ * @since v15 — chunked streaming encryption
  */
 class ChunkedGcmInputStream(
 	private val input: InputStream,

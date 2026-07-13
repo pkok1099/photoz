@@ -36,7 +36,7 @@ import java.io.IOException
  *
  * This replaces the hardcoded `AesCbcRandomAccessDataSource` in
  * [ImageViewerViewModel], allowing videos encrypted with the new chunked GCM
- * format (version 0x04, Sprint 1 / TODO #2) to be played back with true
+ * format (version 0x04, Sprint 1) to be played back with true
  * random access — seek to any chunk, decrypt only that chunk.
  *
  * @since Sprint 8 — wire ChunkedGcmRandomAccessDataSource for video
@@ -121,7 +121,7 @@ class VersionDispatchDataSource(
 
 		// Dispatch based on version byte
 		delegate = when (versionByte) {
-			// Version 0x04 — chunked GCM (new format, Sprint 1 / TODO #2)
+			// Version 0x04 — chunked GCM (new format, Sprint 1)
 			0x04.toByte() -> ChunkedGcmRandomAccessDataSource(
 				sessionRepository = sessionRepository,
 				availableBytesProvider = availableBytesProvider,
