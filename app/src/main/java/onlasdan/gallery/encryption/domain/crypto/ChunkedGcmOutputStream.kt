@@ -55,7 +55,7 @@ class ChunkedGcmOutputStream(
 	private val output: OutputStream,
 	private val vmk: SecretKey,
 	private val chunkSize: Int = CHUNK_SIZE,
-) : OutputStream by output {
+) : OutputStream() {
 	private val buffer = ByteArray(chunkSize)
 	private var bufferPos = 0
 	private var totalBytesWritten = 0L
