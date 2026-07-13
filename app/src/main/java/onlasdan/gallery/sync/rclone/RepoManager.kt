@@ -68,7 +68,7 @@ import javax.inject.Singleton
  * success bug.
  *
  * - Marker file absent → [RepoState.NOT_INITIALIZED] → caller runs [registerRepo].
- * - Marker file present and parses → [RepoState.LOGGED_IN] → caller skips registration.
+ * - Marker file present and parses → [RepoState.LoggedIn] → caller skips registration.
  * - Listing errors → [RepoState.ERROR] → caller surfaces error, does NOT guess.
  *
  * ## Independent verification
@@ -81,6 +81,8 @@ import javax.inject.Singleton
  * @since PR1 sync — mandatory repo setup
  */
 @Singleton
+private const val DIR_NOT_FOUND_ERR = "directory not found"
+
 class RepoManager
 	@Inject
 	constructor(
@@ -179,7 +181,7 @@ class RepoManager
 			object NOT_INITIALIZED : RepoState()
 
 			/** Repo-config.json found and parsed. Caller should login (read-only). */
-			data class LOGGED_IN(
+			data class LoggedIn(
 				val marker: RepoMarker,
 			) : RepoState()
 
@@ -342,7 +344,7 @@ class RepoManager
 						// Mirror detectRepo()'s dir-not-found classification — a missing
 						// repo dir is NOT an error here, it just means "no repo".
 						val isDirNotFound =
-							err.contains("directory not found", ignoreCase = true) ||
+							err.contains(DIR_NOT_FOUND_ERR, ignoreCase = true) ||
 								err.contains("error in ListJSON", ignoreCase = true) ||
 								(
 									err.contains(ERR_NOT_FOUND, ignoreCase = true) &&
@@ -1446,6 +1448,7 @@ class RepoManager
 		 *   @since v9 followup — both layers now AES-256-GCM encrypted with VMK at
 		 *   the outer level (was plaintext JSON).
 		 */
+		@Suppress("kotlin:S6619") // phrase is nullable RecoveryPhrase?, elvis is valid
 		suspend fun uploadAllEscrows(
 			password: String,
 			session: VaultSession,
@@ -1984,7 +1987,7 @@ class RepoManager
 		}
 
 		private fun isDirNotFound(err: String): Boolean =
-			err.contains("directory not found", ignoreCase = true) ||
+			err.contains(DIR_NOT_FOUND_ERR, ignoreCase = true) ||
 				err.contains("error in ListJSON", ignoreCase = true) ||
 				err.contains(ERR_NOT_FOUND, ignoreCase = true)
 
@@ -2013,7 +2016,7 @@ class RepoManager
 					?: return RepoState.ERROR("Malformed marker file")
 
 			android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LOGGED_IN repoId=${marker.repoId}")
-			return RepoState.LOGGED_IN(marker)
+			return RepoState.LoggedIn(marker)
 		}
 
 		private suspend fun downloadAndInsertThumbnail(
@@ -2159,7 +2162,7 @@ class RepoManager
 			private const val ERR_NO_REMOTE_CHOSEN = "No remote chosen"
 			private const val ERR_UNKNOWN = "unknown error"
 			private const val ERR_NOT_FOUND = "not found"
-			private const val ERR_DIR_NOT_FOUND = "directory not found"
+			private const val ERR_DIR_NOT_FOUND = DIR_NOT_FOUND_ERR
 			private const val ERR_DOESNT_EXIST = "doesn't exist"
 			private const val ERR_DOES_NOT_EXIST = "does not exist"
 			private const val ERR_NO_SUCH_FILE = "no such file"

@@ -189,7 +189,7 @@ private fun downloadModel(
 			val modelFile = File(context.filesDir, TFLITE_MODEL_FILE)
 			modelFile.parentFile?.mkdirs()
 
-			val connection = URL(url).openConnection() as HttpURLConnection
+			val connection = java.net.URI.create(url).toURL().openConnection() as HttpURLConnection
 			connection.connectTimeout = 30000
 			connection.readTimeout = 60000
 			connection.connect()

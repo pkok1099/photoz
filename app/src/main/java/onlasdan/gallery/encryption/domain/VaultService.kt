@@ -111,7 +111,7 @@ class VaultService
 									} else {
 										// No password protection AND nothing to migrate —
 										// vault isn't set up. Throw to surface as wrong-password.
-										throw IllegalStateException("No password protection found and no legacy migration available")
+										error("No password protection found and no legacy migration available")
 									}
 								} else {
 									unlockMultiVaultPassword(request, passwordProtections)

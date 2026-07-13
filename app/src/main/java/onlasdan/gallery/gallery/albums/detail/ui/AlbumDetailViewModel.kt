@@ -169,6 +169,7 @@ class AlbumDetailViewModel
 			}
 		}
 
+		@Suppress("kotlin:S1871") // AddNewFiles and AddFromPhotoPicker have identical body but different ImportChoice types — cannot merge
 		private fun onImportChoice(choice: ImportChoice) {
 			val navEvent =
 				when (choice) {
