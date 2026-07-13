@@ -178,13 +178,6 @@ android {
 			useLegacyPackaging = false
 		}
 	}
-
-	// ─── JaCoCo for unit tests — generates .exec files for coverage report ──
-	testOptions {
-		unitTests.all {
-			it.jacoco.includeNoLocationClasses = true
-		}
-	}
 }
 
 // Kotlin 2.4.0+ — kotlinOptions {} removed, must use compilerOptions DSL.
