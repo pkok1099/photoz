@@ -17,6 +17,9 @@ plugins {
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
+	// Sprint: feed SonarCloud real coverage (fixes 0.0% coverage QG failure).
+	// Kover tried first; if it breaks on Kotlin 2.4, fall back to JaCoCo.
+	id("org.jetbrains.kotlinx.kover") version "0.9.8"
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
@@ -452,4 +455,16 @@ ktlint {
 	// ktlint is now a BLOCKING quality gate — new style violations fail CI.
 	// @since Sprint 5 — ktlint now blocking
 	ignoreFailures.set(false)
+}
+
+// ─── Kover coverage (Sprint: feed SonarCloud real coverage) ───────────────
+// Generates app/build/reports/kover/xml/report.xml, passed to Sonar via
+// sonar.kotlin.coverage.kover.xmlReportPaths in android.yml. If Kover breaks
+// on Kotlin 2.4, remove this block + the plugin and switch to JaCoCo.
+kover {
+	reports {
+		xml {
+			onCheck = false // don't couple to `check`; CI runs koverXmlReport explicitly
+		}
+	}
 }

@@ -170,8 +170,8 @@ jobs:
           java-version: '21'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-      - name: Compile sources + generate detekt/ktlint reports
-        run: ./gradlew compileFossDebugKotlin detekt ktlintCheck --stacktrace || true
+      - name: Compile sources + tests + coverage + detekt/ktlint reports
+        run: ./gradlew testFossDebugUnitTest koverXmlReport detekt ktlintCheck --stacktrace || true
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:
@@ -182,6 +182,7 @@ jobs:
             -Dsonar.projectKey=pkok1099_photoz
             -Dsonar.java.binaries=app/build/tmp/kotlin-classes/fossDebug,app/build/intermediates/javac/fossDebug/classes
             -Dsonar.kotlin.detekt.reportPaths=app/build/reports/detekt/detekt.xml
+            -Dsonar.kotlin.coverage.kover.xmlReportPaths=app/build/reports/kover/xml/report.xml
             -Dsonar.coverage.exclusions=**/test/**,**/androidTest/**,**/*Test.kt,**/*Screen.kt,**/*Fragment.kt,**/*Activity.kt,**/*ViewModel.kt,**/ui/**,**/compose/**
       # This is the step that was actually missing before: without it, a red
       # gate on SonarCloud's side never fails the GitHub Action, so bad code
