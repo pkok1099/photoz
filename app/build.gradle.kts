@@ -1,3 +1,5 @@
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
 plugins {
 	id("com.android.application")
 	id("com.jaredsburrows.license")
@@ -17,9 +19,6 @@ plugins {
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
-	// Sprint: feed SonarCloud real coverage (fixes 0.0% coverage QG failure).
-	// Kover tried first; if it breaks on Kotlin 2.4, fall back to JaCoCo.
-	id("org.jetbrains.kotlinx.kover") version "0.9.8"
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
@@ -113,6 +112,9 @@ android {
 	buildTypes {
 		getByName("debug") {
 			isDebuggable = true
+			// Sprint: emit unit-test coverage (.exec) so JaCoCo can build the
+			// XML SonarCloud reads (fixes 0.0% coverage QG failure).
+			enableUnitTestCoverage = true
 			// Sprint 10+ — consistent debug signing key for CI builds.
 			// Without this, each CI runner generates its own ephemeral debug
 			// key, and the user can't install updates without uninstalling.
@@ -457,16 +459,27 @@ ktlint {
 	ignoreFailures.set(false)
 }
 
-// ─── Kover coverage (Sprint: feed SonarCloud real coverage) ───────────────
-// Generates app/build/reports/kover/xml/report.xml, passed to Sonar via
-// sonar.kotlin.coverage.kover.xmlReportPaths in android.yml. If Kover breaks
-// on Kotlin 2.4, remove this block + the plugin and switch to JaCoCo.
-kover {
+// ─── JaCoCo coverage (Sprint: feed SonarCloud real coverage) ─────────────
+// AGP emits a .exec on test runs (debug enableUnitTestCoverage = true).
+// SonarCloud's JaCoCo sensor reads the XML this task produces and is the
+// ONLY coverage path the Kotlin plugin supports (it has no Kover sensor).
+// Kover was tried first but its XML is not consumed by Sonar → 0.0% QG fail.
+tasks.register<JacocoReport>("jacocoTestReport") {
+	dependsOn("testFossDebugUnitTest")
 	reports {
-		total {
-			xml {
-				onCheck.set(false) // don't couple to `check`; CI runs koverXmlReport explicitly
-			}
-		}
+		xml.required.set(true)
+		xml.outputLocation.set(file("$buildDir/reports/jacoco/test/jacocoTestReport.xml"))
 	}
+	classDirectories.setFrom(
+		fileTree("$buildDir/tmp/kotlin-classes/fossDebug") { exclude("**/net/ypresto/**") },
+	)
+	sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+	// AGP writes the .exec to a version-dependent path; catch all known spots.
+	executionData.setFrom(
+		fileTree(buildDir) {
+			include("**/jacoco/testFossDebugUnitTest.exec")
+			include("**/outputs/unit_test_code_coverage/**/*.exec")
+			include("**/*.exec")
+		},
+	)
 }
