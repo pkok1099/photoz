@@ -451,10 +451,4 @@ ktlint {
 	// ktlint is now a BLOCKING quality gate — new style violations fail CI.
 	// @since Sprint 5 — ktlint now blocking
 	ignoreFailures.set(false)
-	// SonarCloud imports ktlint results as XML for issue tracking.
-	// Default reporter is plain text (.txt) which SonarCloud cannot parse.
-	reporters {
-		reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.XML)
-		reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-	}
 }
