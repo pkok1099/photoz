@@ -2015,7 +2015,7 @@ class RepoManager
 				parseMarker(markerContent)
 					?: return RepoState.ERROR("Malformed marker file")
 
-			android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LOGGED_IN repoId=${marker.repoId}")
+			android.util.Log.e("RcloneDiag", "detectRepo: marker parsed, state=LoggedIn repoId=${marker.repoId}")
 			return RepoState.LoggedIn(marker)
 		}
 

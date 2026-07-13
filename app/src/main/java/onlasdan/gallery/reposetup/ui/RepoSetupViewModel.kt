@@ -387,7 +387,7 @@ class RepoSetupViewModel
 				is RepoManager.RepoState.NOT_INITIALIZED -> {
 					_state.value = RepoSetupState.ReadyToRegister
 				}
-				is RepoManager.RepoState.LOGGED_IN -> {
+				is RepoManager.RepoState.LoggedIn -> {
 					// Repo exists — connect (read-only, no re-write).
 					// NOTE: this is "connect to remote", NOT "log into the app".
 					// The app's vault unlock (PIN/password) is a separate, independent

@@ -44,7 +44,6 @@ import onlasdan.gallery.settings.data.Config
 import timber.log.Timber
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URL
 
 private const val TFLITE_MODEL_FILE = "models/mobilenet_v2.tflite"
 
