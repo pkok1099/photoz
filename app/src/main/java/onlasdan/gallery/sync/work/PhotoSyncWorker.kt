@@ -427,7 +427,7 @@ class PhotoSyncWorker
 		}
 
 		private suspend fun handleRetryableOrMaxAttempts(exception: Throwable?, uuid: String): Result {
-			if (runAttemptCount + 1 >= SyncConfig.maxSyncAttempts) {
+			return if (runAttemptCount + 1 >= SyncConfig.maxSyncAttempts) {
 				Timber.w(
 					exception,
 					"PhotoSyncWorker: max attempts reached for %s (attempt %d)",
@@ -450,7 +450,7 @@ class PhotoSyncWorker
 				// show batch summary if this was the last worker.
 				batchTracker.onWorkerFailure()
 				onBatchCompleteIfDone()
-				return Result.failure()
+				Result.failure()
 			} else {
 				Timber.i(
 					exception,
@@ -465,7 +465,7 @@ class PhotoSyncWorker
 				// performUpload() will be re-shown on the next attempt with
 				// the same `failed + 1` count (still accurate since we
 				// haven't committed the failure yet).
-				return Result.retry()
+				Result.retry()
 			}
 		}
 
@@ -506,7 +506,7 @@ class PhotoSyncWorker
 					diag("performUpload: dedup lookup FAILED (non-fatal, will upload normally): ${e.message}", e)
 					null
 				}
-			if (existing != null) {
+			return if (existing != null) {
 				diag(
 					"performUpload: DEDUP hit — contentHash=$contentHash already on remote " +
 						"under canonical uuid=${existing.uuid} (filename=${existing.filename}). " +
@@ -542,10 +542,10 @@ class PhotoSyncWorker
 				// No registry entry to add — the canonical entry already covers this hash.
 				// Just bail out; the caller (doWorkInternal) will mark UPLOADED (again,
 				// idempotently) and advance the batch tracker.
-				return true
+				true
 			} else {
 				diag("performUpload: dedup miss — contentHash=$contentHash not in registry; uploading normally")
-				return false
+				false
 			}
 		}
 
