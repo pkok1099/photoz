@@ -20,6 +20,7 @@ import android.app.Application
 import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
@@ -84,7 +85,12 @@ class SetupViewModel
 		// endregion
 
 		fun onSetupClicked() =
-			viewModelScope.launch {
+			// F-BUG-2: vault creation runs Argon2id at 64MB memory (KeyGen.DEFAULT_ARGON2_MEMORY_KB)
+			// via vaultService.create()/unlock(). With no dispatcher this coroutine runs on the
+			// Main thread, so the memory-hard KDF blocks rendering → the setup screen freezes /
+			// feels "very laggy" while the VMK is derived. Run it on Dispatchers.IO; setupState is a
+			// StateFlow so assigning it from IO is thread-safe and the UI still observes on Main.
+			viewModelScope.launch(Dispatchers.IO) {
 				if (validateBothPasswords()) {
 					setupState.value = SetupState.LOADING
 

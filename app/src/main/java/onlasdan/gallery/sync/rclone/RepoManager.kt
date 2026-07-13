@@ -1850,16 +1850,32 @@ class RepoManager
 				// F-SYNC-007: use JSONObject instead of regex — handles escaped quotes
 				// in base64 strings correctly (regex "([^"]+)" truncated at first \").
 				val obj = org.json.JSONObject(json)
+				// F-BUG-1: [uploadRecoveryPhraseEscrow] nests the KDF material in a
+				// `params` object (matching the real [VaultProtectionParams] model),
+				// but this parser used to read them at the TOP LEVEL. That mismatch
+				// made `iv`/`salt`/`kdf`/`algorithm`/`keySize`/`version` always empty
+				// on a fresh install, so parseVaultProtection returned null →
+				// "Malformed vault-protection JSON" → loginRepo Failure → VMK
+				// unrecoverable → DATA LOSS. Resolve params from the nested object
+				// when present; fall back to top-level fields for older plaintext
+				// `.json` artifacts (written flat by pre-F-BUG-1 builds) so both
+				// formats parse.
+				val p =
+					if (obj.has("params") && !obj.isNull("params")) {
+						obj.getJSONObject("params")
+					} else {
+						obj
+					}
 				val id = obj.optString("id")
 				val typeStr = obj.optString("type")
 				val wrappedVmkB64 = obj.optString("wrappedVMK")
-				val salt = if (obj.isNull("salt")) null else obj.optString("salt")
-				val iv = obj.optString("iv")
-				val kdfStr = obj.optString("kdf")
-				val kdfIterations = obj.optInt("kdfIterations", 0).takeIf { it > 0 }
-				val algorithmStr = obj.optString("algorithm")
-				val keySize = obj.optInt("keySize", 0).takeIf { it > 0 }
-				val version = obj.optInt("version", 1)
+				val salt = if (p.isNull("salt")) null else p.optString("salt")
+				val iv = p.optString("iv")
+				val kdfStr = p.optString("kdf")
+				val kdfIterations = p.optInt("kdfIterations", 0).takeIf { it > 0 }
+				val algorithmStr = p.optString("algorithm")
+				val keySize = p.optInt("keySize", 0).takeIf { it > 0 }
+				val version = p.optInt("version", 1)
 
 				if (id.isEmpty() ||
 					typeStr.isEmpty() ||
