@@ -463,8 +463,10 @@ ktlint {
 // on Kotlin 2.4, remove this block + the plugin and switch to JaCoCo.
 kover {
 	reports {
-		xml {
-			onCheck = false // don't couple to `check`; CI runs koverXmlReport explicitly
+		total {
+			xml {
+				onCheck.set(false) // don't couple to `check`; CI runs koverXmlReport explicitly
+			}
 		}
 	}
 }
