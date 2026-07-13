@@ -40,7 +40,7 @@ import javax.crypto.spec.GCMParameterSpec
 class ChunkedGcmInputStream(
 	private val input: InputStream,
 	private val vmk: SecretKey,
-) : InputStream() {
+) : InputStream by input {
 	private var chunkSize: Int = CHUNK_SIZE
 	private var totalPlaintextSize: Long = -1L // -1 = unknown (read until EOF)
 	private var bytesRead: Long = 0L

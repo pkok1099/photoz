@@ -146,6 +146,7 @@ fun BoxScope.ImageViewerImagePage(
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
+@Suppress("kotlin:S107") // Composable — each param is a UI prop
 fun BoxScope.ImageViewerVideoPage(
 	item: ImageViewerItem.Video,
 	isCurrentItem: Boolean,

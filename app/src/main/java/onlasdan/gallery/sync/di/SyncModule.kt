@@ -52,6 +52,7 @@ object SyncModule {
 
 	@Provides
 	@Singleton
+	@Suppress("kotlin:S107") // Hilt @Provides — each param is an injected dependency
 	fun provideRepoManager(
 		app: Application,
 		config: Config,

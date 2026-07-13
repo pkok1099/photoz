@@ -56,7 +56,7 @@ import javax.inject.Singleton
  *
  * @since v14 — Sprint 9 / L6 on-device semantic search
  */
-interface TagExtractor {
+fun interface TagExtractor {
 	/**
 	 * Extract semantic tags from a photo.
 	 *
