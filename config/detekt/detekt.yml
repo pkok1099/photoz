@@ -1,99 +1,81 @@
-# detekt configuration — Sprint 4 code quality tooling
+# detekt configuration — tightened static analysis
 #
-# This file overrides detekt's default rules. We use buildUponDefaultConfig=true
-# so only the rules listed here are overridden — everything else stays at detekt
-# defaults.
-#
-# Philosophy: start permissive, tighten over time. We don't want detekt to
-# block CI on day 1 for 500+ existing violations. The baseline file
-# (detekt-baseline.xml) handles existing violations; this config adjusts
-# thresholds for rules that are too strict for this codebase's current state.
+# buildUponDefaultConfig=true so this file ONLY overrides detekt defaults.
+# allRules=true is set in app/build.gradle.kts (activates every rule).
+# Philosophy: middle-ground strictness — detekt defaults with pragmatic
+# tolerance for Compose UI functions and Hilt DI constructors. The baseline
+# file (detekt-baseline.xml) absorbs remaining existing findings so CI stays
+# green; new violations still fail the build (ignoreFailures=false).
 
 style:
-  # Wildcard imports are used extensively in existing code (especially Compose).
-  # We'll tighten this after a cleanup pass.
+  # Wildcard imports are a real smell; ktlint already enforces style.
   WildcardImport:
-    active: false
-  # Max line length — existing code has many long diag() logging calls
-  # and crypto parameter chains. 160 is pragmatic.
+    active: true
+  # 120 is detekt default; package/import lines excluded.
   MaxLineLength:
-    maxLineLength: 200
+    maxLineLength: 120
     excludePackageStatements: true
     excludeImportStatements: true
-  # Return count — existing code has functions with multiple returns.
-  # Default is 2, we allow 3 for now.
   ReturnCount:
-    max: 4
-  # Magic numbers — too noisy for existing code (constants like 16, 32, 256
-  # are used legitimately in crypto code).
+    max: 3 # toward default 2, pragmatic middle
+  # Magic-number crypto constants (16/32/256) are legitimate → keep off.
   MagicNumber:
     active: false
-  # Unused private property — loop variables like 'i' in for loops are flagged.
-  # These are false positives in Kotlin (loop vars are not properties).
+  # Loop vars aren't properties; rule default allowedNames handles them.
   UnusedPrivateProperty:
-    active: false
+    active: true
+  # @Preview Composables are intentionally unused private members.
+  UnusedPrivateMember:
+    excludes: ['**/*Preview*.kt', '**/preview/**']
+  UnusedPrivateFunction:
+    excludes: ['**/*Preview*.kt', '**/preview/**']
+
 complexity:
-  # Long methods — existing code has some long setup/init methods.
-  # Default 60, we allow 120 for Compose UI functions.
   LongMethod:
-    threshold: 120
-  # Long parameter list — existing code has some DI constructors with many params.
-  # Default 6, we allow 8.
+    threshold: 80 # toward default 60 (Compose-tolerant)
   LongParameterList:
-    functionThreshold: 8
-    constructorThreshold: 10
-  # Cyclomatic complexity — default 15, we allow 20.
+    functionThreshold: 8 # default 6, DI/Compose need room
+    constructorThreshold: 10 # Hilt @Provides constructors
   CyclomaticComplexMethod:
-    threshold: 20
-  # Nested block depth — default 4, existing code has some deep nesting.
+    threshold: 15 # detekt default
   NestedBlockDepth:
-    threshold: 5
-  # Too many functions in a class/object — DI modules naturally have many @Provides.
+    threshold: 5 # Compose nesting
   TooManyFunctions:
     thresholdInObjects: 15
     thresholdInClasses: 15
 
 exceptions:
-  # Swallowing exceptions — we have some catch blocks that log + continue.
+  # Compose/network code catches broadly by design → stays off.
   SwallowedException:
     active: false
-  # Too generic exception caught — existing code catches Exception broadly.
   TooGenericExceptionCaught:
     active: false
-  # Too generic exception thrown — model download + fallback code throws
-  # generic Exception for network errors.
   TooGenericExceptionThrown:
     active: false
 
 empty-blocks:
-  # Empty function blocks — some interface stubs are intentionally empty.
   EmptyFunctionBlock:
-    active: false
+    active: false # intentional interface stubs
 
 naming:
-  # Function naming — existing code uses both camelCase and PascalCase
-  # (Composable functions use PascalCase by convention).
   FunctionNaming:
     functionPattern: '([a-z][a-zA-Z0-9]*)|([A-Z][a-zA-Z0-9]*)'
-  # Variable naming — allow single-letter variables (loop indices, etc.)
   VariableNaming:
     variablePattern: '(_)?[a-zA-Z][a-zA-Z0-9]*|_'
 
 potential-bugs:
-  # UnsafeCallOnNullableType — existing code has some !! that are safe by
-  # contract but detekt can't prove. We'll catch real ones in code review.
   UnsafeCallOnNullableType:
-    active: false
-  # Cast to nullable type — common in Kotlin/Java interop.
+    active: true # real NPE risk, now enforced
   CastToNullableType:
-    active: false
+    active: true
 
 performance:
-  # ForEach on range — using `for (i in 0..n)` is fine, but `forEach` on
-  # a range creates an iterator. Existing code uses both; don't block.
   ForEachOnRange:
-    active: false
-  # Spread operator — creates array copy. Existing code uses it in a few
-  # places (varargs). Not worth blocking.
+    active: false # `for (i in 0..n)` is idiomatic
   SpreadOperator:
-    active: false
+    active: false # few varargs sites
+
+comments:
+  # TODO allowed (part of workflow); keep FIXME/STOPSHIP strict.
+  ForbiddenComment:
+    comments: ['FIXME:', 'STOPSHIP:']
