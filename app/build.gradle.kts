@@ -436,8 +436,9 @@ detekt {
 	config.setFrom(rootProject.files("config/detekt/detekt.yml"))
 	baseline = rootProject.file("config/detekt/detekt-baseline.xml")
 	buildUponDefaultConfig = true
+	allRules = true // activate every detekt rule (Sprint: tighten detekt)
 	parallel = true
-	ignoreFailures = false
+	ignoreFailures = false // blocking quality gate
 }
 
 // ─── ktlint configuration ────────────────────────────────────────────────
