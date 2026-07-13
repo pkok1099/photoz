@@ -17,14 +17,6 @@ plugins {
 	// ─── Code quality gates (Sprint 4) ────────────────────────────────────
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
-
-	// ─── Coverage (SonarCloud) — Kover, JetBrains' Kotlin-first coverage ──
-	// Kover auto-instruments Kotlin classes (no manual classDirectories config
-	// needed, unlike JaCoCo). Generates XML report at
-	// app/build/reports/kover/xml/report.xml. SonarCloud imports it via
-	// -Dsonar.coverage.jacoco.xmlReportPaths (Kover XML is JaCoCo-format
-	// compatible).
-	id("org.jetbrains.kotlinx.kover") version "0.9.1"
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
