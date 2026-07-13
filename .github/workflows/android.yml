@@ -171,7 +171,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Generate JaCoCo coverage report
-        run: ./gradlew jacocoTestReport --stacktrace
+        run: ./gradlew koverXmlReport --stacktrace
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:
@@ -180,7 +180,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=pkok1099_photoz
-            -Dsonar.coverage.jacoco.xmlReportPaths=app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+            -Dsonar.coverage.jacoco.xmlReportPaths=app/build/reports/kover/xml/report.xml
       # This is the step that was actually missing before: without it, a red
       # gate on SonarCloud's side never fails the GitHub Action, so bad code
       # merges silently. pollingTimeoutSec caps how long/how many Action

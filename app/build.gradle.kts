@@ -18,12 +18,13 @@ plugins {
 	id("io.gitlab.arturbosch.detekt")
 	id("org.jlleitschuh.gradle.ktlint")
 
-	// ─── Coverage (SonarCloud) — jacoco for code coverage reports ─────────
-	// Required by .github/workflows/android.yml SonarCloud job which runs
-	// `./gradlew jacocoTestReport` and passes the XML to sonar-scanner via
-	// -Dsonar.coverage.jacoco.xmlReportPaths. Generates report at
-	// app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml.
-	jacoco
+	// ─── Coverage (SonarCloud) — Kover, JetBrains' Kotlin-first coverage ──
+	// Kover auto-instruments Kotlin classes (no manual classDirectories config
+	// needed, unlike JaCoCo). Generates XML report at
+	// app/build/reports/kover/xml/report.xml. SonarCloud imports it via
+	// -Dsonar.coverage.jacoco.xmlReportPaths (Kover XML is JaCoCo-format
+	// compatible).
+	id("org.jetbrains.kotlinx.kover") version "0.9.1"
 }
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
@@ -458,31 +459,4 @@ ktlint {
 	// ktlint is now a BLOCKING quality gate — new style violations fail CI.
 	// @since Sprint 5 — ktlint now blocking
 	ignoreFailures.set(false)
-}
-
-// ─── JaCoCo coverage report (for SonarCloud) ────────────────────────────────
-// Generates app/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
-// Run via: ./gradlew jacocoTestReport
-// Depends on: testFossDebugUnitTest (runs unit tests, generates .exec files)
-tasks.register<JacocoReport>("jacocoTestReport") {
-	group = "verification"
-	description = "Generates JaCoCo coverage report for SonarCloud"
-
-	dependsOn("testFossDebugUnitTest")
-
-	reports {
-		xml.required.set(true)
-		html.required.set(false)
-		csv.required.set(false)
-		xml.outputLocation.set(file("${layout.buildDirectory.get()}/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"))
-	}
-
-	// AGP 9+ — Kotlin classes are in tmp/kotlin-classes/<variant>/, Java classes
-	// in intermediates/javac/<variant>/classes/. Include both for full coverage.
-	val kotlinClasses = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/fossDebug")
-	val javaClasses = fileTree("${layout.buildDirectory.get()}/intermediates/javac/fossDebug/classes")
-	classDirectories.setFrom(kotlinClasses, javaClasses)
-
-	sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
-	executionData.setFrom(fileTree("${layout.buildDirectory.get()}/jacoco").include("*.exec"))
 }
