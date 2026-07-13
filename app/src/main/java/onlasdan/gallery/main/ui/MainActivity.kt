@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
 		dispatchIntent()
 
 		findNavController(R.id.mainNavHostFragment).let { navController ->
-			navController.addOnDestinationChangedListener { controller, destination, arguments ->
+			navController.addOnDestinationChangedListener { _, destination, _ ->
 				val showMenu = FragmentsWithMenu.contains(destination.id)
 				menuComposeView.isVisible = showMenu
 
