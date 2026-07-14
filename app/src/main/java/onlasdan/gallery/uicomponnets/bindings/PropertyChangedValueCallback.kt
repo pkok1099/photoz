@@ -23,7 +23,7 @@ package onlasdan.gallery.uicomponnets.bindings
  * @since 1.0.0
  * @author PhotoZ
  */
-interface PropertyChangedValueCallback {
+fun interface PropertyChangedValueCallback {
 	/**
 	 * Called when data changes.
 	 */

@@ -58,7 +58,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +90,7 @@ private const val PORTRAIT_COLUMN_COUNT = 3
 private const val LANDSCAPE_COLUMN_COUNT = 6
 
 @Composable
+@Suppress("kotlin:S107", "LongMethod") // Composable — each param is a UI prop; long body is pre-existing
 fun PhotoGallery(
 	photos: List<PhotoTile>,
 	albumName: String?,
@@ -125,7 +125,6 @@ fun PhotoGallery(
 ) {
 	val activity = LocalActivity.current
 	var importMenuBottomSheetVisible by remember { mutableStateOf(false) }
-	val scope = rememberCoroutineScope()
 
 	// Hide magic fab menu when multi selection active
 	LaunchedEffect(multiSelectionState.isActive.value) {

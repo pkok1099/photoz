@@ -43,13 +43,13 @@ class ValidateBackupUseCase
 
 				var ze = zipInputStream.nextEntry
 				while (ze != null) {
-					if (ze.name == BackupMetaData.FILE_NAME) {
-						metaData = readBackupMetadata(zipInputStream)
-						backupVersion = metaData.getBackupVersion()
-					} else if (ze.name.endsWith(PHOTOK_FILE_EXTENSION)) {
-						cryptFiles++
-					} else if (ze.name.endsWith(LEGACY_PHOTOK_FILE_EXTENSION)) {
-						photokFiles++
+					when {
+						ze.name == BackupMetaData.FILE_NAME -> {
+							metaData = readBackupMetadata(zipInputStream)
+							backupVersion = metaData.getBackupVersion()
+						}
+						ze.name.endsWith(PHOTOK_FILE_EXTENSION) -> cryptFiles++
+						ze.name.endsWith(LEGACY_PHOTOK_FILE_EXTENSION) -> photokFiles++
 					}
 
 					ze = zipInputStream.nextEntry

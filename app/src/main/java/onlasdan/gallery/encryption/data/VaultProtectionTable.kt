@@ -63,7 +63,7 @@ import onlasdan.gallery.encryption.domain.models.VaultProtectionType
  * forward-compatible for that.
  *
  * @since v11 — Sprint 2 / M7 multi-vault
- * @since v16 — Sprint 3 / TODO #6 SQLCipher (table moved to BootstrapDatabase)
+ * @since v16 — Sprint 3 / SQLCipher (table moved to BootstrapDatabase)
  */
 @Entity(tableName = "vault_protection")
 data class VaultProtectionTable(

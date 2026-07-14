@@ -1,3 +1,5 @@
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
 plugins {
 	id("com.android.application")
 	id("com.jaredsburrows.license")
@@ -21,10 +23,12 @@ plugins {
 
 val isReleaseBuildInvocation: Boolean = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
 
-val appVersionName: String by project
-val appVersionCode: String by project
+// F-WARN-006: replaced deprecated `by project` (provideDelegate) with explicit
+// project.property() calls. Gradle 9.6 deprecates the property delegate syntax.
+val appVersionName: String = project.property("appVersionName") as String
+val appVersionCode: String = project.property("appVersionCode") as String
 
-val telemetryDeckAppId: String? by project
+val telemetryDeckAppId: String? = project.findProperty("telemetryDeckAppId") as String?
 
 apply(plugin = "androidx.navigation.safeargs.kotlin")
 apply(plugin = "dagger.hilt.android.plugin")
@@ -46,12 +50,10 @@ android {
 			abiFilters += "arm64-v8a"
 		}
 
-		javaCompileOptions {
-			annotationProcessorOptions {
-				arguments += "room.incremental" to "true"
-				arguments += "room.schemaLocation" to "$projectDir/schemas"
-			}
-		}
+		// F-WARN-007: removed annotationProcessorOptions (room.incremental, room.schemaLocation)
+		// — these are kapt args but Room now uses KSP (see ksp { arg(...) } block below).
+		// kapt only processes DataBinding which doesn't recognize Room args, causing
+		// the build warning: "options not recognized by any processor".
 
 		base {
 			archivesName = "photok-$versionName"
@@ -110,6 +112,9 @@ android {
 	buildTypes {
 		getByName("debug") {
 			isDebuggable = true
+			// Sprint: emit unit-test coverage (.exec) so JaCoCo can build the
+			// XML SonarCloud reads (fixes 0.0% coverage QG failure).
+			enableUnitTestCoverage = true
 			// Sprint 10+ — consistent debug signing key for CI builds.
 			// Without this, each CI runner generates its own ephemeral debug
 			// key, and the user can't install updates without uninstalling.
@@ -203,7 +208,8 @@ dependencies {
 	// Architectural Components
 	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
 	implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-	implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
+	// F-PERF-004 (v1.0.2): removed deprecated lifecycle-extensions:2.2.0 — was unused.
+	// DefaultLifecycleObserver (used in BaseApplication) comes from lifecycle-common (transitive).
 
 	// Room
 	implementation("androidx.room:room-runtime:2.8.4")
@@ -243,7 +249,7 @@ dependencies {
 	implementation("org.bouncycastle:bcprov-jdk18on:1.84")
 
 	// ViewPager2
-	implementation("androidx.viewpager2:viewpager2:1.1.0")
+	// F-PERF-004 (v1.0.2): removed androidx.viewpager2:viewpager2:1.1.0 — was unused (all pagers migrated to Compose HorizontalPager).
 
 	// Coroutines
 	// Bumped 1.10.2 → 1.11.0 (Batch 3 — safe dep bumps from dependabot branch).
@@ -435,8 +441,9 @@ detekt {
 	config.setFrom(rootProject.files("config/detekt/detekt.yml"))
 	baseline = rootProject.file("config/detekt/detekt-baseline.xml")
 	buildUponDefaultConfig = true
+	allRules = true // activate every detekt rule (Sprint: tighten detekt)
 	parallel = true
-	ignoreFailures = false
+	ignoreFailures = false // blocking quality gate
 }
 
 // ─── ktlint configuration ────────────────────────────────────────────────
@@ -450,4 +457,29 @@ ktlint {
 	// ktlint is now a BLOCKING quality gate — new style violations fail CI.
 	// @since Sprint 5 — ktlint now blocking
 	ignoreFailures.set(false)
+}
+
+// ─── JaCoCo coverage (Sprint: feed SonarCloud real coverage) ─────────────
+// AGP emits a .exec on test runs (debug enableUnitTestCoverage = true).
+// SonarCloud's JaCoCo sensor reads the XML this task produces and is the
+// ONLY coverage path the Kotlin plugin supports (it has no Kover sensor).
+// Kover was tried first but its XML is not consumed by Sonar → 0.0% QG fail.
+tasks.register<JacocoReport>("jacocoTestReport") {
+	dependsOn("testFossDebugUnitTest")
+	reports {
+		xml.required.set(true)
+		xml.outputLocation.set(file("$buildDir/reports/jacoco/test/jacocoTestReport.xml"))
+	}
+	classDirectories.setFrom(
+		fileTree("$buildDir/tmp/kotlin-classes/fossDebug") { exclude("**/net/ypresto/**") },
+	)
+	sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+	// AGP writes the .exec to a version-dependent path; catch all known spots.
+	executionData.setFrom(
+		fileTree(buildDir) {
+			include("**/jacoco/testFossDebugUnitTest.exec")
+			include("**/outputs/unit_test_code_coverage/**/*.exec")
+			include("**/*.exec")
+		},
+	)
 }

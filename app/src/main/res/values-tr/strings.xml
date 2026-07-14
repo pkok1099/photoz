@@ -280,7 +280,7 @@
     <string name="migration_initial_stage_ready_button">Taşıma işlemini başlat</string>
 
     <string name="migration_running_title">Galerinizi taşıma</string>
-    <string name="migration_running_progress">%d dosyadan %d dosyası işlendi</string>
+    <string name="migration_running_progress" formatted="false">%d dosyadan %d dosyası işlendi</string>
     <string name="migration_running_advice">Bu ekran açık kalırsa, geçiş işlemi daha hızlı gerçekleşir.</string>
 
     <string name="migration_done_title">Galeri taşıma işlemi tamamlandı</string>

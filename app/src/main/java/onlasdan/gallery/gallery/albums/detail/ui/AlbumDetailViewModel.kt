@@ -169,6 +169,7 @@ class AlbumDetailViewModel
 			}
 		}
 
+		@Suppress("kotlin:S1871") // AddNewFiles and AddFromPhotoPicker have identical body but different ImportChoice types — cannot merge
 		private fun onImportChoice(choice: ImportChoice) {
 			val navEvent =
 				when (choice) {
@@ -176,11 +177,6 @@ class AlbumDetailViewModel
 						AlbumDetailNavigator.NavigationEvent.StartImport(
 							fileUris = choice.fileUris,
 							albumUuid = albumFlow.value.uuid,
-						)
-
-					is ImportChoice.RestoreBackup ->
-						AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
-							choice.backupUri,
 						)
 
 					// Sprint 3 / M10 — Photo Picker import from an album detail screen.
@@ -192,11 +188,16 @@ class AlbumDetailViewModel
 					// different album in Path Maker, the photo's albumPath will say
 					// that album but the cross-ref will link to THIS album — that's
 					// a v1 inconsistency; v2 will respect the Path Maker choice for
-					// the cross-ref too.
+					// the cross-ref too. AddFromPhotoPicker shares the same nav as AddNewFiles.
 					is ImportChoice.AddFromPhotoPicker ->
 						AlbumDetailNavigator.NavigationEvent.StartImport(
 							fileUris = choice.fileUris,
 							albumUuid = albumFlow.value.uuid,
+						)
+
+					is ImportChoice.RestoreBackup ->
+						AlbumDetailNavigator.NavigationEvent.StartRestoreBackup(
+							choice.backupUri,
 						)
 				}
 

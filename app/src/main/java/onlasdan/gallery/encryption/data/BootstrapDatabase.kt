@@ -61,7 +61,7 @@ import onlasdan.gallery.model.database.Converters
  *    PBKDF2/Argon2 work — same threat model as today.
  *  - The `vault_protection` rows reveal HOW MANY vaults exist and the
  *    KDF parameters used. This is a minor metadata leak compared to
- *    encrypting all photo/album metadata (the actual target of TODO #6).
+ *    encrypting all photo/album metadata.
  *
  * The SQLCipher DB key for `photok.db` is stored in Android Keystore
  * (see [SqlCipherKeyProvider]) — NOT wrapped per-vault with VMK. This
@@ -70,7 +70,7 @@ import onlasdan.gallery.model.database.Converters
  * unlock, at the cost of NOT enforcing "vault lock = DB lock" semantics.
  * See `ROADMAP2.md` for the full rationale.
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 @Database(
 	entities = [VaultProtectionTable::class],

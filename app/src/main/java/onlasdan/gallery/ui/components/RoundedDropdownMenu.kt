@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
 @Composable
+@Suppress("kotlin:S107") // Composable — each param is a UI prop
 fun RoundedDropdownMenu(
 	expanded: Boolean,
 	onDismissRequest: () -> Unit,

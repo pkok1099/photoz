@@ -51,7 +51,7 @@ class LegacyEncryption
 			val charArray = password.toCharArray()
 			val firstChars = charArray.take(16)
 			for (i in firstChars.indices) {
-				iv[i] = firstChars[i].toByte()
+				iv[i] = firstChars[i].code.toByte()
 			}
 
 			return IvParameterSpec(iv)

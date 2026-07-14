@@ -27,6 +27,11 @@ import androidx.compose.runtime.DisposableEffect
  * System bars controller for the image viewer.
  *
  * @since PR1: minSdk bumped to 35 — all `Build.VERSION.SDK_INT >= R` guards removed (always true).
+ *
+ * F-WARN-001 (v1.0.2): removed deprecated `window.statusBarColor` / `window.navigationBarColor`
+ * setters. On API 35+ (always, since minSdk=35), edge-to-edge is mandatory and these color
+ * setters are no-ops. The system bars are transparent by default — only the icon appearance
+ * (light/dark) needs to be controlled.
  */
 @Composable
 fun ImageViewerSystemBarsController(visible: Boolean) {
@@ -34,15 +39,9 @@ fun ImageViewerSystemBarsController(visible: Boolean) {
 	val window = activity.window
 
 	DisposableEffect(visible) {
-		val previousStatusColor = window.statusBarColor
-		val previousNavColor = window.navigationBarColor
 		val previousAppearance = window.insetsController?.systemBarsAppearance ?: 0
 
 		window.forceLightSystemBarIcons()
-
-		// OEM / edge-to-edge safety net
-		window.statusBarColor = android.graphics.Color.TRANSPARENT
-		window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
 		if (visible) {
 			window.showSystemBars()
@@ -52,10 +51,6 @@ fun ImageViewerSystemBarsController(visible: Boolean) {
 
 		onDispose {
 			window.showSystemBars()
-
-			// restore colors
-			window.statusBarColor = previousStatusColor
-			window.navigationBarColor = previousNavColor
 
 			// restore appearance
 			window.insetsController?.setSystemBarsAppearance(

@@ -39,7 +39,7 @@ import onlasdan.gallery.ui.components.AppName
 import onlasdan.gallery.ui.theme.AppTheme
 
 @Composable
-fun EncryptionMigrationScreenSuccess(uiState: LegacyEncryptionMigrationUiState.Success) {
+fun EncryptionMigrationScreenSuccess() {
 	Scaffold { contentPadding ->
 		Box(
 			modifier =
@@ -85,8 +85,6 @@ fun EncryptionMigrationScreenSuccess(uiState: LegacyEncryptionMigrationUiState.S
 @Composable
 private fun PreviewSuccess() {
 	AppTheme {
-		EncryptionMigrationScreenSuccess(
-			uiState = LegacyEncryptionMigrationUiState.Success,
-		)
+		EncryptionMigrationScreenSuccess()
 	}
 }

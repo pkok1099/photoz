@@ -23,7 +23,7 @@ package onlasdan.gallery.encryption.domain.models
  * New vaults created after the Argon2id upgrade use [Argon2id]; old vaults
  * stay [PBKDF2WithHmacSHA256] (backwards compatible — version dispatch).
  *
- * @since v14 — TODO #3 Argon2id upgrade
+ * @since v14 — Argon2id upgrade
  */
 enum class Kdf(
 	val value: String,
@@ -45,7 +45,7 @@ enum class Kdf(
 	 * - kdfParallelism = parallelism (fixed at 1 for Android — multi-thread
 	 *   Argon2 doesn't help on mobile and adds complexity)
 	 *
-	 * @since v14 — TODO #3
+	 * @since v14
 	 */
 	Argon2id("Argon2id"),
 }

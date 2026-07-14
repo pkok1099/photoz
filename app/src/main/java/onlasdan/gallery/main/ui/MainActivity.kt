@@ -22,7 +22,10 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,11 +34,9 @@ import androidx.navigation.findNavController
 import com.google.android.material.color.DynamicColors
 import dagger.hilt.android.AndroidEntryPoint
 import onlasdan.gallery.R
-import onlasdan.gallery.databinding.ActivityMainBinding
 import onlasdan.gallery.main.ui.navigation.MainMenu
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.ui.theme.AppTheme
-import onlasdan.gallery.uicomponnets.bindings.BindableActivity
 import javax.inject.Inject
 
 val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.settingsFragment, R.id.albumDetailFragment)
@@ -44,17 +45,30 @@ val FragmentsWithMenu = listOf(R.id.galleryFragment, R.id.albumsFragment, R.id.s
  * The main Activity.
  * Holds all fragments and initializes toolbar, menu, etc.
  *
+ * F-PERF-002 (UI optimization, v1.0.2): migrated from `BindableActivity<ActivityMainBinding>`
+ * (DataBinding) to [AppCompatActivity] + `findViewById`. The ComposeView for the bottom
+ * menu is now accessed via `findViewById` instead of generated binding class.
+ *
+ * F-HOTFIX-001 (P0 crash fix): must extend [AppCompatActivity] (NOT [androidx.activity.ComponentActivity])
+ * because `activity_main.xml` uses `FragmentContainerView` with
+ * `android:name="androidx.navigation.fragment.NavHostFragment"`. NavHostFragment requires
+ * the host Activity to be a [androidx.fragment.app.FragmentActivity] — `AppCompatActivity`
+ * extends `FragmentActivity`, but `ComponentActivity` does NOT. Using `ComponentActivity`
+ * caused `UnsupportedOperationException` at `setContentView()` on every launch.
+ *
  * @since 1.0.0
  * @author PhotoZ
  */
 @AndroidEntryPoint
-class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_main) {
+class MainActivity : AppCompatActivity() {
 	private val viewModel: MainViewModel by viewModels()
 
 	@Inject
-	override lateinit var config: Config
+	lateinit var config: Config
 
 	var onOrientationChanged: (Int) -> Unit = {} // Init empty
+
+	private lateinit var menuComposeView: ComposeView
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		enableEdgeToEdge()
@@ -69,54 +83,11 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
 		// wallpaper) fall back to the colorPrimary/colorAccent defined in colors.xml.
 		// Safe to call unconditionally — the API is a no-op below API 31.
 		DynamicColors.applyToActivityIfAvailable(this)
-	}
 
-	override fun onPostCreate(savedInstanceState: Bundle?) {
-		super.onPostCreate(savedInstanceState)
-		dispatchIntent()
+		setContentView(R.layout.activity_main)
+		menuComposeView = findViewById(R.id.mainMenuComposeContainer)
 
-		findNavController(R.id.mainNavHostFragment).let { navController ->
-			navController.addOnDestinationChangedListener { controller, destination, arguments ->
-				val showMenu = FragmentsWithMenu.contains(destination.id)
-				binding.mainMenuComposeContainer.isVisible = showMenu
-
-				WindowCompat
-					.getInsetsController(
-						window,
-						window.decorView,
-					).isAppearanceLightStatusBars =
-					(resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
-
-				viewModel.onDestinationChanged(destination.id)
-			}
-		}
-	}
-
-	private fun dispatchIntent() {
-		when (intent.action) {
-			Intent.ACTION_SEND ->
-				intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uri ->
-					viewModel.addUriToSharedUriStore(uri)
-				}
-
-			Intent.ACTION_SEND_MULTIPLE ->
-				intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.forEach { uri ->
-					viewModel.addUriToSharedUriStore(uri)
-				}
-		}
-	}
-
-	override fun onConfigurationChanged(newConfig: Configuration) {
-		super.onConfigurationChanged(newConfig)
-
-		onOrientationChanged(newConfig.orientation)
-	}
-
-	override fun bind(binding: ActivityMainBinding) {
-		super.bind(binding)
-		binding.context = this
-
-		binding.mainMenuComposeContainer.setContent {
+		menuComposeView.setContent {
 			val uiState by viewModel.mainMenuUiState.collectAsStateWithLifecycle()
 
 			AppTheme {
@@ -137,5 +108,46 @@ class MainActivity : BindableActivity<ActivityMainBinding>(R.layout.activity_mai
 				}
 			}
 		}
+	}
+
+	override fun onPostCreate(savedInstanceState: Bundle?) {
+		super.onPostCreate(savedInstanceState)
+		dispatchIntent()
+
+		findNavController(R.id.mainNavHostFragment).let { navController ->
+			navController.addOnDestinationChangedListener { _, destination, _ ->
+				val showMenu = FragmentsWithMenu.contains(destination.id)
+				menuComposeView.isVisible = showMenu
+
+				WindowCompat
+					.getInsetsController(
+						window,
+						window.decorView,
+					).isAppearanceLightStatusBars =
+					(resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+
+				viewModel.onDestinationChanged(destination.id)
+			}
+		}
+	}
+
+	private fun dispatchIntent() {
+		when (intent.action) {
+			Intent.ACTION_SEND ->
+				IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uri ->
+					viewModel.addUriToSharedUriStore(uri)
+				}
+
+			Intent.ACTION_SEND_MULTIPLE ->
+				IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.forEach { uri ->
+					viewModel.addUriToSharedUriStore(uri)
+				}
+		}
+	}
+
+	override fun onConfigurationChanged(newConfig: Configuration) {
+		super.onConfigurationChanged(newConfig)
+
+		onOrientationChanged(newConfig.orientation)
 	}
 }

@@ -20,6 +20,7 @@ import android.app.Application
 import androidx.databinding.Bindable
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import onlasdan.gallery.BR
@@ -84,7 +85,12 @@ class SetupViewModel
 		// endregion
 
 		fun onSetupClicked() =
-			viewModelScope.launch {
+			// F-BUG-2: vault creation runs Argon2id at 64MB memory (KeyGen.DEFAULT_ARGON2_MEMORY_KB)
+			// via vaultService.create()/unlock(). With no dispatcher this coroutine runs on the
+			// Main thread, so the memory-hard KDF blocks rendering → the setup screen freezes /
+			// feels "very laggy" while the VMK is derived. Run it on Dispatchers.IO; setupState is a
+			// StateFlow so assigning it from IO is thread-safe and the UI still observes on Main.
+			viewModelScope.launch(Dispatchers.IO) {
 				if (validateBothPasswords()) {
 					setupState.value = SetupState.LOADING
 
@@ -111,12 +117,22 @@ class SetupViewModel
 						// Skip recovery phrase creation — it already exists from the
 						// original setup. Just upload escrows if repo is confirmed.
 						if (config.repoConfirmed) {
-							viewModelScope.launch {
-								try {
-									repoManager.uploadAllEscrows(password, session)
-								} catch (e: Exception) {
-									Timber.w(e, "Escrow re-upload failed (non-fatal)")
+							// F-HOTFIX-004: BLOCKING upload — do NOT proceed to recovery phrase
+							// screen until escrow is confirmed on the remote. Previously fire-and-
+							// forget, which meant user could uninstall before upload completed.
+							// NonCancellable only prevented coroutine cancellation, NOT process death.
+							try {
+								val result = repoManager.uploadAllEscrows(password, session)
+								if (result.isFailure) {
+									Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow re-upload FAILED")
+									setupState.value = SetupState.SETUP
+									return@launch
 								}
+								Timber.i("ANTI-DATA-LOSS: Escrow re-upload OK")
+							} catch (e: Exception) {
+								Timber.e(e, "ANTI-DATA-LOSS: Escrow re-upload threw")
+								setupState.value = SetupState.SETUP
+								return@launch
 							}
 						}
 						config.justFinishedSetup = true
@@ -146,15 +162,22 @@ class SetupViewModel
 			// Upload both escrow layers to the remote (wrappedVMK + wrappedPhrase).
 			// Non-fatal: if escrow upload fails, setup still completes.
 			if (config.repoConfirmed) {
-				viewModelScope.launch {
-					try {
-						val result = repoManager.uploadAllEscrows(password, session)
-						if (result.isFailure) {
-							Timber.w(result.exceptionOrNull(), "Escrow upload failed (non-fatal)")
-						}
-					} catch (e: Exception) {
-						Timber.w(e, "Escrow upload threw (non-fatal)")
+				// F-HOTFIX-004: BLOCKING upload — do NOT show recovery phrase until
+				// escrow is confirmed on the remote. Previously fire-and-forget,
+				// which meant user could uninstall before upload completed → data loss.
+				// NonCancellable only prevented coroutine cancellation, NOT process death.
+				try {
+					val result = repoManager.uploadAllEscrows(password, session)
+					if (result.isFailure) {
+						Timber.e(result.exceptionOrNull(), "ANTI-DATA-LOSS: Escrow upload FAILED")
+						setupState.value = SetupState.SETUP
+						return
 					}
+					Timber.i("ANTI-DATA-LOSS: Escrow upload OK")
+				} catch (e: Exception) {
+					Timber.e(e, "ANTI-DATA-LOSS: Escrow upload threw")
+					setupState.value = SetupState.SETUP
+					return
 				}
 			}
 

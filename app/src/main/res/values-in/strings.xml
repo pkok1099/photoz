@@ -297,7 +297,7 @@
     <string name="migration_initial_stage_ready_button">Mulai migrasi</string>
 
     <string name="migration_running_title">Memigrasikan galerimu</string>
-    <string name="migration_running_progress">%d dari %d file diproses</string>
+    <string name="migration_running_progress" formatted="false">%d dari %d file diproses</string>
     <string name="migration_running_advice">Jika layar ini tetap terbuka, migrasi akan berjalan lebih cepat.</string>
 
     <string name="migration_done_title">Migrasi galeri selesai</string>

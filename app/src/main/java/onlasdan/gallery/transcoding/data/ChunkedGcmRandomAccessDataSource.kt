@@ -63,7 +63,7 @@ import javax.crypto.spec.GCMParameterSpec
  * 5. Decrypt with GCM
  * 6. Skip offset_in_chunk bytes, serve the rest
  *
- * @since v15 — TODO #2 chunked streaming encryption
+ * @since v15 — chunked streaming encryption
  */
 @UnstableApi
 class ChunkedGcmRandomAccessDataSource(
@@ -113,6 +113,11 @@ class ChunkedGcmRandomAccessDataSource(
 
 			// Compute the chunk containing the requested position
 			val plainOffset = dataSpec.position
+			// F-002 fix: validate plainOffset fits in Int range before .toInt() cast.
+			// Long→Int truncation on huge seeks produces negative chunkIndex → IllegalArgumentException.
+			if (plainOffset > Int.MAX_VALUE.toLong()) {
+				throw IOException("ChunkedGcmRA: plainOffset $plainOffset exceeds Int.MAX_VALUE (chunk index overflow)")
+			}
 			val chunkIndex = (plainOffset / chunkSize).toInt()
 			val offsetInChunk = (plainOffset % chunkSize).toInt()
 
@@ -125,20 +130,42 @@ class ChunkedGcmRandomAccessDataSource(
 				totalPlaintextSize,
 			)
 
+			// F-002 fix: guard against seek past EOF before loadChunk.
+			// ExoPlayer's DataSource.open() contract: return non-negative byte count, or throw IOException.
+			if (totalPlaintextSize > 0 && plainOffset > totalPlaintextSize) {
+				throw IOException("ChunkedGcmRA: seek past EOF (plainOffset=$plainOffset, totalPlaintextSize=$totalPlaintextSize)")
+			}
+
 			// Load the target chunk
-			loadChunk(chunkIndex, channel)
+			// F-009 fix: wrap AEADBadTagException as IOException to satisfy DataSource.open contract
+			try {
+				loadChunk(chunkIndex, channel)
+			} catch (e: javax.crypto.AEADBadTagException) {
+				throw IOException("ChunkedGcmRA: GCM auth tag verification failed on chunk $chunkIndex", e)
+			}
 			currentChunkPos = offsetInChunk
 		} finally {
 			channel.close()
 		}
 
 		// Return content length (remaining bytes from this position)
+		// F-002 fix: coerce to 0 — never return negative (ExoPlayer contract violation)
+		// F-015 fix: honor dataSpec.length when bounded (ExoPlayer may issue range requests)
 		val totalPlaintextSize = ByteBuffer.wrap(headerBuf, 5, 8).long
 		val plainOffset = dataSpec.position
-		return if (totalPlaintextSize > 0) {
-			totalPlaintextSize - plainOffset
+		val remaining = if (totalPlaintextSize > 0) {
+			(totalPlaintextSize - plainOffset).coerceAtLeast(0L)
 		} else {
 			java.lang.Long.MAX_VALUE // unknown — stream until EOF
+		}
+		// F-015 fix: honor dataSpec.length when bounded. ExoPlayer uses Long.MAX_VALUE
+		// (= C.LENGTH_UNBOUNDED) to signal "unbounded"; compare directly without
+		// importing androidx.media3.common.C (transitive dependency, fragile).
+		return if (dataSpec.length != Long.MAX_VALUE) {
+			// Bounded request — return the requested length (clamped to remaining)
+			minOf(dataSpec.length, remaining).coerceAtLeast(0L)
+		} else {
+			remaining
 		}
 	}
 
@@ -166,6 +193,15 @@ class ChunkedGcmRandomAccessDataSource(
 			nonceRead += n
 		}
 		if (nonceRead < GCM_IV_SIZE) {
+			// F-010 fix: distinguish genuine EOF (no bytes read = end of stream)
+			// from truncated chunk (some bytes read, but < GCM_IV_SIZE).
+			if (nonceRead == 0) {
+				// Genuine EOF — no more chunks. Signal by nulling currentChunkData.
+				currentChunkData = null
+				currentChunkIndex = -1
+				Timber.d("ChunkedGcmRA: reached EOF at chunk %d (no more nonce to read)", chunkIndex)
+				return
+			}
 			throw IOException("ChunkedGcmRA: chunk $chunkIndex truncated nonce (read=$nonceRead)")
 		}
 
@@ -211,12 +247,22 @@ class ChunkedGcmRandomAccessDataSource(
 				loadChunk(currentChunkIndex + 1, channel)
 			} catch (e: javax.crypto.AEADBadTagException) {
 				throw java.io.IOException("ChunkedGcmRA: GCM auth failed at chunk ${currentChunkIndex + 1}", e)
+			} catch (e: java.io.IOException) {
+				// F-010 fix: do NOT swallow IOException("truncated nonce") / ("chunk too small")
+				// as silent EOF. These indicate file corruption — the caller must know.
+				// Genuine EOF (loadChunk exhausted all chunks) is signaled by currentChunkData
+				// being null after loadChunk, which the next read() call handles via `?: return -1`.
+				throw e
 			} catch (e: Exception) {
-				// Genuine EOF or read error — return -1
-				return -1
+				// F-010 fix: log and rethrow — do not convert to silent EOF.
+				// If this is a genuine clean EOF (backing stream returns -1 at chunk boundary),
+				// loadChunk would have set currentChunkData = null and returned normally.
+				throw java.io.IOException("ChunkedGcmRA: read failed at chunk ${currentChunkIndex + 1}", e)
 			} finally {
 				channel.close()
 			}
+			// F-010 fix: if loadChunk set currentChunkData=null (genuine EOF), return -1
+			if (currentChunkData == null) return -1
 			currentChunkPos = 0
 			return read(target, offset, length)
 		}
@@ -227,7 +273,9 @@ class ChunkedGcmRandomAccessDataSource(
 		return toRead
 	}
 
-	override fun addTransferListener(transferListener: TransferListener) {}
+	override fun addTransferListener(transferListener: TransferListener) {
+		// No-op: this data source does not emit transfer progress events.
+	}
 
 	override fun getUri(): Uri = uri
 
@@ -247,7 +295,15 @@ class ChunkedGcmRandomAccessDataSource(
 			if (System.currentTimeMillis() > deadline) {
 				throw IOException("Timeout waiting for download: needed $minBytes bytes")
 			}
-			Thread.sleep(50)
+			try {
+				Thread.sleep(50)
+			} catch (e: InterruptedException) {
+				// F-004 fix: DataSource.open/read declare throws IOException; raw
+				// InterruptedException violates the contract. Re-set the interrupt
+				// flag so upstream cancellation checks see it, then throw IOException.
+				Thread.currentThread().interrupt()
+				throw IOException("Interrupted while waiting for download (needed $minBytes bytes)", e)
+			}
 		}
 	}
 }

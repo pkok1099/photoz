@@ -33,7 +33,9 @@ interface VaultProtectionHandler<URT : UnlockRequest, CRT : CreateRequest> {
 
 	suspend fun migrate(request: URT): VaultProtection
 
-	suspend fun onMigrationPersisted() {}
+	fun onMigrationPersisted() {
+		// No-op by default; handlers with migration side-effects override this.
+	}
 
 	suspend fun reset()
 }

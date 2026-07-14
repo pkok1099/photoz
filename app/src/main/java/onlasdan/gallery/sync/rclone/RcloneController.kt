@@ -22,6 +22,7 @@ import java.io.IOException
 import java.lang.reflect.Method
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -29,6 +30,8 @@ import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val RC_OP_COPYFILE = "operations/copyfile"
 
 /**
  * Sprint 8+ — RcloneController using gomobile JNI (replaces ProcessBuilder subprocess).
@@ -250,7 +253,7 @@ class RcloneController
 						"""
 						{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc(RC_OP_COPYFILE, input)
 					Timber.d("uploadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -286,7 +289,7 @@ class RcloneController
 					val (remote, path) = parseRemotePath(remotePath)
 					val (dstFs, dstFile) = splitRemotePath(remote, path)
 					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcRemote","dstFs":"$dstFs","dstRemote":"$dstFile","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc(RC_OP_COPYFILE, startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async upload start error: $startResult"))
 					}
@@ -300,28 +303,9 @@ class RcloneController
 					}
 
 					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone upload job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
+					return@withContext pollJobProgress(jobid, onProgress) { jid, err ->
+						"rclone upload job $jid failed: $err"
 					}
-					Result.success(Unit)
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -351,7 +335,7 @@ class RcloneController
 						"""
 						{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote"}
 						""".trimIndent()
-					val result = rpc("operations/copyfile", input)
+					val result = rpc(RC_OP_COPYFILE, input)
 					Timber.d("downloadFile result: $result")
 					if (hasRpcError(result)) {
 						Result.failure(IOException("rclone error: $result"))
@@ -384,7 +368,7 @@ class RcloneController
 					val (srcFs, srcFile) = splitRemotePath(remote, path)
 					val (dstFs, dstRemote) = splitLocalPath(localPath)
 					val startInput = """{"srcFs":"$srcFs","srcRemote":"$srcFile","dstFs":"$dstFs","dstRemote":"$dstRemote","_async":true}"""
-					val startResult = rpc("operations/copyfile", startInput)
+					val startResult = rpc(RC_OP_COPYFILE, startInput)
 					if (hasRpcError(startResult)) {
 						return@withContext Result.failure(IOException("rclone async start error: $startResult"))
 					}
@@ -398,28 +382,9 @@ class RcloneController
 					}
 
 					onProgress(0f)
-					while (true) {
-						delay(500)
-						val statusResult = rpc("job/status", """{"jobid":$jobid}""")
-						if (hasRpcError(statusResult)) break
-						val statusJson = JSONObject(statusResult)
-						val finished = statusJson.optBoolean("finished", false)
-						val completed = statusJson.optLong("completed", -1L)
-						val total = statusJson.optLong("total", -1L)
-						if (total > 0 && completed >= 0) {
-							onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
-						}
-						if (finished) {
-							val success = statusJson.optBoolean("success", false)
-							if (!success) {
-								val errorMsg = statusJson.optString("error", "unknown error")
-								return@withContext Result.failure(IOException("rclone job $jobid failed: $errorMsg"))
-							}
-							onProgress(100f)
-							return@withContext Result.success(Unit)
-						}
+					return@withContext pollJobProgress(jobid, onProgress) { jid, err ->
+						"rclone job $jid failed: $err"
 					}
-					Result.success(Unit)
 				} catch (e: kotlinx.coroutines.CancellationException) {
 					jobid?.let { jid -> runCatching { rpc("job/stop", """{"jobid":$jid}""") } }
 					throw e
@@ -613,7 +578,7 @@ class RcloneController
 						Result.failure(IOException("rclone hash error: $result"))
 					} else {
 						val json = JSONObject(result)
-						val hash = if (json.isNull("hash")) null else json.optString("hash", null)
+						val hash = if (json.isNull("hash")) null else json.optString("hash")
 						Result.success(hash)
 					}
 				} catch (e: Exception) {
@@ -640,6 +605,42 @@ class RcloneController
 		}
 
 		// ─── Helpers ──────────────────────────────────────────────────────
+
+		/**
+		 * Poll an rclone async job via job/status every 500ms until it finishes
+		 * or an RPC error occurs. Runs inline in the caller's Dispatchers.IO context.
+		 *
+		 * @param jobid rclone job id
+		 * @param onProgress progress callback (0.0-100.0)
+		 * @param failureMessage builds the IOException message on job failure
+		 */
+		private suspend fun pollJobProgress(
+			jobid: Long,
+			onProgress: (Float) -> Unit,
+			failureMessage: (Long, String) -> String,
+		): Result<Unit> {
+			while (true) {
+				delay(500)
+				val statusResult = rpc("job/status", """{"jobid":$jobid}""")
+				if (hasRpcError(statusResult)) return Result.success(Unit)
+				val statusJson = JSONObject(statusResult)
+				val finished = statusJson.optBoolean("finished", false)
+				val completed = statusJson.optLong("completed", -1L)
+				val total = statusJson.optLong("total", -1L)
+				if (total > 0 && completed >= 0) {
+					onProgress((completed.toFloat() / total.toFloat() * 100f).coerceIn(0f, 100f))
+				}
+				if (finished) {
+					val success = statusJson.optBoolean("success", false)
+					if (!success) {
+						val errorMsg = statusJson.optString("error", "unknown error")
+						return Result.failure(IOException(failureMessage(jobid, errorMsg)))
+					}
+					onProgress(100f)
+					return Result.success(Unit)
+				}
+			}
+		}
 
 		/**
 		 * F-SYNC-001: JSON-based error detection — replaces fragile substring
@@ -747,7 +748,7 @@ class RcloneController
 							name = name,
 							size = obj.optLong("Size", 0L),
 							isDir = obj.optBoolean("IsDir", false),
-							mimeType = if (obj.isNull("MimeType")) null else obj.optString("MimeType", null),
+							mimeType = if (obj.isNull("MimeType")) null else obj.optString("MimeType"),
 						)
 					}
 				}

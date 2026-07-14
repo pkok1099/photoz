@@ -35,7 +35,7 @@ import java.io.OutputStream
  * doesn't extend CipherOutputStream. The decrypt path returns [InputStream] for
  * the same reason ([ChunkedGcmInputStream] doesn't extend CipherInputStream).
  *
- * @since v15 — TODO #2 chunked streaming encryption
+ * @since v15 — chunked streaming encryption
  */
 interface CryptoEngine {
 	fun createEncryptStream(

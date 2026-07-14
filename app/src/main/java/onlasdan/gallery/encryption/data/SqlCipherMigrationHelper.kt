@@ -64,7 +64,7 @@ import javax.inject.Singleton
  * will fail to open the DB (SQLCipher key mismatch on plaintext file) —
  * loud failure is preferred over silent fallback to plaintext.
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 @Singleton
 class SqlCipherMigrationHelper
@@ -81,7 +81,7 @@ class SqlCipherMigrationHelper
 		 * is used by [VaultService.unlock] at runtime — the rows we write
 		 * here are immediately visible to the unlock flow.
 		 *
-		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+		 * @since v16 — Sprint 3 / SQLCipher
 		 */
 		private val bootstrapDatabase: BootstrapDatabase,
 	) {
@@ -162,7 +162,7 @@ class SqlCipherMigrationHelper
 			val passphraseStr = passphrase.joinToString("") { "%02x".format(it) }
 
 			// Delete any stale .new file from a previous failed migration.
-			if (newDbFile.exists()) newDbFile.delete()
+			if (!newDbFile.delete()) Timber.w("newDbFile.delete() failed (stale .new cleanup)")
 			// Also clean up stale -wal / -shm
 			File("${newDbFile.absolutePath}-wal").takeIf { it.exists() }?.delete()
 			File("${newDbFile.absolutePath}-shm").takeIf { it.exists() }?.delete()
@@ -230,7 +230,7 @@ class SqlCipherMigrationHelper
 
 				if (!dbFile.delete()) {
 					Timber.e("SqlCipherMigration: failed to delete old plaintext DB")
-					newDbFile.delete()
+					if (!newDbFile.delete()) Timber.w("newDbFile.delete() failed (migration failure cleanup)")
 					return false
 				}
 				if (!newDbFile.renameTo(dbFile)) {
@@ -251,6 +251,7 @@ class SqlCipherMigrationHelper
 				try {
 					plaintextDb?.close()
 				} catch (_: Exception) {
+					// intentionally ignored: closing plaintext DB during cleanup must not mask the primary migration failure
 				}
 				newDbFile.takeIf { it.exists() }?.delete()
 				File("${newDbFile.absolutePath}-wal").takeIf { it.exists() }?.delete()
@@ -280,7 +281,7 @@ class SqlCipherMigrationHelper
 		 * If the plaintext DB has no `vault_protection` table (e.g. brand-new
 		 * install that somehow got a v15 file), this is a no-op.
 		 *
-		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+		 * @since v16 — Sprint 3 / SQLCipher
 		 */
 		private fun copyVaultProtectionToBootstrap(plaintextDb: net.zetetic.database.sqlcipher.SQLiteDatabase) {
 			// Check if vault_protection table exists in the plaintext DB.

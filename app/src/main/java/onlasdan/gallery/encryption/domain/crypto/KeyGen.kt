@@ -53,7 +53,7 @@ class KeyGen
 		 *   Stored in VaultProtectionParams.iv as Base64-encoded 4-byte int.
 		 * @return the derived KEK as a SecretKey
 		 *
-		 * @since v14 — TODO #3 Argon2id support
+		 * @since v14 — Argon2id support
 		 */
 		fun derivePasswordKeyEncryptionKey(
 			password: String,
@@ -93,7 +93,7 @@ class KeyGen
 		 * - parallelism: [parallelism] (1 for mobile — no benefit from threading)
 		 * - output: [keySizeBits] / 8 bytes (typically 32 = 256 bits)
 		 *
-		 * @since v14 — TODO #3
+		 * @since v14
 		 */
 		private fun deriveArgon2idKey(
 			password: String,

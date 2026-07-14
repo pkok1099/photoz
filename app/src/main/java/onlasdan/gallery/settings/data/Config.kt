@@ -154,7 +154,7 @@ class Config(
 	 * needed). Used by [SqlCipherMigrationHelper] to skip the migration
 	 * check on subsequent app starts.
 	 *
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+	 * @since v16 — Sprint 3 / SQLCipher
 	 */
 	var sqlCipherMigrationDone: Boolean
 		get() = getBoolean(SQLCIPHER_MIGRATION_DONE, SQLCIPHER_MIGRATION_DONE_DEFAULT)
@@ -703,7 +703,7 @@ class Config(
 		/**
 		 * Sprint 3 / (roadmap #6) — SQLCipher migration completed flag.
 		 *
-		 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+		 * @since v16 — Sprint 3 / SQLCipher
 		 */
 		const val SQLCIPHER_MIGRATION_DONE = "sqlcipher^migrationDone"
 		const val SQLCIPHER_MIGRATION_DONE_DEFAULT = false

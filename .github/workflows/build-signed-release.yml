@@ -7,6 +7,15 @@ name: Build and Upload Signed Release
 # Builds FOSS + Play release APKs (arm64-only), signs them with the release
 # keystore stored in repository secrets, then creates a GitHub Release with
 # the signed APKs attached.
+#
+# Action versions verified against upstream docs as of July 2026:
+#  - actions/checkout            v7  (was v4 — also now fetch-depth: 0,
+#                                     needed for `git describe`/`git log` below,
+#                                     which fail silently on a shallow clone)
+#  - actions/setup-java          v5
+#  - softprops/action-gh-release v3  (was v2 — now supports generate_release_notes
+#                                     natively, so we no longer need to hand-roll
+#                                     release notes with git log)
 
 on:
   push:
@@ -36,8 +45,13 @@ jobs:
       SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
 
     steps:
-      # Checkout — use the tag SHA if triggered by tag, else the dispatch ref.
-      - uses: actions/checkout@v4
+      # Checkout — fetch-depth: 0 is required so `git describe --tags` and
+      # `git log <tag>..HEAD` below have full history to work with. With the
+      # previous default (depth 1), both of those silently produced wrong
+      # or empty output on a fresh runner.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # Compute version string: tag name (minus leading 'v') if tag push, else input.
       - name: Compute version
@@ -73,21 +87,26 @@ jobs:
             -storepass "$SIGNING_KEYSTORE_PASSWORD" \
             -alias "$SIGNING_KEY_ALIAS" | head -5
 
-      # Build FOSS release APK (arm64-only). The signing config in
-      # build.gradle.kts picks up SIGNING_KEYSTORE_PATH env var automatically.
-      - name: Build FOSS Release APK
-        run: ./gradlew :app:assembleFossRelease --no-daemon --console=plain
-
-      # Build Play release APK (also arm64-only).
-      - name: Build Play Release APK
-        run: ./gradlew :app:assemblePlayRelease --no-daemon --console=plain
+      # Build both release APKs in a single Gradle invocation. This lets the
+      # Gradle daemon and configuration cache be reused across both variants
+      # instead of doing a cold, separate invocation for each — noticeably
+      # faster than two `./gradlew` calls when the variants share modules.
+      - name: Build FOSS + Play Release APKs
+        run: ./gradlew :app:assembleFossRelease :app:assemblePlayRelease --no-daemon --console=plain
 
       # Verify APK signatures (V1 + V2 + V3).
+      # Resolve the installed build-tools version dynamically instead of
+      # hardcoding e.g. "37.0.0" — GitHub-hosted runners' preinstalled SDK
+      # version changes over time, and a hardcoded version silently breaks
+      # this step the moment the runner image updates.
       - name: Verify APK signatures
         run: |
+          BUILD_TOOLS_VERSION=$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner"
+          echo "Using apksigner from build-tools $BUILD_TOOLS_VERSION"
           for apk in app/build/outputs/apk/foss/release/*.apk app/build/outputs/apk/play/release/*.apk; do
             echo "=== $apk ==="
-            $ANDROID_SDK_ROOT/build-tools/37.0.0/apksigner verify --print-certs "$apk" | head -10
+            "$APKSIGNER" verify --print-certs "$apk" | head -10
             echo "Size: $(du -h "$apk" | cut -f1)"
             echo
           done
@@ -102,36 +121,20 @@ jobs:
             release-artifacts/photok-${{ steps.version.outputs.version }}-play-release-arm64.apk
           ls -la release-artifacts/
 
-      # Generate release notes from commit history since the last tag.
-      # Falls back to all commits if this is the first tag.
-      - name: Generate release notes
-        id: notes
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          if [ -n "$PREV_TAG" ]; then
-            NOTES=$(git log --pretty=format:"- %s" "$PREV_TAG"..HEAD)
-          else
-            NOTES=$(git log --pretty=format:"- %s" -20)
-          fi
-          # Write to file to avoid shell escaping issues.
-          echo "$NOTES" > release-notes.md
-          echo "## What's Changed" > release-body.md
-          echo "" >> release-body.md
-          cat release-notes.md >> release-body.md
-          echo "" >> release-body.md
-          echo "" >> release-body.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-HEAD~20}...${{ steps.version.outputs.tag }}" >> release-body.md
-          echo "Release body:"
-          cat release-body.md
-
       # Create GitHub Release with APKs attached. If the release already
       # exists (e.g. manual dispatch after tag push), update it.
+      # generate_release_notes uses GitHub's native compare-based changelog
+      # (same one you'd get clicking "Generate release notes" in the UI)
+      # instead of a hand-rolled `git log` script, which was fragile: it
+      # assumed HEAD^ was always a tagged commit, which isn't true for a
+      # workflow_dispatch run off an arbitrary branch/ref.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: PhotoZ ${{ steps.version.outputs.version }}
-          body_path: release-body.md
+          generate_release_notes: true
           files: release-artifacts/*.apk
           draft: false
           prerelease: false

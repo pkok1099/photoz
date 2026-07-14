@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "title": "photoz B2 audit findings by category & severity",
+    "source": "AUDIT_B2.md severity matrix (lines 87-99); subsystem paths from lines 56-63",
+    "generated": "2026-07-12",
+    "note": "Transcribed verbatim from AUDIT_B2.md. The Critical/High/Medium columns reconcile exactly to the report's headline (9/23/27), but the per-row Low column sums to 16 (not the headline's 13) and the per-row totals sum to 75 (not 72). This is a tally discrepancy in the source document, preserved here rather than silently 'corrected'.",
+    "severities": [
+      { "key": "critical", "label": "Critical", "rank": 4 },
+      { "key": "high",     "label": "High",     "rank": 3 },
+      { "key": "medium",   "label": "Medium",   "rank": 2 },
+      { "key": "low",      "label": "Low",      "rank": 1 }
+    ],
+    "reportHeadline": { "critical": 9, "high": 23, "medium": 27, "low": 13, "total": 72 }
+  },
+  "categories": [
+    { "id": "jni",        "label": "Migrasi JNI (rclone gomobile)", "path": "app/.../sync + reposetup/ui", "critical": 4, "high": 5, "medium": 5, "low": 3 },
+    { "id": "pkg-rename", "label": "Package rename",                "path": "package declaration",          "critical": 1, "high": 0, "medium": 1, "low": 0 },
+    { "id": "build",      "label": "Build / Gradle / ProGuard",     "path": "build.gradle.kts, scripts/",   "critical": 0, "high": 1, "medium": 2, "low": 1 },
+    { "id": "db",         "label": "DB schema / Room migration",    "path": "app/.../model/",               "critical": 0, "high": 0, "medium": 2, "low": 0 },
+    { "id": "sync",       "label": "Sync / Backup workflow",        "path": "app/.../sync + backup/",       "critical": 1, "high": 4, "medium": 4, "low": 2 },
+    { "id": "crypto",     "label": "Security / Crypto",             "path": "app/.../encryption + transcoding", "critical": 2, "high": 6, "medium": 5, "low": 1 },
+    { "id": "deadcode",   "label": "Dead code / .bak / stale docs", "path": "*.bak, stale docs",            "critical": 0, "high": 2, "medium": 4, "low": 4 },
+    { "id": "logging",    "label": "Logging hygiene",               "path": "logcat / Timber",             "critical": 0, "high": 3, "medium": 2, "low": 0 },
+    { "id": "tests",      "label": "Test coverage",                 "path": "test/",                       "critical": 0, "high": 0, "medium": 0, "low": 4 },
+    { "id": "docs",       "label": "Dokumentasi stale",             "path": "*.md",                        "critical": 0, "high": 0, "medium": 1, "low": 0 },
+    { "id": "uiux",       "label": "UI / UX",                       "path": "app/.../ui/",                 "critical": 1, "high": 2, "medium": 1, "low": 1 }
+  ]
+}

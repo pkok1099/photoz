@@ -51,7 +51,7 @@ const val DATABASE_NAME = "photok.db"
 		AlbumTable::class,
 		AlbumPhotoCrossRefTable::class,
 		SortTable::class,
-		// @since v16 — Sprint 3 / TODO #6 SQLCipher
+		// @since v16 — Sprint 3 / SQLCipher
 		// VaultProtectionTable moved to the plaintext BootstrapDatabase
 		// (onlasdan.gallery.encryption.data.BootstrapDatabase). The
 		// bootstrap DB must be readable BEFORE the encrypted DB can be
@@ -242,7 +242,7 @@ const val DATABASE_NAME = "photok.db"
 		//   array (because Room's AutoMigration code generator can't
 		//   produce a migration for an entity removal without a
 		//   @DeleteTable spec, which we explicitly don't want).
-		// @since v16 — Sprint 3 / TODO #6 SQLCipher
+		// @since v16 — Sprint 3 / SQLCipher
 	],
 )
 @TypeConverters(Converters::class)
@@ -257,7 +257,7 @@ abstract class PhotoZDatabase : RoomDatabase() {
 	abstract fun getSortDao(): SortDao
 
 	/**
-	 * @since v16 — Sprint 3 / TODO #6 SQLCipher
+	 * @since v16 — Sprint 3 / SQLCipher
 	 * VaultProtectionDao moved to [onlasdan.gallery.encryption.data.BootstrapDatabase].
 	 * Get it via Hilt injection (`@Inject vaultProtectionDao: VaultProtectionDao`)
 	 * — see [onlasdan.gallery.di.AppModule.provideVaultProtectionDao].
@@ -309,7 +309,7 @@ class MigrationSpec1To2 : AutoMigrationSpec
  * The orphan `vault_protection` table is harmless — Room ignores tables
  * that aren't in its entity list. A future v17 cleanup task can DROP it.
  *
- * @since v16 — Sprint 3 / TODO #6 SQLCipher
+ * @since v16 — Sprint 3 / SQLCipher
  */
 val MIGRATION_15_16 =
 	object : Migration(15, 16) {

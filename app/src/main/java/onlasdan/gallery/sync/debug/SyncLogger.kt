@@ -23,6 +23,8 @@ import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
+private const val SYNC_LOG_FILE = "sync_log.txt"
+
 /**
  * Diagnostic logger for rclone rc calls — writes every HTTP request/response pair to
  * `<filesDir>/sync_log.txt` so false-success bugs can be diagnosed without logcat.
@@ -63,7 +65,6 @@ object SyncLogger {
 	) {
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			val file = File(filesDir, "sync_log.txt")
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 
@@ -94,6 +95,7 @@ object SyncLogger {
 			try {
 				android.util.Log.e("SyncLogger", "FAILED to write sync log", e)
 			} catch (_: Throwable) {
+				// intentionally ignored: Log.e is best-effort; cannot recover from logging failure
 			}
 		}
 	}
@@ -109,7 +111,6 @@ object SyncLogger {
 	) {
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			val file = File(filesDir, "sync_log.txt")
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 
@@ -143,7 +144,7 @@ object SyncLogger {
 	fun read(): String =
 		runCatching {
 			if (!::filesDir.isInitialized) return "(SyncLogger not initialized)"
-			val file = File(filesDir, "sync_log.txt")
+			val file = File(filesDir, SYNC_LOG_FILE)
 			if (!file.exists()) return "(no sync log yet)"
 			file.readText()
 		}.getOrDefault("(failed to read sync log)")
@@ -151,7 +152,7 @@ object SyncLogger {
 	fun clear() =
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			File(filesDir, "sync_log.txt").delete()
+			if (!File(filesDir, SYNC_LOG_FILE).delete()) Timber.w("SyncLogger log file delete() failed")
 			Timber.i("SyncLogger: log cleared")
 		}.onFailure { }
 }

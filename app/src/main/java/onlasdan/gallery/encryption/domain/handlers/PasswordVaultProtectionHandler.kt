@@ -221,12 +221,14 @@ class PasswordVaultProtectionHandler
 			)
 		}
 
+		@Suppress("DEPRECATION") // legacyPasswordHash/legacyUserSalt — only for migration from 1.x/2.x
 		override suspend fun canMigrate(): Boolean {
 			// 1.x.x users have no legacyUserSalt — migrate() handles that case by generating a fresh
 			// VMK. Returning true when only legacyPasswordHash is present covers both 1.x.x and 2.x.x.
 			return config.legacyPasswordHash.orEmpty().isNotEmpty()
 		}
 
+		@Suppress("DEPRECATION") // legacyPasswordHash/legacyUserSalt — only for migration from 1.x/2.x
 		override suspend fun migrate(request: UnlockRequest.Password): VaultProtection {
 			require(BCrypt.checkpw(request.password, config.legacyPasswordHash))
 
@@ -284,5 +286,7 @@ class PasswordVaultProtectionHandler
 			)
 		}
 
-		override suspend fun reset() {}
+		override suspend fun reset() {
+			// No state to reset; password-based protection has no persisted key material.
+		}
 	}

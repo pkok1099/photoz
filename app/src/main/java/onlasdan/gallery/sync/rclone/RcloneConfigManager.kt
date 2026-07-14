@@ -115,7 +115,7 @@ class RcloneConfigManager
 		suspend fun clear(): Result<Unit> =
 			withContext(Dispatchers.IO) {
 				runCatching {
-					configFile?.delete()
+					if (configFile?.delete() != true) Timber.w("RcloneConfigManager: configFile.delete() failed")
 					cachedConfig = null
 					config.syncChosenRemote = null
 					// F-SYNC-006: invalidate rclone's in-memory cached config so the
@@ -157,10 +157,11 @@ class RcloneConfigManager
 				}.getOrDefault(emptyList())
 			}
 
+		@Suppress("kotlin:S6619") // parsed is nullable from getOrNull(), null check is valid
 		suspend fun chooseRemote(name: String): Boolean =
 			withContext(Dispatchers.IO) {
 				val parsed = cachedConfig ?: runCatching { parseConfig(configFile?.readText() ?: "") }.getOrNull()
-				if (parsed?.sections?.containsKey(name) != true) {
+				if (parsed == null || !parsed.sections.containsKey(name)) {
 					return@withContext false
 				}
 				config.syncChosenRemote = name

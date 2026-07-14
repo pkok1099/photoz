@@ -130,8 +130,11 @@ class PanicWipeUseCase
 
 			try {
 				// 6. Clear legacy password hash.
-				config.legacyPasswordHash = null
-				config.legacyUserSalt = null
+				@Suppress("DEPRECATION") // legacy fields — only for migration
+				run {
+					config.legacyPasswordHash = null
+					config.legacyUserSalt = null
+				}
 			} catch (e: Exception) {
 				Timber.w(e, "PanicWipe: legacy hash clear failed")
 			}

@@ -93,18 +93,13 @@ abstract class ObservableViewModel(
 		block: (newValue: T) -> Unit,
 	) {
 		valueChangeRegistry.addValueCallback(
-			object : PropertyChangedValueCallback {
-				override fun onCallback(
-					property: Int,
-					newValue: Any?,
-				) {
-					if (property == propertyId) {
-						Handler(Looper.getMainLooper()).post {
-							try {
-								block(newValue as T)
-							} catch (e: ClassCastException) {
-								Timber.d("newValue is not type of T")
-							}
+			PropertyChangedValueCallback { property, newValue ->
+				if (property == propertyId) {
+					Handler(Looper.getMainLooper()).post {
+						try {
+							block(newValue as T)
+						} catch (e: ClassCastException) {
+							Timber.d("newValue is not type of T")
 						}
 					}
 				}
@@ -116,5 +111,6 @@ abstract class ObservableViewModel(
 	 * Used for setting up the viewModel. Can be overridden.
 	 */
 	open fun setup() {
+		// No-op by default; subclasses override to perform one-time view-model setup.
 	}
 }

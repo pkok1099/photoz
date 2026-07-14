@@ -69,9 +69,7 @@ class EncryptionMigrationFragment : Fragment() {
 							)
 
 						is LegacyEncryptionMigrationUiState.Success ->
-							EncryptionMigrationScreenSuccess(
-								uiState as LegacyEncryptionMigrationUiState.Success,
-							)
+							EncryptionMigrationScreenSuccess()
 
 						is LegacyEncryptionMigrationUiState.Error ->
 							EncryptionMigrationScreenError(

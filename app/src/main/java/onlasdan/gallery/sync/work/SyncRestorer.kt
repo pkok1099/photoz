@@ -20,6 +20,7 @@ import android.app.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import onlasdan.gallery.model.database.dao.PhotoDao
+import onlasdan.gallery.model.database.entity.Photo
 import onlasdan.gallery.model.database.entity.internalFileName
 import onlasdan.gallery.settings.data.Config
 import onlasdan.gallery.sync.domain.SyncConfig
@@ -49,13 +50,7 @@ class SyncRestorer
 		suspend fun ensureLocalOriginal(uuid: String): Result<Unit> =
 			withContext(Dispatchers.IO) {
 				runCatching {
-					val photo =
-						try {
-							photoDao.get(uuid)
-						} catch (e: Exception) {
-							Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
-							return@runCatching
-						}
+					val photo = resolvePhotoOrNull(uuid) ?: return@runCatching
 
 					// Sprint 10+ / M10 Part 3 fix: use photo.internalFileName which
 					// resolves canonicalUuid (symlink). If this photo is a symlink,
@@ -79,18 +74,7 @@ class SyncRestorer
 
 					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
 					Timber.i("SyncRestorer: downloading %s ← %s", localFile.absolutePath, remoteOrig)
-					// F-UV-015 + FLOWD-002: Clean up partial download on failure
-					try {
-						rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
-						// FLOWD-001: Verify file integrity
-						if (!localFile.exists() || localFile.length() == 0L) {
-							localFile.delete()
-							throw IOException("Downloaded file is empty for $uuid")
-						}
-					} catch (e: Exception) {
-						localFile.delete()
-						throw e
-					}
+					downloadOriginalVerified(remoteOrig, localFile, uuid)
 				}
 			}
 
@@ -132,12 +116,7 @@ class SyncRestorer
 		): Result<Unit> =
 			withContext(Dispatchers.IO) {
 				runCatching {
-					val photo =
-						try {
-							photoDao.get(uuid)
-						} catch (e: Exception) {
-							return@runCatching // F-UV-014: photo not in DB — non-fatal, silent return OK
-						}
+					val photo = resolvePhotoOrNull(uuid) ?: return@runCatching
 
 					// Sprint 10+ / M10 Part 3 fix: resolve symlink via photo.internalFileName
 					val localFile = File(app.filesDir, photo.internalFileName)
@@ -158,34 +137,7 @@ class SyncRestorer
 
 					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
 					Timber.i("SyncRestorer: downloading %s ← %s (with progress)", localFile.absolutePath, remoteOrig)
-					// F-SYNC-021: use async RC API with job/status polling for real progress.
-					// F-UV-015 + FLOWD-002: Clean up partial download on failure.
-					try {
-						rcloneController
-							.downloadFileWithProgress(
-								remotePath = remoteOrig,
-								localPath = localFile.absolutePath,
-								onProgress = onProgress,
-							).getOrThrow()
-
-						// FLOWD-001: Verify downloaded file integrity (size check).
-						// If the local file is empty or significantly smaller than expected,
-						// the download may have been truncated.
-						if (!localFile.exists() || localFile.length() == 0L) {
-							localFile.delete()
-							throw IOException("Downloaded file is empty or missing for $uuid")
-						}
-						if (photo.size > 0 && localFile.length() < photo.size / 2) {
-							Timber.w("SyncRestorer: downloaded file for %s is %d bytes but expected ~%d — may be truncated", uuid, localFile.length(), photo.size)
-							// Non-fatal warning — encrypted file size != plaintext size, but
-							// a 50%+ discrepancy suggests truncation. Let GCM auth tag catch it.
-						}
-					} catch (e: Exception) {
-						// F-UV-015 + FLOWD-002: Delete partial download to prevent
-						// future calls from seeing a non-empty file and short-circuiting.
-						localFile.delete()
-						throw e
-					}
+					downloadOriginalWithProgressVerified(photo, localFile, remoteOrig, onProgress, uuid)
 					onProgress(100f)
 				}
 			}
@@ -222,30 +174,7 @@ class SyncRestorer
 
 				var restored = 0
 				for (photo in photos) {
-					if (photo.syncState != SyncState.UPLOADED) continue
-
-					val localFile = File(app.filesDir, photo.internalFileName)
-					if (localFile.exists() && localFile.length() > 0) continue // already local
-
-					val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
-					try {
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: downloading ${photo.uuid} (${photo.fileName}) ← $remoteOrig",
-						)
-						rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
-						restored++
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: OK ${photo.uuid} (${localFile.length()} bytes)",
-						)
-					} catch (e: Exception) {
-						android.util.Log.e(
-							"RcloneDiag",
-							"[SyncRestorer] restoreAllOriginals: FAILED for ${photo.uuid}: ${e.message}",
-							e,
-						)
-					}
+					if (tryRestorePhoto(photo, remote)) restored++
 				}
 
 				android.util.Log.e(
@@ -254,4 +183,92 @@ class SyncRestorer
 				)
 				restored
 			}
+
+		private suspend fun resolvePhotoOrNull(uuid: String): Photo? =
+			try {
+				photoDao.get(uuid)
+			} catch (e: Exception) {
+				Timber.w(e, "SyncRestorer: photo %s not in DB; cannot restore", uuid)
+				null
+			}
+
+		private suspend fun downloadOriginalVerified(remoteOrig: String, localFile: File, uuid: String) {
+			// F-UV-015 + FLOWD-002: Clean up partial download on failure
+			try {
+				rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+				// FLOWD-001: Verify file integrity
+				if (!localFile.exists() || localFile.length() == 0L) {
+					if (!localFile.delete()) Timber.w("localFile.delete() failed (empty download cleanup)")
+					throw IOException("Downloaded file is empty for $uuid")
+				}
+			} catch (e: Exception) {
+				if (!localFile.delete()) Timber.w("localFile.delete() failed (exception cleanup)")
+				throw e
+			}
+		}
+
+		private suspend fun downloadOriginalWithProgressVerified(
+			photo: Photo,
+			localFile: File,
+			remoteOrig: String,
+			onProgress: (Float) -> Unit,
+			uuid: String,
+		) {
+			// F-SYNC-021: use async RC API with job/status polling for real progress.
+			// F-UV-015 + FLOWD-002: Clean up partial download on failure.
+			try {
+				rcloneController
+					.downloadFileWithProgress(
+						remotePath = remoteOrig,
+						localPath = localFile.absolutePath,
+						onProgress = onProgress,
+					).getOrThrow()
+
+				// FLOWD-001: Verify downloaded file integrity (size check).
+				// If the local file is empty or significantly smaller than expected,
+				// the download may have been truncated.
+				if (!localFile.exists() || localFile.length() == 0L) {
+					if (!localFile.delete()) Timber.w("localFile.delete() failed (empty download cleanup)")
+					throw IOException("Downloaded file is empty or missing for $uuid")
+				}
+				if (photo.size > 0 && localFile.length() < photo.size / 2) {
+					Timber.w("SyncRestorer: downloaded file for %s is %d bytes but expected ~%d — may be truncated", uuid, localFile.length(), photo.size)
+					// Non-fatal warning — encrypted file size != plaintext size, but
+					// a 50%+ discrepancy suggests truncation. Let GCM auth tag catch it.
+				}
+			} catch (e: Exception) {
+				// F-UV-015 + FLOWD-002: Delete partial download to prevent
+				// future calls from seeing a non-empty file and short-circuiting.
+				if (!localFile.delete()) Timber.w("localFile.delete() failed (exception cleanup)")
+				throw e
+			}
+		}
+
+		private suspend fun tryRestorePhoto(photo: Photo, remote: String): Boolean {
+			if (photo.syncState != SyncState.UPLOADED) return false
+
+			val localFile = File(app.filesDir, photo.internalFileName)
+			if (localFile.exists() && localFile.length() > 0) return false // already local
+
+			val remoteOrig = "$remote:${SyncConfig.remoteOriginalsDir}/${localFile.name}"
+			try {
+				android.util.Log.e(
+					"RcloneDiag",
+					"[SyncRestorer] restoreAllOriginals: downloading ${photo.uuid} (${photo.fileName}) ← $remoteOrig",
+				)
+				rcloneController.downloadFile(remoteOrig, localFile.absolutePath).getOrThrow()
+				android.util.Log.e(
+					"RcloneDiag",
+					"[SyncRestorer] restoreAllOriginals: OK ${photo.uuid} (${localFile.length()} bytes)",
+				)
+				return true
+			} catch (e: Exception) {
+				android.util.Log.e(
+					"RcloneDiag",
+					"[SyncRestorer] restoreAllOriginals: FAILED for ${photo.uuid}: ${e.message}",
+					e,
+				)
+				return false
+			}
+		}
 	}

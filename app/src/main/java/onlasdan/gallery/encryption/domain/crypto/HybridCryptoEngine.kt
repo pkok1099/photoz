@@ -86,7 +86,7 @@ class HybridCryptoEngine
 			require(session is VaultSession)
 
 			try {
-				if (useGcm) {
+				return if (useGcm) {
 					// ─── (roadmap #2): Chunked GCM (version 0x04) for ALL new files ──
 					// Replaces single-stream GCM (0x03) with per-chunk encryption:
 					// - Per-chunk auth tag (tamper detection per 1MB)
@@ -97,7 +97,7 @@ class HybridCryptoEngine
 					// encryption doesn't work with a single Cipher instance). Callers
 					// that type-check for CipherOutputStream will get null — but
 					// VaultFileStorage.openEncryptedOutput just needs OutputStream.
-					return ChunkedGcmOutputStream(output, session.vmk)
+					ChunkedGcmOutputStream(output, session.vmk)
 				} else {
 					// ─── Legacy CBC path (videos, backwards compat) ──────────────
 					// Format: [0x02][IV(16)][CBC ciphertext]
@@ -111,7 +111,7 @@ class HybridCryptoEngine
 					output.write(byteArrayOf(EncryptionVersionByte.Two.value))
 					output.write(iv)
 
-					return CipherOutputStream(output, cipher)
+					CipherOutputStream(output, cipher)
 				}
 			} catch (e: Exception) {
 				Timber.e(e, "Error creating CipherOutputStream")
@@ -171,7 +171,7 @@ class HybridCryptoEngine
 						CipherInputStream(input, cipher)
 					}
 					EncryptionVersionByte.Four -> {
-						// v4 (TODO #2): [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
+						// v4: [0x04][chunk_size(4)][total_size(8)][per-chunk GCM blobs]
 						// Each chunk: [nonce(12)][ciphertext][tag(16)] — independently decryptable.
 						// The version byte has already been read; ChunkedGcmInputStream
 						// reads the rest of the header + chunks.

@@ -3,6 +3,12 @@
 This document is the authoritative guide for AI agents working in the PhotoZ codebase.  
 Read it fully before writing any code.
 
+> **Superpowers is vendored in this repo** at [`vendor/superpowers/`](./vendor/superpowers).
+> It bundles TDD, systematic-debugging, brainstorming, planning, code-review, git-worktree,
+> and subagent-driven-development skills for Claude Code, Cursor, Codex, Kimi, OpenCode, and Pi.
+> See [`SUPERPOWERS.md`](./SUPERPOWERS.md) for install and update instructions. The local
+> Claude marketplace manifest is at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json).
+
 ---
 
 ## Table of Contents

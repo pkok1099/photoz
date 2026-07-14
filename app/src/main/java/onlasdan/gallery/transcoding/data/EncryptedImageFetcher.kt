@@ -77,7 +77,7 @@ class EncryptedImageFetcher(
 				DrawableResult(
 					drawable = drawable,
 					isSampled = false,
-					dataSource = DataSource.MEMORY,
+					dataSource = DataSource.DISK,
 				)
 			} else {
 				SourceResult(
@@ -87,7 +87,7 @@ class EncryptedImageFetcher(
 							context = context,
 						),
 					mimeType = requestData.mimeType,
-					DataSource.MEMORY,
+					DataSource.DISK,
 				)
 			}
 		}

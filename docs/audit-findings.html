@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>photoz B2 audit findings</title>
+<style>
+  /* ── palette: reference instance, status scale for severity ───────────────────
+     Severity is a STATUS scale (escalation: good→warning→serious→critical), so it
+     wears the fixed status palette, never categorical hues. Categories are nominal
+     (no natural order) → they carry NO color; they share one identity-neutral axis
+     treatment, avoiding "value-ramp on nominal categories". */
+  .viz-root {
+    --surface-1: #fcfcfb;   /* chart surface */
+    --page:      #f9f9f7;   /* page plane   */
+    --ink-1:     #0b0b0b;   /* primary text */
+    --ink-2:     #52514e;   /* secondary    */
+    --ink-muted: #898781;   /* axis/labels  */
+    --grid:      #e1e0d9;   /* hairline     */
+    --axis:      #c3c2b7;   /* baseline/axis*/
+    --ring:      rgba(11,11,11,0.10);
+    --card:      #ffffff;
+    --sev-good:     #0ca30c;  /* Low       */
+    --sev-warning:  #fab219;  /* Medium    */
+    --sev-serious:  #ec835a;  /* High      */
+    --sev-critical: #d03b3b;  /* Critical  */
+    --sev-good-ink:     #0b5e0b;
+    --sev-warning-ink:  #7a5200;
+    --sev-serious-ink:  #8a3413;
+    --sev-critical-ink: #7a1111;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      --surface-1: #1a1a19;
+      --page:      #0d0d0d;
+      --ink-1:     #ffffff;
+      --ink-2:     #c3c2b7;
+      --ink-muted: #898781;
+      --grid:      #2c2c2a;
+      --axis:      #383835;
+      --ring:      rgba(255,255,255,0.10);
+      --card:      #161615;
+      --sev-good:     #0ca30c;
+      --sev-warning:  #fab219;
+      --sev-serious:  #ec835a;
+      --sev-critical: #d03b3b;
+      --sev-good-ink:     #79e079;
+      --sev-warning-ink:  #ffd56b;
+      --sev-serious-ink:  #f4a883;
+      --sev-critical-ink: #f08a8a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink-1);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+  .viz-root {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 24px 56px;
+    background: var(--page);
+  }
+  header h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p.sub { margin: 0; color: var(--ink-2); font-size: 13px; }
+
+  /* ── KPI stat tiles ────────────────────────────────────────────────────────── */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 22px 0 6px; }
+  @media (max-width: 680px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: var(--card); border: 1px solid var(--ring); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .kpi .label { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi .value.crit { color: var(--sev-critical-ink); }
+  .kpi .value.high { color: var(--sev-serious-ink); }
+  .icon { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+
+  /* ── filter / toolbar row (above all charts) ──────────────────────────────── */
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    margin: 22px 0 14px; padding: 10px 12px;
+    background: var(--card); border: 1px solid var(--ring); border-radius: 10px;
+  }
+  .toolbar .grp { display: flex; align-items: center; gap: 6px; }
+  .toolbar .glabel { font-size: 12px; color: var(--ink-muted); margin-right: 2px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--ring); border-radius: 999px; padding: 4px 11px;
+    font-size: 12.5px; cursor: pointer; user-select: none; color: var(--ink-1);
+    background: transparent; transition: opacity .12s ease;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .chip[aria-pressed="false"] { opacity: .38; }
+  .chip:focus-visible { outline: 2px solid var(--sev-critical); outline-offset: 2px; }
+  .spacer { flex: 1 1 auto; }
+  .toggle {
+    border: 1px solid var(--ring); background: transparent; color: var(--ink-1);
+    border-radius: 8px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+  }
+  .toggle[aria-pressed="true"] { background: var(--ink-1); color: var(--surface-1); }
+
+  /* ── chart card ───────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--card); border: 1px solid var(--ring); border-radius: 12px;
+    padding: 18px 18px 10px; margin-top: 6px;
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .card p.cap { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-2); }
+
+  .plot { width: 100%; }
+  .plot text { fill: var(--ink-1); font-family: inherit; }
+  .axisline { stroke: var(--axis); stroke-width: 1; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .ylab { font-size: 12.5px; fill: var(--ink-1); }
+  .xtick { font-size: 11px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .bar-total { font-size: 11.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+  /* segments */
+  .seg { cursor: pointer; transition: opacity .1s ease; }
+  .seg:hover, .seg:focus-visible { opacity: .82; outline: none; }
+  .seg:focus-visible { stroke: var(--ink-1); stroke-width: 1.5; }
+  .row-bg { fill: transparent; }
+  .row-bg:hover { fill: var(--ring); }
+
+  /* texture fill (opt-in) */
+  .tex { display: none; }
+  .viz-root.show-tex .seg { fill: var(--sev-fill, #888) !important; }
+  .viz-root.show-tex .seg-g { fill: url(#hatch45) !important; }
+  .viz-root.show-tex .seg-w { fill: url(#hatch135) !important; }
+  .viz-root.show-tex .seg-s { fill: url(#hatch45) !important; opacity: .9; }
+  .viz-root.show-tex .seg-c { fill: url(#hatch135) !important; opacity: .9; }
+
+  /* tooltip */
+  #tip {
+    position: fixed; pointer-events: none; z-index: 20; opacity: 0;
+    transform: translate(-50%, -112%); transition: opacity .08s ease;
+    background: var(--ink-1); color: var(--surface-1);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; max-width: 240px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.22);
+  }
+  #tip .t-cat { font-weight: 600; margin-bottom: 3px; }
+  #tip .t-row { display: flex; align-items: center; gap: 7px; }
+  #tip .t-row .k { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  #tip .t-row .n { font-weight: 650; font-variant-numeric: tabular-nums; }
+  #tip .t-row .v { margin-left: auto; color: var(--surface-1); opacity: .8; font-variant-numeric: tabular-nums; }
+
+  /* legend (severity = status, icon+label always) */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 2px 4px; font-size: 12.5px; }
+  .legend .item { display: flex; align-items: center; gap: 7px; color: var(--ink-1); }
+  .legend .item .ic { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }
+  .legend .item .pct { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+  /* table view twin */
+  .tbl-wrap { overflow-x: auto; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--ring); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--ink-2); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+  tbody td:first-child { color: var(--ink-1); }
+  tbody .tot { font-weight: 650; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .hidden { display: none !important; }
+  footer.note { margin-top: 18px; font-size: 12px; color: var(--ink-muted); }
+  footer.note code { background: var(--ring); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+  <header>
+    <h1>photoz B2 audit findings</h1>
+    <p class="sub">11 categories &times; 4 severity tiers &middot; data transcribed from <code>AUDIT_B2.md</code> &middot; KPI tiles show the report's headline tally (72); the chart shows the severity matrix verbatim (75)</p>
+  </header>
+
+  <!-- KPI tiles -->
+  <section class="kpis" id="kpis" aria-label="Headline metrics"></section>
+
+  <!-- toolbar: severity filters + view toggles (scopes every chart below) -->
+  <div class="toolbar" role="group" aria-label="Filters and view options">
+    <div class="grp">
+      <span class="glabel">Severity</span>
+      <button class="chip" data-sev="critical"  aria-pressed="true"><span class="dot" style="background:var(--sev-critical)"></span>Critical</button>
+      <button class="chip" data-sev="high"     aria-pressed="true"><span class="dot" style="background:var(--sev-serious)"></span>High</button>
+      <button class="chip" data-sev="medium"   aria-pressed="true"><span class="dot" style="background:var(--sev-warning)"></span>Medium</button>
+      <button class="chip" data-sev="low"      aria-pressed="true"><span class="dot" style="background:var(--sev-good)"></span>Low</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="toggle" id="btnTable" aria-pressed="false">Table view</button>
+    <button class="toggle" id="btnTex"   aria-pressed="false">Texture (a11y)</button>
+  </div>
+
+  <!-- chart -->
+  <section class="card" id="chartCard">
+    <h2>Findings by category &amp; severity</h2>
+    <p class="cap">Each row is one subsystem; the bar length is its total findings, stacked by severity. Hover or focus a segment for details.</p>
+    <div class="plot" id="plot" role="img" aria-label="Stacked bar chart of audit findings by category and severity"></div>
+    <div class="legend" id="legend" aria-label="Severity legend"></div>
+  </section>
+
+  <!-- table twin -->
+  <section class="card hidden" id="tableCard">
+    <h2>Table view</h2>
+    <p class="cap">Every value shown in the chart, as a WCAG-clean table. Numbers reflect the active severity filter.</p>
+    <div class="tbl-wrap"><table id="tbl"></table></div>
+  </section>
+
+  <footer class="note">
+    Data transcribed verbatim from <code>AUDIT_B2.md</code> (severity matrix, lines 87&ndash;99).
+    <span id="tallyNote"></span>
+  </footer>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+/* ── dataset (embedded; mirrors docs/audit-findings.json) ───────────────────── */
+const DATA = {
+  meta: {
+    reportHeadline: { critical: 9, high: 23, medium: 27, low: 13, total: 72 },
+    note: "Critical/High/Medium columns reconcile exactly to the headline (9/23/27), but the per-row Low column sums to 16 (not 13) and per-row totals sum to 75 (not 72) — a tally discrepancy in the source, preserved here rather than silently corrected."
+  },
+  severityOrder: [ /* stack order: base→top = least→most severe */
+    { key: "low",      label: "Low",      varName: "--sev-good",     ink: "--sev-good-ink",     tex: "seg-g" },
+    { key: "medium",   label: "Medium",   varName: "--sev-warning",  ink: "--sev-warning-ink",  tex: "seg-w" },
+    { key: "high",     label: "High",     varName: "--sev-serious",  ink: "--sev-serious-ink",  tex: "seg-s" },
+    { key: "critical", label: "Critical", varName: "--sev-critical", ink: "--sev-critical-ink", tex: "seg-c" }
+  ],
+  categories: [
+    { id: "jni",        label: "Migrasi JNI (rclone gomobile)", critical: 4, high: 5, medium: 5, low: 3 },
+    { id: "pkg-rename", label: "Package rename",                critical: 1, high: 0, medium: 1, low: 0 },
+    { id: "build",      label: "Build / Gradle / ProGuard",     critical: 0, high: 1, medium: 2, low: 1 },
+    { id: "db",         label: "DB schema / Room migration",    critical: 0, high: 0, medium: 2, low: 0 },
+    { id: "sync",       label: "Sync / Backup workflow",        critical: 1, high: 4, medium: 4, low: 2 },
+    { id: "crypto",     label: "Security / Crypto",             critical: 2, high: 6, medium: 5, low: 1 },
+    { id: "deadcode",   label: "Dead code / .bak / stale docs", critical: 0, high: 2, medium: 4, low: 4 },
+    { id: "logging",    label: "Logging hygiene",               critical: 0, high: 3, medium: 2, low: 0 },
+    { id: "tests",      label: "Test coverage",                 critical: 0, high: 0, medium: 0, low: 4 },
+    { id: "docs",       label: "Dokumentasi stale",             critical: 0, high: 0, medium: 1, low: 0 },
+    { id: "uiux",       label: "UI / UX",                       critical: 1, high: 2, medium: 1, low: 1 }
+  ]
+};
+const SEV = DATA.severityOrder;
+const SEVKEYS = SEV.map(s => s.key);
+const root = document.getElementById("root");
+
+/* ── state ──────────────────────────────────────────────────────────────────── */
+const active = new Set(SEVKEYS);   // severity filter (color follows entity, never rank)
+let showTable = false, showTex = false;
+
+/* ── helpers ────────────────────────────────────────────────────────────────── */
+const css = (v) => getComputedStyle(root).getPropertyValue(v).trim();
+const catTotal = (c) => SEVKEYS.reduce((a, k) => a + (active.has(k) ? c[k] : 0), 0);
+const grandTotal = () => DATA.categories.reduce((a, c) => a + catTotal(c), 0);
+
+/* ── KPI tiles ──────────────────────────────────────────────────────────────── */
+function renderKpis() {
+  const h = DATA.meta.reportHeadline;
+  const tiles = [
+    { label: "Total findings", value: h.total, cls: "" },
+    { label: "Critical",       value: h.critical, cls: "crit", sev: "critical" },
+    { label: "High",           value: h.high,     cls: "high", sev: "high" },
+    { label: "Medium",         value: h.medium,   cls: "",     sev: "medium" },
+    { label: "Low",            value: h.low,      cls: "",     sev: "low" }
+  ];
+  const el = document.getElementById("kpis");
+  el.replaceChildren();
+  for (const t of tiles) {
+    const div = document.createElement("div"); div.className = "kpi";
+    const lab = document.createElement("div"); lab.className = "label";
+    if (t.sev) { const ic = document.createElement("span"); ic.className = "icon";
+      ic.style.background = css(SEV.find(s=>s.key===t.sev).varName); lab.appendChild(ic); }
+    lab.appendChild(document.createTextNode(t.label));
+    const val = document.createElement("div"); val.className = "value " + t.cls;
+    val.textContent = t.value.toLocaleString();
+    div.append(lab, val); el.appendChild(div);
+  }
+}
+
+/* ── legend ─────────────────────────────────────────────────────────────────── */
+function renderLegend() {
+  const el = document.getElementById("legend"); el.replaceChildren();
+  const tot = grandTotal() || 1;
+  for (const s of SEV) {
+    if (!active.has(s.key)) continue;
+    const colTotal = DATA.categories.reduce((a, c) => a + c[s.key], 0);
+    const item = document.createElement("div"); item.className = "item";
+    const ic = document.createElement("span"); ic.className = "ic"; ic.style.background = css(s.varName);
+    const name = document.createElement("span"); name.textContent = s.label;
+    const pct = document.createElement("span"); pct.className = "pct";
+    pct.textContent = Math.round(colTotal / tot * 100) + "%";
+    item.append(ic, name, pct); el.appendChild(item);
+  }
+}
+
+/* ── main chart (horizontal stacked bars) ───────────────────────────────────── */
+function renderChart() {
+  const plot = document.getElementById("plot"); plot.replaceChildren();
+  const W = Math.max(560, plot.clientWidth || 760);
+  const rowH = 30, padTop = 8, padBot = 30, padLeft = 196, padRight = 64, gap = 8;
+  const H = padTop + padBot + DATA.categories.length * (rowH + gap);
+  const maxVal = Math.max(1, ...DATA.categories.map(catTotal));
+  // nice x max
+  const step = maxVal <= 20 ? 2 : maxVal <= 50 ? 5 : 10;
+  const xMax = Math.ceil(maxVal / step) * step;
+  const plotW = W - padLeft - padRight;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", "100%"); svg.setAttribute("height", H);
+  svg.style.display = "block";
+
+  // defs: texture hatches (opt-in)
+  const defs = document.createElementNS(NS, "defs");
+  const mk = (id, rot) => {
+    const p = document.createElementNS(NS, "pattern");
+    p.setAttribute("id", id); p.setAttribute("width", "6"); p.setAttribute("height", "6");
+    p.setAttribute("patternUnits", "userSpaceOnUse"); p.setAttribute("patternTransform", `rotate(${rot})`);
+    const r = document.createElementNS(NS, "rect"); r.setAttribute("width", "6"); r.setAttribute("height", "6");
+    r.setAttribute("fill", "var(--sev-fill)");
+    const l = document.createElementNS(NS, "line"); l.setAttribute("x1", "0"); l.setAttribute("y1", "0");
+    l.setAttribute("x2", "0"); l.setAttribute("y2", "6"); l.setAttribute("stroke", css("--ink-1"));
+    l.setAttribute("stroke-width", "2.4");
+    p.append(r, l); return p;
+  };
+  defs.append(mk("hatch45", 0), mk("hatch135", 90)); // 45/135 mirror
+  svg.appendChild(defs);
+
+  // x gridlines + ticks
+  for (let v = 0; v <= xMax; v += step) {
+    const x = padLeft + (v / xMax) * plotW;
+    const gl = document.createElementNS(NS, "line");
+    gl.setAttribute("class", "gridline"); gl.setAttribute("x1", x); gl.setAttribute("x2", x);
+    gl.setAttribute("y1", padTop - 4); gl.setAttribute("y2", H - padBot);
+    svg.appendChild(gl);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("class", "xtick"); t.setAttribute("x", x); t.setAttribute("y", H - padBot + 16);
+    t.setAttribute("text-anchor", "middle"); t.textContent = v;
+    svg.appendChild(t);
+  }
+  // baseline
+  const base = document.createElementNS(NS, "line");
+  base.setAttribute("class", "axisline"); base.setAttribute("x1", padLeft); base.setAttribute("x2", padLeft);
+  base.setAttribute("y1", padTop - 4); base.setAttribute("y2", H - padBot);
+  svg.appendChild(base);
+
+  const tip = document.getElementById("tip");
+  const showTip = (ev, cat, sev, val) => {
+    const pct = grandTotal() ? Math.round(val / grandTotal() * 100) : 0;
+    tip.replaceChildren();
+    const c = document.createElement("div"); c.className = "t-cat"; c.textContent = cat.label;
+    const r = document.createElement("div"); r.className = "t-row";
+    const k = document.createElement("span"); k.className = "k"; k.style.background = css(sev.varName);
+    const n = document.createElement("span"); n.className = "n"; n.textContent = sev.label;
+    const v = document.createElement("span"); v.className = "v"; v.textContent = `${val} · ${pct}%`;
+    r.append(k, n, v); tip.append(c, r);
+    tip.style.left = ev.clientX + "px"; tip.style.top = ev.clientY + "px"; tip.style.opacity = "1";
+  };
+  const hideTip = () => { tip.style.opacity = "0"; };
+
+  DATA.categories.forEach((cat, i) => {
+    const y = padTop + i * (rowH + gap);
+    // y label
+    const yl = document.createElementNS(NS, "text");
+    yl.setAttribute("class", "ylab"); yl.setAttribute("x", padLeft - 12); yl.setAttribute("y", y + rowH / 2 + 4);
+    yl.setAttribute("text-anchor", "end"); yl.textContent = cat.label;
+    svg.appendChild(yl);
+    // hover bg row
+    const bg = document.createElementNS(NS, "rect");
+    bg.setAttribute("class", "row-bg"); bg.setAttribute("x", 0); bg.setAttribute("y", y - 2);
+    bg.setAttribute("width", W); bg.setAttribute("height", rowH + 4);
+    svg.appendChild(bg);
+
+    let x = padLeft;
+    const tot = catTotal(cat);
+    SEV.forEach(s => {
+      if (!active.has(s.key) || cat[s.key] === 0) return;
+      const w = (cat[s.key] / xMax) * plotW;
+      const seg = document.createElementNS(NS, "rect");
+      seg.setAttribute("class", "seg " + s.tex);
+      seg.setAttribute("x", x); seg.setAttribute("y", y);
+      seg.setAttribute("width", w); seg.setAttribute("height", rowH);
+      seg.setAttribute("rx", "3");
+      seg.style.fill = css(s.varName);
+      seg.setAttribute("tabindex", "0");
+      seg.setAttribute("role", "img");
+      seg.setAttribute("aria-label", `${cat.label}, ${s.label}: ${cat[s.key]} of ${grandTotal()} total`);
+      const on = (e) => showTip(e, cat, s, cat[s.key]);
+      seg.addEventListener("pointermove", on);
+      seg.addEventListener("pointerenter", on);
+      seg.addEventListener("pointerleave", hideTip);
+      seg.addEventListener("focus", (e) => {
+        const r = seg.getBoundingClientRect();
+        showTip({ clientX: r.left + r.width / 2, clientY: r.top }, cat, s, cat[s.key]);
+      });
+      seg.addEventListener("blur", hideTip);
+      svg.appendChild(seg);
+      x += w + 2; // 2px surface gap between touching segments
+    });
+    // total label at bar end (selective direct label — the one number each row needs)
+    if (tot > 0) {
+      const tl = document.createElementNS(NS, "text");
+      tl.setAttribute("class", "bar-total"); tl.setAttribute("x", padLeft + (tot / xMax) * plotW + 8);
+      tl.setAttribute("y", y + rowH / 2 + 4);
+      tl.textContent = tot;
+      svg.appendChild(tl);
+    }
+  });
+  plot.appendChild(svg);
+}
+
+/* ── table twin ─────────────────────────────────────────────────────────────── */
+function renderTable() {
+  const tbl = document.getElementById("tbl"); tbl.replaceChildren();
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  const cols = ["Category", ...SEV.filter(s => active.has(s.key)).map(s => s.label), "Total"];
+  for (const c of cols) { const th = document.createElement("th"); th.textContent = c; hr.appendChild(th); }
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  DATA.categories.forEach(cat => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = cat.label; tr.appendChild(td0);
+    let tot = 0;
+    for (const s of SEV) {
+      if (!active.has(s.key)) continue;
+      const td = document.createElement("td"); td.textContent = cat[s.key]; tot += cat[s.key]; tr.appendChild(td);
+    }
+    const tdt = document.createElement("td"); tdt.className = "tot"; tdt.textContent = tot; tr.appendChild(tdt);
+    tbody.appendChild(tr);
+  });
+  // totals row
+  const tr = document.createElement("tr");
+  const td0 = document.createElement("td"); td0.className = "tot"; td0.textContent = "Total"; tr.appendChild(td0);
+  let gt = 0;
+  for (const s of SEV) {
+    if (!active.has(s.key)) continue;
+    const sum = DATA.categories.reduce((a, c) => a + c[s.key], 0); gt += sum;
+    const td = document.createElement("td"); td.className = "tot"; td.textContent = sum; tr.appendChild(td);
+  }
+  const tdt = document.createElement("td"); tdt.className = "tot"; tdt.textContent = gt; tr.appendChild(tdt);
+  tbody.appendChild(tr);
+  tbl.appendChild(tbody);
+}
+
+/* ── render orchestration ───────────────────────────────────────────────────── */
+function renderAll() {
+  renderKpis(); renderLegend();
+  if (!showTable) renderChart();
+  renderTable();
+  document.getElementById("chartCard").classList.toggle("hidden", showTable);
+  document.getElementById("tableCard").classList.toggle("hidden", !showTable);
+}
+
+/* ── wire controls ──────────────────────────────────────────────────────────── */
+document.querySelectorAll(".chip").forEach(ch => {
+  ch.addEventListener("click", () => {
+    const k = ch.dataset.sev;
+    if (active.has(k)) { if (active.size === 1) return; active.delete(k); ch.setAttribute("aria-pressed", "false"); }
+    else { active.add(k); ch.setAttribute("aria-pressed", "true"); }
+    renderAll();
+  });
+});
+document.getElementById("btnTable").addEventListener("click", (e) => {
+  showTable = !showTable; e.target.setAttribute("aria-pressed", String(showTable)); renderAll();
+});
+document.getElementById("btnTex").addEventListener("click", (e) => {
+  showTex = !showTex; e.target.setAttribute("aria-pressed", String(showTex));
+  root.classList.toggle("show-tex", showTex); renderChart();
+});
+window.addEventListener("resize", () => { if (!showTable) renderChart(); });
+
+/* tally disclaimer */
+document.getElementById("tallyNote").textContent = DATA.meta.note;
+
+/* deep-link state via hash: #table / #tex (handy for sharing a view) */
+const h = location.hash.slice(1).split(",");
+if (h.includes("table")) { showTable = true; document.getElementById("btnTable").setAttribute("aria-pressed", "true"); }
+if (h.includes("tex"))   { showTex = true;   document.getElementById("btnTex").setAttribute("aria-pressed", "true"); root.classList.add("show-tex"); }
+
+renderAll();
+</script>
+</body>
+</html>

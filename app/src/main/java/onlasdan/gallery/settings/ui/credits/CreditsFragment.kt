@@ -62,7 +62,9 @@ class CreditsFragment : Fragment() {
 	private fun loadContributors(): ArrayList<CreditEntry> =
 		try {
 			val json = String(requireActivity().assets.open(CONTRIBUTORS_FILE).readBytes())
-			val listType = object : TypeToken<ArrayList<CreditEntry??>?>() {}.type
+			// F-WARN-002: removed redundant ? markers in TypeToken generic — Gson uses
+			// raw Class types, Kotlin nullability markers (??, ?) are meaningless here.
+			val listType = object : TypeToken<ArrayList<CreditEntry>>() {}.type
 			val entries: ArrayList<CreditEntry> = Gson().fromJson(json, listType)
 			entries.add(0, CreditEntry.createHeader())
 			entries.add(CreditEntry.createFooter())

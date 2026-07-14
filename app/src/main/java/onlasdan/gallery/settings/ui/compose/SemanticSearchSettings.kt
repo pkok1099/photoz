@@ -44,7 +44,8 @@ import onlasdan.gallery.settings.data.Config
 import timber.log.Timber
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URL
+
+private const val TFLITE_MODEL_FILE = "models/mobilenet_v2.tflite"
 
 /**
  * Sprint 8 / (roadmap #15) — Semantic Search settings section.
@@ -62,7 +63,7 @@ fun SemanticSearchSettings(
 	onToggleChanged: (Boolean) -> Unit,
 ) {
 	val context = LocalContext.current
-	val modelFile = remember { File(context.filesDir, "models/mobilenet_v2.tflite") }
+	val modelFile = remember { File(context.filesDir, TFLITE_MODEL_FILE) }
 	var modelAvailable by remember { mutableStateOf(modelFile.exists()) }
 	var isDownloading by remember { mutableStateOf(config.tfliteModelStatus == 1) }
 	var downloadError by remember { mutableStateOf<String?>(null) }
@@ -126,7 +127,7 @@ fun SemanticSearchSettings(
 					}
 					modelAvailable -> {
 						Text(
-							text = "✓ Model ready (${File(context.filesDir, "models/mobilenet_v2.tflite").length() / 1024 / 1024}MB)",
+							text = "✓ Model ready (${File(context.filesDir, TFLITE_MODEL_FILE).length() / 1024 / 1024}MB)",
 							fontSize = 14.sp,
 							color = MaterialTheme.colorScheme.primary,
 						)
@@ -184,10 +185,10 @@ private fun downloadModel(
 ) {
 	Thread {
 		try {
-			val modelFile = File(context.filesDir, "models/mobilenet_v2.tflite")
+			val modelFile = File(context.filesDir, TFLITE_MODEL_FILE)
 			modelFile.parentFile?.mkdirs()
 
-			val connection = URL(url).openConnection() as HttpURLConnection
+			val connection = java.net.URI.create(url).toURL().openConnection() as HttpURLConnection
 			connection.connectTimeout = 30000
 			connection.readTimeout = 60000
 			connection.connect()

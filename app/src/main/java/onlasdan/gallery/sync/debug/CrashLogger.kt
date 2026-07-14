@@ -22,6 +22,8 @@ import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
+private const val CRASH_LOG_FILE = "crash_log.txt"
+
 /**
  * Persistent crash logger writing full stack traces (including the entire `Caused by` chain)
  * to `<filesDir>/crash_log.txt` in app-private storage. Readable via:
@@ -45,7 +47,7 @@ object CrashLogger {
 		context: String = "",
 	) {
 		runCatching {
-			val file = File(filesDir, "crash_log.txt")
+			val file = File(filesDir, CRASH_LOG_FILE)
 			val now = Instant.now()
 			val seqNum = seq.incrementAndGet()
 
@@ -62,6 +64,7 @@ object CrashLogger {
 					append("Thread: ")
 					append(thread.name)
 					append(" (id=")
+					@Suppress("DEPRECATION") // Thread.id deprecated in Java 19+, Android API 35 still uses it
 					append(thread.id)
 					append(")\n")
 					append("Exception: ")
@@ -97,6 +100,7 @@ object CrashLogger {
 			try {
 				android.util.Log.e("CrashLogger", "FAILED to write crash log", e)
 			} catch (_: Throwable) {
+				// intentionally ignored: Log.e is best-effort; cannot recover from crash-logger failure
 			}
 		}
 	}
@@ -130,7 +134,7 @@ object CrashLogger {
 	fun read(): String =
 		runCatching {
 			if (!::filesDir.isInitialized) return "(CrashLogger not initialized)"
-			val file = File(filesDir, "crash_log.txt")
+			val file = File(filesDir, CRASH_LOG_FILE)
 			if (!file.exists()) return "(no crash log yet)"
 			file.readText()
 		}.getOrDefault("(failed to read crash log)")
@@ -138,7 +142,7 @@ object CrashLogger {
 	fun clear() =
 		runCatching {
 			if (!::filesDir.isInitialized) return@runCatching
-			File(filesDir, "crash_log.txt").delete()
+			if (!File(filesDir, CRASH_LOG_FILE).delete()) Timber.w("CrashLogger log file delete() failed")
 			Timber.i("CrashLogger: log cleared")
 		}.onFailure { }
 }

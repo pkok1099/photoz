@@ -83,5 +83,5 @@ class EncryptionModule {
 	// onlasdan.gallery.di.AppModule.provideVaultProtectionDao, which
 	// sources it from the plaintext BootstrapDatabase (not PhotoZDatabase).
 	//
-	// @since v16 — Sprint 3 / TODO #6 SQLCipher
+	// @since v16 — Sprint 3 / SQLCipher
 }

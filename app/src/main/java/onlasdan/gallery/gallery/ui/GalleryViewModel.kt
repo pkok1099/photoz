@@ -368,15 +368,19 @@ class GalleryViewModel
 			//  navigation graph.
 			if (item.type.isFile) {
 				viewModelScope.launch {
-					val photo =
-						photoRepository.get(item.uuid) ?: run {
-							eventsChannel.trySend(
-								GalleryNavigationEvent.ShowToast(
-									resources.getString(R.string.gallery_open_file_not_found),
-								),
-							)
-							return@launch
-						}
+					// F-WARN-008: PhotoRepository.get() returns non-null Photo per the type
+					// system, but Room may return null at runtime if the row was deleted
+					// between list-load and tap. Wrap in runCatching to handle this safely
+					// without triggering "elvis always returns left operand" warning.
+					val photo = runCatching { photoRepository.get(item.uuid) }.getOrNull()
+					if (photo == null) {
+						eventsChannel.trySend(
+							GalleryNavigationEvent.ShowToast(
+								resources.getString(R.string.gallery_open_file_not_found),
+							),
+						)
+						return@launch
+					}
 					val launched = photoRepository.openFileExternally(photo)
 					if (!launched) {
 						eventsChannel.trySend(

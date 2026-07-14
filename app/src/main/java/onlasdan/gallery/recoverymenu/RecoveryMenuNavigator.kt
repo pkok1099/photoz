@@ -17,16 +17,21 @@
 package onlasdan.gallery.recoverymenu
 
 import android.content.Intent
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import onlasdan.gallery.main.ui.MainActivity
 import javax.inject.Inject
 
 class RecoveryMenuNavigator
 	@Inject
 	constructor() {
+		/**
+		 * F-PERF-003 (v1.0.2): widened parameter from `AppCompatActivity` to [ComponentActivity]
+		 * so callers don't need AppCompat — RecoveryMenuActivity now extends ComponentActivity.
+		 * Both `startActivity` and `finish` are defined on ComponentActivity / Activity.
+		 */
 		fun navigate(
 			navigationEvent: NavigationEvent,
-			activity: AppCompatActivity,
+			activity: ComponentActivity,
 		) {
 			when (navigationEvent) {
 				NavigationEvent.OpenPhotoZ -> navigateOpenPhotoZ(activity)
@@ -34,11 +39,11 @@ class RecoveryMenuNavigator
 			}
 		}
 
-		private fun navigateAfterResetHideApp(activity: AppCompatActivity) {
+		private fun navigateAfterResetHideApp(activity: ComponentActivity) {
 			activity.finish()
 		}
 
-		private fun navigateOpenPhotoZ(activity: AppCompatActivity) {
+		private fun navigateOpenPhotoZ(activity: ComponentActivity) {
 			val intent =
 				Intent(activity, MainActivity::class.java).apply {
 					flags = Intent.FLAG_ACTIVITY_NEW_TASK

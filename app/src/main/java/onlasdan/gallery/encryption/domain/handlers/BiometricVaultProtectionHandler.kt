@@ -155,7 +155,7 @@ class BiometricVaultProtectionHandler
 			)
 		}
 
-		override suspend fun onMigrationPersisted() {
+		override fun onMigrationPersisted() {
 			prefs.edit { remove("wrapped_user_key") }
 		}
 
